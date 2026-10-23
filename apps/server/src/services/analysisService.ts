@@ -1,0 +1,167 @@
+// 岗位分析持久化：job_sources / job_analyses（PRD 4.2/8.5/8.6）
+import { createHash } from 'node:crypto';
+import { and, desc, eq, inArray } from 'drizzle-orm';
+import { db } from '../db/client.js';
+import { jobSources, jobRequirements, jobAnalyses } from '../db/schema.js';
+import { notFound } from './errors.js';
+import type { JobAnalysisDTO, JobSourceDTO } from '@pathpilot/shared';
+import type { JobAnalysisResult, JobSample, Engine, EmploymentType } from '@pathpilot/shared';
+
+export const contentHash = (text: string): string => createHash('sha256').update(text).digest('hex').slice(0, 32);
+
+export async function saveSamples(
+  userId: number | null,
+  samples: JobSample[],
+  parseStatus: 'ok' | 'failed' = 'ok'
+): Promise<number[]> {
+  const ids: number[] = [];
+  for (const s of samples) {
+    const hash = contentHash(`${s.title}|${s.company ?? ''}|${s.description.slice(0, 500)}`);
+    const inserted = await db
+      .insert(jobSources)
+      .values({
+        userId,
+        title: s.title,
+        company: s.company ?? null,
+        location: s.location ?? null,
+        employmentType: s.employment_type,
+        educationRequirement: s.education_requirement ?? null,
+        experienceRequirement: s.experience_requirement ?? null,
+        description: s.description,
+        sourceUrl: s.source_url ?? null,
+        sourceType: s.source_type,
+        fetchedAt: s.fetched_at,
+        contentHash: hash,
+        parseStatus,
+      })
+      .returning();
+    ids.push(inserted[0].id);
+  }
+  return ids;
+}
+
+export async function attachAnalysisToSamples(analysisId: number, sourceIds: number[]): Promise<void> {
+  if (!sourceIds.length) return;
+  await db.update(jobSources).set({ analysisId }).where(inArray(jobSources.id, sourceIds));
+}
+
+export async function saveRequirements(
+  rows: { jobSourceId: number; skillId?: number | null; originalText: string; requirementType: string; importance: string; evidenceText?: string | null }[]
+): Promise<void> {
+  if (!rows.length) return;
+  await db.insert(jobRequirements).values(rows.map((r) => ({ ...r, skillId: r.skillId ?? null, evidenceText: r.evidenceText ?? null })));
+}
+
+export async function saveAnalysis(
+  userId: number,
+  input: { targetRole: string; city?: string; employmentType: string; engine: Engine },
+  result: JobAnalysisResult
+): Promise<JobAnalysisDTO> {
+  const inserted = await db
+    .insert(jobAnalyses)
+    .values({
+      userId,
+      targetRole: input.targetRole,
+      city: input.city ?? null,
+      employmentType: input.employmentType,
+      sampleCount: result.sample_count,
+      result: result as any,
+      engine: input.engine,
+    })
+    .returning();
+  const row = inserted[0];
+  return {
+    id: row.id,
+    targetRole: row.targetRole,
+    city: row.city,
+    employmentType: row.employmentType as EmploymentType,
+    sampleCount: row.sampleCount,
+    result: row.result as unknown as JobAnalysisResult,
+    engine: row.engine as Engine,
+    createdAt: row.createdAt,
+  };
+}
+
+export async function getAnalysis(userId: number, id: number): Promise<JobAnalysisDTO> {
+  const rows = await db.select().from(jobAnalyses).where(and(eq(jobAnalyses.id, id), eq(jobAnalyses.userId, userId))).limit(1);
+  if (!rows[0]) throw notFound('分析结果不存在');
+  const row = rows[0];
+  return {
+    id: row.id,
+    targetRole: row.targetRole,
+    city: row.city,
+    employmentType: row.employmentType as EmploymentType,
+    sampleCount: row.sampleCount,
+    result: row.result as unknown as JobAnalysisResult,
+    engine: row.engine as Engine,
+    createdAt: row.createdAt,
+  };
+}
+
+export async function latestAnalysis(userId: number): Promise<JobAnalysisDTO | null> {
+  const rows = await db.select().from(jobAnalyses).where(eq(jobAnalyses.userId, userId)).orderBy(desc(jobAnalyses.id)).limit(1);
+  if (!rows[0]) return null;
+  return getAnalysis(userId, rows[0].id);
+}
+
+export async function listSources(userId: number, analysisId?: number): Promise<JobSourceDTO[]> {
+  // 用户可见：自己抓取/输入的 + 全局预置样本
+  const rows = analysisId
+    ? await db.select().from(jobSources).where(eq(jobSources.analysisId, analysisId)).orderBy(desc(jobSources.fetchedAt))
+    : await db.select().from(jobSources).where(eq(jobSources.userId, userId)).orderBy(desc(jobSources.fetchedAt)).limit(100);
+  return rows.map(toSourceDTO);
+}
+
+export async function presetSamplesFor(targetRole: string, employmentType: string, limit: number): Promise<JobSample[]> {
+  // 从预置库（source_type=preset）读取匹配岗位样本；技能从 job_requirements 还原
+  const all = await db.select().from(jobSources).where(eq(jobSources.sourceType, 'preset')).limit(500);
+  const key = (s: string) => s.toLowerCase();
+  const role = targetRole.toLowerCase();
+  const firstRoleWord = role.split(/[\s/]+/)[0] ?? role;
+  const matched = all.filter((r) => {
+    const titleHit = key(r.title).includes(firstRoleWord) || firstRoleWord.includes(key(r.title).split(/[\s/]+/)[0] ?? '');
+    const typeHit = !r.employmentType || r.employmentType === employmentType;
+    return titleHit && typeHit;
+  });
+  const pool = (matched.length >= 3 ? matched : all.filter((r) => !r.employmentType || r.employmentType === employmentType)).slice(0, limit);
+  if (!pool.length) return [];
+  const reqRows = await db
+    .select()
+    .from(jobRequirements)
+    .where(inArray(jobRequirements.jobSourceId, pool.map((r) => r.id)));
+  const skillsBySource = new Map<number, string[]>();
+  for (const rq of reqRows) {
+    if (rq.requirementType !== 'skill') continue;
+    const list = skillsBySource.get(rq.jobSourceId) ?? [];
+    list.push(rq.originalText);
+    skillsBySource.set(rq.jobSourceId, list);
+  }
+  return pool.map((r) => ({
+    title: r.title,
+    company: r.company,
+    location: r.location,
+    employment_type: (r.employmentType ?? 'internship') as EmploymentType,
+    education_requirement: r.educationRequirement,
+    experience_requirement: r.experienceRequirement,
+    skills: skillsBySource.get(r.id) ?? [],
+    description: r.description ?? '',
+    source_url: r.sourceUrl,
+    fetched_at: r.fetchedAt,
+    source_type: 'preset' as const,
+  }));
+}
+
+function toSourceDTO(row: typeof jobSources.$inferSelect): JobSourceDTO {
+  return {
+    id: row.id,
+    title: row.title,
+    company: row.company,
+    location: row.location,
+    employmentType: (row.employmentType ?? null) as JobSourceDTO['employmentType'],
+    sourceUrl: row.sourceUrl,
+    sourceType: row.sourceType as JobSourceDTO['sourceType'],
+    parseStatus: row.parseStatus as JobSourceDTO['parseStatus'],
+    fetchedAt: row.fetchedAt,
+    analysisId: row.analysisId,
+  };
+}

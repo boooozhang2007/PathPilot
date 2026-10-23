@@ -15,7 +15,7 @@ import type {
   TaskStatus,
   AgentRunStatus,
 } from './enums.js';
-import type { JobAnalysisResult, RoadmapResult, RoadmapDiff, SkillGapItem } from './schemas.js';
+import type { JobAnalysisResult, RoadmapResult, RoadmapDiff, SkillGapItem, SkillGapResult } from './schemas.js';
 
 export interface AuthUser {
   id: number;
@@ -185,15 +185,8 @@ export interface GrowthStats {
   upcomingCriticalTasks: RoadmapTaskDTO[];
 }
 
-export interface SkillGapDTO {
-  targetRole: string;
-  matchScore: number;
-  sampleCount: number;
-  items: SkillGapItem[];
-  learningOrder: string[];
-  suggestedProjects: string[];
-  rationale: string;
-}
+/** 能力差距分析结果（与 skillGapResult schema 同构，snake_case） */
+export type SkillGapDTO = SkillGapResult;
 
 export interface ResumeDraftDTO {
   targetRole: string;
