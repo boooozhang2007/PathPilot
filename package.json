@@ -1,0 +1,23 @@
+{
+  "name": "pathpilot",
+  "private": true,
+  "version": "1.0.0",
+  "description": "PathPilot AI - 面向计算机专业大学生的 AI 职业成长规划与能力管理平台",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "dev:server": "npm run dev -w @pathpilot/server",
+    "dev:web": "npm run dev -w @pathpilot/web",
+    "dev:mobile": "npm run start -w @pathpilot/mobile",
+    "build": "npm run build -w @pathpilot/shared && npm run build -w @pathpilot/server && npm run build -w @pathpilot/web",
+    "test": "npm run test -w @pathpilot/shared && npm run test -w @pathpilot/server",
+    "db:migrate": "npm run db:migrate -w @pathpilot/server",
+    "db:seed": "npm run db:seed -w @pathpilot/server"
+  }
+}

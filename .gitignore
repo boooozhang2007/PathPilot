@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+
+# build outputs
+dist/
+*.tsbuildinfo
+apps/web/.next/
+apps/web/out/
+apps/mobile/.expo/
+apps/mobile/android/
+apps/mobile/ios/
+apps/mobile/.dart_tool/
+
+# runtime data & secrets
+apps/server/data/
+.env
+.env.local
+.env.*.local
+*.keystore
+*.jks
+keystore.properties
+
+# Pi framework source checkout (reference only, install from npm)
+pi/
+
+# misc
+.DS_Store
+*.log
