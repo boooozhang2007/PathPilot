@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PathPilot AI · 职业成长航线系统</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Noto+Sans+SC:wght@300;400;500;600;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+:root{
+  --ink:#0B2239;
+  --ink-2:#102C4A;
+  --ink-3:#1B3C60;
+  --paper:#F5F2EA;
+  --paper-2:#EFEAE0;
+  --card:#FFFFFF;
+  --line:#E3DED1;
+  --line-soft:#EDE9DD;
+  --accent:#E8512A;
+  --accent-soft:#FBE9E2;
+  --teal:#0E7C6B;
+  --teal-soft:#E1F0ED;
+  --amber:#B97A0B;
+  --amber-soft:#F7EEDD;
+  --slate:#5A6B7E;
+  --slate-2:#8A97A6;
+  --radius:14px;
+  --shadow:0 1px 2px rgba(11,34,57,.05),0 8px 24px -12px rgba(11,34,57,.12);
+  --shadow-lg:0 2px 4px rgba(11,34,57,.06),0 20px 48px -20px rgba(11,34,57,.22);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  font-family:"Noto Sans SC",sans-serif;
+  background:var(--paper);
+  color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+::selection{background:var(--accent);color:#fff}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.35;
+  background-image:radial-gradient(rgba(11,34,57,.05) 1px,transparent 1px);
+  background-size:26px 26px;
+}
+.mono{font-family:"JetBrains Mono",monospace}
+.serif{font-family:"Fraunces","Noto Serif SC",serif}
+
+/* ============ LAYOUT ============ */
+.app{display:flex;min-height:100vh;position:relative;z-index:1}
+
+/* Sidebar */
+.sidebar{
+  width:248px;flex-shrink:0;background:var(--ink);color:#DCE6F0;
+  display:flex;flex-direction:column;position:sticky;top:0;height:100vh;
+  padding:28px 0 20px;
+}
+.brand{display:flex;align-items:center;gap:12px;padding:0 24px 26px;border-bottom:1px solid rgba(255,255,255,.08)}
+.brand-mark{width:40px;height:40px;flex-shrink:0}
+.brand-name{font-family:"Fraunces",serif;font-size:20px;font-weight:600;letter-spacing:.4px;color:#fff;line-height:1.1}
+.brand-sub{font-size:10px;letter-spacing:2.5px;color:#7E93A9;text-transform:uppercase;margin-top:3px}
+.nav{padding:18px 12px;flex:1;overflow-y:auto}
+.nav-label{font-size:10px;letter-spacing:2px;color:#63798F;padding:0 14px 10px;text-transform:uppercase}
+.nav-item{
+  display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:10px;
+  cursor:pointer;color:#A9BCD0;font-size:14px;font-weight:500;
+  transition:all .22s ease;margin-bottom:2px;border:1px solid transparent;
+}
+.nav-item .idx{font-family:"JetBrains Mono",monospace;font-size:10px;color:#5B7080;width:18px}
+.nav-item svg{width:17px;height:17px;stroke:currentColor;flex-shrink:0}
+.nav-item:hover{background:rgba(255,255,255,.06);color:#fff}
+.nav-item.active{background:var(--accent);color:#fff;box-shadow:0 6px 18px -6px rgba(232,81,42,.55)}
+.nav-item.active .idx{color:rgba(255,255,255,.75)}
+.side-foot{padding:16px 20px 0;border-top:1px solid rgba(255,255,255,.08)}
+.sync-pill{display:flex;align-items:center;gap:8px;font-size:11.5px;color:#8FA5BA;padding:8px 12px;background:rgba(255,255,255,.05);border-radius:8px}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:#3ECF8E;box-shadow:0 0 0 0 rgba(62,207,142,.5);animation:pulse 2.4s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(62,207,142,.45)}70%{box-shadow:0 0 0 8px rgba(62,207,142,0)}100%{box-shadow:0 0 0 0 rgba(62,207,142,0)}}
+.user-chip{display:flex;align-items:center;gap:10px;margin-top:12px;padding:4px 4px}
+.avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#F08A4B);display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:13px;font-family:"Fraunces",serif}
+.user-name{font-size:13px;color:#fff;font-weight:600}
+.user-meta{font-size:10.5px;color:#7E93A9}
+
+/* Main */
+.main{flex:1;min-width:0;padding:34px 42px 60px}
+.topbar{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:30px;gap:20px;flex-wrap:wrap}
+.crumb{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:2px;color:var(--slate-2);text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:10px}
+.crumb::before{content:"";width:22px;height:1px;background:var(--accent)}
+.page-title{font-family:"Fraunces","Noto Serif SC",serif;font-size:clamp(28px,3.2vw,40px);font-weight:600;letter-spacing:-.5px;line-height:1.05}
+.page-title em{font-style:italic;color:var(--accent)}
+.top-actions{display:flex;gap:10px;align-items:center}
+
+/* Buttons */
+.btn{
+  display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:10px;
+  font-size:13.5px;font-weight:600;cursor:pointer;border:1px solid transparent;
+  transition:all .2s ease;font-family:inherit;white-space:nowrap;
+}
+.btn-primary{background:var(--ink);color:#fff}
+.btn-primary:hover{background:var(--ink-3);transform:translateY(-1px);box-shadow:0 8px 20px -8px rgba(11,34,57,.5)}
+.btn-accent{background:var(--accent);color:#fff}
+.btn-accent:hover{background:#D3441F;transform:translateY(-1px);box-shadow:0 8px 20px -8px rgba(232,81,42,.6)}
+.btn-ghost{background:var(--card);border-color:var(--line);color:var(--ink)}
+.btn-ghost:hover{border-color:var(--ink)}
+.btn-sm{padding:7px 13px;font-size:12.5px;border-radius:8px}
+
+/* Cards & grid */
+.card{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--radius);box-shadow:var(--shadow)}
+.card-pad{padding:22px 24px}
+.card-title{font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px}
+.card-title .tag-ic{width:6px;height:6px;border-radius:2px;background:var(--accent);transform:rotate(45deg)}
+.card-sub{font-size:12px;color:var(--slate-2);margin-top:4px}
+.grid{display:grid;gap:18px}
+
+/* Page switching */
+.page{display:none}
+.page.active{display:block;animation:pageIn .5s cubic-bezier(.22,1,.36,1)}
+@keyframes pageIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.reveal{opacity:0;transform:translateY(16px);animation:reveal .7s cubic-bezier(.22,1,.36,1) forwards}
+@keyframes reveal{to{opacity:1;transform:none}}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:99px;line-height:1.5}
+.b-ok{background:var(--teal-soft);color:var(--teal)}
+.b-warn{background:var(--amber-soft);color:var(--amber)}
+.b-risk{background:var(--accent-soft);color:var(--accent)}
+.b-ink{background:#EAF0F6;color:var(--ink-2)}
+.b-mut{background:#F0EEE7;color:var(--slate)}
+.b-dot{width:5px;height:5px;border-radius:50%;background:currentColor}
+
+/* ============ DASHBOARD ============ */
+.hero{display:grid;grid-template-columns:1.6fr 1fr;gap:18px;margin-bottom:18px}
+.hero-main{
+  background:var(--ink);color:#fff;border-radius:18px;padding:34px 38px;position:relative;overflow:hidden;
+  box-shadow:var(--shadow-lg);
+}
+.hero-main::after{
+  content:"";position:absolute;right:-70px;top:-70px;width:280px;height:280px;border-radius:50%;
+  border:1px dashed rgba(255,255,255,.16);
+}
+.hero-main::before{
+  content:"";position:absolute;right:30px;bottom:-110px;width:220px;height:220px;border-radius:50%;
+  border:1px dashed rgba(255,255,255,.1);
+}
+.hero-route{position:absolute;right:46px;top:44px;opacity:.9}
+.hello{font-size:13px;color:#9FB4C9;letter-spacing:1px}
+.hello-name{font-family:"Fraunces","Noto Serif SC",serif;font-size:34px;font-weight:600;margin:6px 0 4px}
+.hello-goal{font-size:14px;color:#C4D3E2;margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.goal-chip{background:rgba(232,81,42,.18);border:1px solid rgba(232,81,42,.45);color:#FF9A76;padding:5px 13px;border-radius:99px;font-size:12.5px;font-weight:600}
+.goal-line{color:#546B83;font-family:"JetBrains Mono",monospace;font-size:11px}
+.hero-stats{display:flex;gap:34px;margin-top:26px;position:relative;z-index:1;flex-wrap:wrap}
+.hstat .num{font-family:"Fraunces",serif;font-size:34px;font-weight:600;line-height:1}
+.hstat .num small{font-size:16px;color:#8FA5BA}
+.hstat .lbl{font-size:11.5px;color:#8FA5BA;margin-top:6px;letter-spacing:.5px}
+.match-card{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:26px;text-align:center;position:relative}
+.ring-wrap{position:relative;width:150px;height:150px;margin:8px 0}
+.ring-wrap svg{transform:rotate(-90deg)}
+.ring-num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring-num .v{font-family:"Fraunces",serif;font-size:40px;font-weight:600;line-height:1}
+.ring-num .u{font-size:11px;color:var(--slate-2);margin-top:4px}
+.match-note{font-size:11px;color:var(--slate-2);line-height:1.6;margin-top:6px;max-width:200px}
+
+.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:18px}
+.stat-card{padding:20px 22px;position:relative;overflow:hidden;transition:transform .25s ease,box-shadow .25s ease}
+.stat-card:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg)}
+.stat-card .k{font-size:12px;color:var(--slate);font-weight:600;display:flex;justify-content:space-between;align-items:center}
+.stat-card .v{font-family:"Fraunces",serif;font-size:34px;font-weight:600;margin-top:8px;line-height:1}
+.stat-card .v small{font-size:14px;color:var(--slate-2);font-family:"JetBrains Mono",monospace}
+.stat-card .trend{font-size:11px;margin-top:8px;font-family:"JetBrains Mono",monospace}
+.trend.up{color:var(--teal)}
+.stat-card .spark{position:absolute;right:-8px;bottom:-8px;opacity:.08;width:76px;height:76px}
+
+.dash-grid{display:grid;grid-template-columns:1.5fr 1fr;gap:18px}
+.gap-chip{
+  display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border:1px solid var(--line-soft);
+  border-radius:11px;margin-bottom:10px;transition:all .2s;background:#FDFCF9;
+}
+.gap-chip:hover{border-color:var(--accent);transform:translateX(4px)}
+.gap-name{font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:10px}
+.gap-name .mono{font-size:10px;color:var(--slate-2)}
+.imp-bar{display:flex;gap:3px}
+.imp-bar i{width:14px;height:4px;border-radius:2px;background:var(--line)}
+.imp-bar i.on{background:var(--accent)}
+.task-row{display:flex;align-items:center;gap:13px;padding:12px 6px;border-bottom:1px dashed var(--line);font-size:13px}
+.task-row:last-child{border-bottom:none}
+.task-check{width:18px;height:18px;border-radius:6px;border:1.5px solid var(--line);flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;background:#fff}
+.task-check:hover{border-color:var(--teal)}
+.task-check.done{background:var(--teal);border-color:var(--teal);color:#fff}
+.task-title{flex:1;font-weight:500}
+.task-title.done{text-decoration:line-through;color:var(--slate-2)}
+.task-meta{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--slate-2)}
+.quick-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.quick-btn{
+  display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:16px;border-radius:12px;
+  border:1px solid var(--line-soft);background:#FDFCF9;cursor:pointer;transition:all .22s;font-family:inherit;text-align:left;
+}
+.quick-btn:hover{border-color:var(--ink);transform:translateY(-2px);box-shadow:var(--shadow)}
+.quick-btn .ic{width:32px;height:32px;border-radius:9px;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center}
+.quick-btn .ic.o{background:var(--accent)}
+.quick-btn .t{font-size:13px;font-weight:600}
+.quick-btn .d{font-size:11px;color:var(--slate-2)}
+.adjust-card{border-left:3px solid var(--accent);background:linear-gradient(90deg,var(--accent-soft),#fff 55%)}
+.diff-line{display:flex;gap:8px;align-items:center;font-size:12.5px;padding:6px 0}
+
+/* ============ JOB INSIGHTS ============ */
+.search-bar{display:flex;gap:12px;padding:18px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:10.5px;letter-spacing:1px;color:var(--slate);font-weight:600;text-transform:uppercase}
+.input,.select{
+  border:1px solid var(--line);border-radius:9px;padding:9px 13px;font-size:13.5px;font-family:inherit;
+  background:#FDFCF9;color:var(--ink);outline:none;transition:border .2s;min-width:150px;
+}
+.input:focus,.select:focus{border-color:var(--ink)}
+.sample-banner{
+  display:flex;align-items:center;gap:16px;padding:16px 22px;margin-bottom:18px;flex-wrap:wrap;
+  background:var(--ink);color:#fff;border-radius:14px;
+}
+.sample-banner .big{font-family:"Fraunces",serif;font-size:30px;font-weight:600}
+.sample-banner .sep{width:1px;height:32px;background:rgba(255,255,255,.15)}
+.chart-box{height:280px}
+.chart-box-sm{height:230px}
+.role-switch{display:flex;gap:6px}
+.role-switch button{
+  border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 12px;font-size:12px;cursor:pointer;
+  font-family:inherit;color:var(--slate);transition:all .2s;font-weight:600;
+}
+.role-switch button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.job-table{width:100%;border-collapse:collapse;font-size:13px}
+.job-table th{text-align:left;font-size:11px;letter-spacing:1px;color:var(--slate-2);text-transform:uppercase;padding:10px 14px;border-bottom:1px solid var(--line);font-weight:600}
+.job-table td{padding:13px 14px;border-bottom:1px dashed var(--line-soft);vertical-align:middle}
+.job-table tr:hover td{background:#FBFAF5}
+.src-link{color:var(--accent);text-decoration:none;font-weight:600;font-size:12px;display:inline-flex;align-items:center;gap:4px}
+.src-link:hover{text-decoration:underline}
+.skill-pill{display:inline-block;background:#EAF0F6;color:var(--ink-2);font-size:11px;padding:2px 8px;border-radius:6px;margin:1px 2px;font-weight:500}
+
+/* ============ ROADMAP ============ */
+.route-summary{display:flex;gap:26px;padding:20px 26px;margin-bottom:26px;align-items:center;flex-wrap:wrap}
+.rs-item .n{font-family:"Fraunces",serif;font-size:26px;font-weight:600}
+.rs-item .l{font-size:11px;color:var(--slate-2);margin-top:2px}
+.rs-sep{width:1px;height:34px;background:var(--line)}
+.timeline{position:relative;padding:10px 0 30px}
+.timeline::before{
+  content:"";position:absolute;left:29px;top:20px;bottom:20px;width:2px;
+  background:repeating-linear-gradient(to bottom,var(--ink) 0 6px,transparent 6px 12px);
+  opacity:.25;
+}
+.t-node{position:relative;padding:0 0 26px 74px}
+.t-dot{
+  position:absolute;left:16px;top:4px;width:28px;height:28px;border-radius:50%;
+  background:#fff;border:2px solid var(--ink);display:flex;align-items:center;justify-content:center;
+  font-family:"JetBrains Mono",monospace;font-size:9px;font-weight:700;z-index:2;
+}
+.t-node.done .t-dot{background:var(--teal);border-color:var(--teal);color:#fff}
+.t-node.now .t-dot{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 0 0 6px rgba(232,81,42,.15);animation:nodePulse 2.2s infinite}
+@keyframes nodePulse{0%,100%{box-shadow:0 0 0 5px rgba(232,81,42,.18)}50%{box-shadow:0 0 0 10px rgba(232,81,42,.05)}}
+.t-node.future .t-dot{border-color:var(--line);color:var(--slate-2)}
+.t-card{padding:20px 24px;transition:all .25s}
+.t-node.now .t-card{border-color:var(--accent);box-shadow:var(--shadow-lg)}
+.t-card:hover{transform:translateX(4px)}
+.t-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.t-term{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;text-transform:uppercase}
+.t-node.done .t-term{color:var(--teal)}
+.t-node.future .t-term{color:var(--slate-2)}
+.t-goal{font-family:"Fraunces","Noto Serif SC",serif;font-size:19px;font-weight:600;margin:5px 0 10px}
+.t-tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.t-foot{display:flex;gap:20px;font-size:12px;color:var(--slate);flex-wrap:wrap;align-items:center}
+.t-foot b{color:var(--ink);font-family:"JetBrains Mono",monospace}
+.milestone{display:flex;gap:9px;align-items:center;background:#FDFCF9;border:1px dashed var(--line);border-radius:9px;padding:8px 13px;font-size:12px;margin-top:12px}
+.milestone .flag{color:var(--accent)}
+.progress{height:5px;background:var(--line-soft);border-radius:99px;overflow:hidden;margin-top:14px}
+.progress i{display:block;height:100%;border-radius:99px;background:var(--teal)}
+.t-node.now .progress i{background:var(--accent)}
+
+/* ============ DYNAMIC PLANNING ============ */
+.plan-grid{display:grid;grid-template-columns:380px 1fr;gap:18px;align-items:start}
+.cond-row{padding:16px 0;border-bottom:1px dashed var(--line)}
+.cond-row:last-of-type{border:none}
+.cond-label{display:flex;justify-content:space-between;font-size:13px;font-weight:600;margin-bottom:10px}
+.cond-label .val{font-family:"JetBrains Mono",monospace;color:var(--accent)}
+input[type=range]{width:100%;-webkit-appearance:none;height:5px;border-radius:99px;background:var(--line);outline:none}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:19px;height:19px;border-radius:50%;background:var(--accent);
+  border:3px solid #fff;box-shadow:0 2px 8px rgba(232,81,42,.5);cursor:pointer;
+}
+.seg{display:flex;background:var(--paper-2);border-radius:10px;padding:3px;gap:3px}
+.seg button{flex:1;border:none;background:transparent;padding:8px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--slate);font-family:inherit;transition:all .2s}
+.seg button.on{background:#fff;color:var(--ink);box-shadow:0 2px 6px rgba(11,34,57,.12)}
+.diff-item{display:flex;gap:12px;padding:11px 4px;border-bottom:1px dashed var(--line-soft);font-size:13px;align-items:flex-start}
+.diff-item:last-child{border:none}
+.diff-badge{flex-shrink:0;width:52px;text-align:center}
+.diff-item .why{font-size:11px;color:var(--slate-2);margin-top:2px}
+.ver-row{display:flex;align-items:center;gap:14px;padding:13px 6px;border-bottom:1px dashed var(--line-soft);font-size:13px}
+.ver-row:last-child{border:none}
+.ver-id{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:12px;background:var(--ink);color:#fff;padding:4px 9px;border-radius:7px}
+.ver-row.current .ver-id{background:var(--accent)}
+
+/* ============ PROFILE ============ */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:20px;overflow-x:auto}
+.tab{
+  padding:11px 18px;font-size:13.5px;font-weight:600;color:var(--slate);cursor:pointer;border:none;background:none;
+  font-family:inherit;position:relative;white-space:nowrap;
+}
+.tab::after{content:"";position:absolute;left:14px;right:14px;bottom:-1px;height:2.5px;background:transparent;border-radius:2px;transition:background .2s}
+.tab.on{color:var(--ink)}
+.tab.on::after{background:var(--accent)}
+.tab-pane{display:none}
+.tab-pane.on{display:block;animation:pageIn .4s ease}
+.skill-row{display:flex;align-items:center;gap:16px;padding:15px 6px;border-bottom:1px dashed var(--line-soft)}
+.skill-row:last-child{border:none}
+.skill-name{width:170px;font-weight:600;font-size:13.5px}
+.skill-cat{width:110px}
+.level-track{flex:1;height:6px;background:var(--line-soft);border-radius:99px;overflow:hidden;min-width:90px}
+.level-fill{height:100%;border-radius:99px;background:var(--ink)}
+.exp-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.exp-card{padding:20px 22px;transition:all .22s}
+.exp-card:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg)}
+.exp-type{font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;font-weight:700}
+.exp-title{font-family:"Fraunces","Noto Serif SC",serif;font-size:17px;font-weight:600;margin:7px 0 6px}
+.exp-desc{font-size:12.5px;color:var(--slate);line-height:1.7}
+
+/* ============ TASKS ============ */
+.today-strip{display:flex;gap:14px;margin-bottom:20px;overflow-x:auto;padding-bottom:4px}
+.today-card{
+  min-width:250px;background:var(--ink);color:#fff;border-radius:14px;padding:18px 20px;position:relative;overflow:hidden;flex-shrink:0;
+}
+.today-card.alt{background:var(--accent)}
+.today-card .hh{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:1.5px;opacity:.65;text-transform:uppercase}
+.today-card .tt{font-size:14.5px;font-weight:600;margin:8px 0 12px;line-height:1.45}
+.kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;align-items:start}
+.kb-col{background:var(--paper-2);border-radius:14px;padding:12px;min-height:200px}
+.kb-head{display:flex;justify-content:space-between;align-items:center;padding:4px 8px 12px;font-size:12.5px;font-weight:700}
+.kb-count{font-family:"JetBrains Mono",monospace;font-size:11px;background:#fff;border:1px solid var(--line);border-radius:99px;padding:1px 9px;color:var(--slate)}
+.kb-card{
+  background:#fff;border:1px solid var(--line-soft);border-radius:11px;padding:13px 15px;margin-bottom:10px;
+  cursor:grab;transition:all .2s;box-shadow:0 1px 3px rgba(11,34,57,.05);
+}
+.kb-card:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.kb-card .kt{font-size:13px;font-weight:600;line-height:1.45;margin-bottom:9px}
+.kb-card .km{display:flex;justify-content:space-between;align-items:center;font-size:10.5px;color:var(--slate-2);font-family:"JetBrains Mono",monospace}
+.pri{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
+.pri-high{background:var(--accent)}
+.pri-mid{background:var(--amber)}
+.pri-low{background:var(--slate-2)}
+.kb-act{display:flex;gap:6px;margin-top:10px}
+.kb-act button{
+  flex:1;border:1px solid var(--line);background:#fff;border-radius:7px;font-size:10.5px;padding:4px;
+  cursor:pointer;font-family:inherit;color:var(--slate);font-weight:600;transition:all .15s;
+}
+.kb-act button:hover{border-color:var(--teal);color:var(--teal)}
+
+/* ============ ADVISOR ============ */
+.chat-wrap{display:grid;grid-template-columns:1fr 300px;gap:18px;height:calc(100vh - 210px);min-height:520px}
+.chat-panel{display:flex;flex-direction:column;overflow:hidden}
+.chat-scroll{flex:1;overflow-y:auto;padding:26px;display:flex;flex-direction:column;gap:20px}
+.msg{display:flex;gap:13px;max-width:82%;animation:pageIn .4s ease}
+.msg.user{align-self:flex-end;flex-direction:row-reverse}
+.msg-av{width:34px;height:34px;border-radius:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.msg.ai .msg-av{background:var(--ink);color:#fff;font-family:"Fraunces",serif}
+.msg.user .msg-av{background:var(--accent);color:#fff}
+.bubble{padding:14px 18px;border-radius:14px;font-size:13.5px;line-height:1.75}
+.msg.ai .bubble{background:#fff;border:1px solid var(--line-soft);border-top-left-radius:4px;box-shadow:var(--shadow)}
+.msg.user .bubble{background:var(--ink);color:#fff;border-top-right-radius:4px}
+.cite-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+.cite{
+  font-size:10.5px;font-family:"JetBrains Mono",monospace;background:#EAF0F6;color:var(--ink-2);
+  padding:3px 9px;border-radius:6px;display:inline-flex;align-items:center;gap:5px;cursor:default;
+}
+.cite::before{content:"§";color:var(--accent)}
+.evi-block{margin-top:11px;border-left:2px solid var(--accent);background:#FDFCF9;padding:10px 14px;border-radius:0 9px 9px 0;font-size:12px;color:var(--slate)}
+.evi-block b{color:var(--ink)}
+.chat-input{display:flex;gap:10px;padding:16px;border-top:1px solid var(--line-soft);background:#FBFAF6}
+.chat-input .input{flex:1;background:#fff}
+.sugg-chip{
+  display:block;width:100%;text-align:left;padding:11px 14px;border:1px solid var(--line-soft);border-radius:10px;
+  background:#FDFCF9;font-size:12.5px;cursor:pointer;margin-bottom:9px;transition:all .2s;font-family:inherit;color:var(--ink);line-height:1.5;
+}
+.sugg-chip:hover{border-color:var(--accent);color:var(--accent);transform:translateX(3px)}
+.typing{display:inline-flex;gap:4px;padding:6px 2px}
+.typing i{width:6px;height:6px;border-radius:50%;background:var(--slate-2);animation:tp 1.2s infinite}
+.typing i:nth-child(2){animation-delay:.15s}
+.typing i:nth-child(3){animation-delay:.3s}
+@keyframes tp{0%,60%,100%{transform:none;opacity:.4}30%{transform:translateY(-5px);opacity:1}}
+
+/* Utility */
+.mt18{margin-top:18px}
+.flex-between{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.text-mut{color:var(--slate-2);font-size:12px}
+.section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:12px;flex-wrap:wrap}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#CFC9BA;border-radius:99px;border:2px solid var(--paper)}
+::-webkit-scrollbar-thumb:hover{background:var(--slate-2)}
+
+/* Responsive */
+@media(max-width:1180px){
+  .stat-row{grid-template-columns:repeat(2,1fr)}
+  .kanban{grid-template-columns:repeat(2,1fr)}
+  .plan-grid,.dash-grid,.hero,.chat-wrap{grid-template-columns:1fr}
+  .chat-wrap{height:auto}
+  .chat-panel{height:560px}
+  .exp-grid{grid-template-columns:1fr}
+}
+@media(max-width:820px){
+  .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:50;transform:translateX(-100%);transition:transform .3s}
+  .sidebar.open{transform:none}
+  .main{padding:22px 18px 50px}
+  .menu-btn{display:inline-flex !important}
+  .stat-row,.kanban{grid-template-columns:1fr}
+}
+.menu-btn{display:none}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 48 48" fill="none">
+        <circle cx="24" cy="24" r="21" stroke="#E8512A" stroke-width="2.5"/>
+        <circle cx="24" cy="24" r="14.5" stroke="rgba(255,255,255,.25)" stroke-width="1.2" stroke-dasharray="3 4"/>
+        <path d="M24 10 L28.5 24 L24 38 L19.5 24 Z" fill="#fff"/>
+        <path d="M24 10 L28.5 24 L24 24 Z" fill="#E8512A"/>
+        <circle cx="24" cy="24" r="2.4" fill="#0B2239" stroke="#fff" stroke-width="1.4"/>
+      </svg>
+      <div>
+        <div class="brand-name">PathPilot</div>
+        <div class="brand-sub">Career OS</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-label">Navigate</div>
+      <div class="nav-item active" data-page="dashboard">
+        <span class="idx">01</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg>
+        总览 Dashboard
+      </div>
+      <div class="nav-item" data-page="jobs">
+        <span class="idx">02</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>
+        岗位洞察
+      </div>
+      <div class="nav-item" data-page="roadmap">
+        <span class="idx">03</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 19 C9 19 9 5 15 5 C17.5 5 19 6.5 20 8" stroke-dasharray="3.5 3"/><circle cx="4" cy="19" r="1.8" fill="currentColor"/><path d="M17 5.5 L21 8 L17 10.5" /></svg>
+        成长路线
+      </div>
+      <div class="nav-item" data-page="planning">
+        <span class="idx">04</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 7 H13 M17 7 H20 M4 17 H9 M13 17 H20"/><circle cx="15" cy="7" r="2.2"/><circle cx="11" cy="17" r="2.2"/></svg>
+        动态规划
+      </div>
+      <div class="nav-item" data-page="profile">
+        <span class="idx">05</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 8 L12 3.5 L20 8 V16.5 L12 21 L4 16.5 Z"/><path d="M12 12 L20 8 M12 12 V21 M12 12 L4 8"/></svg>
+        能力档案
+      </div>
+      <div class="nav-item" data-page="tasks">
+        <span class="idx">06</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4 V20 M15 4 V20" stroke-dasharray="2.5 2.5"/></svg>
+        任务中心
+      </div>
+      <div class="nav-item" data-page="advisor">
+        <span class="idx">07</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M12 3 L13.6 8.4 L19 10 L13.6 11.6 L12 17 L10.4 11.6 L5 10 L10.4 8.4 Z"/><circle cx="19" cy="18" r="2"/></svg>
+        AI 职业顾问
+      </div>
+    </nav>
+
+    <div class="side-foot">
+      <div class="sync-pill"><span class="sync-dot"></span>已同步 · Web ↔ Android · 刚刚</div>
+      <div class="user-chip">
+        <div class="avatar">澈</div>
+        <div>
+          <div class="user-name">林澈</div>
+          <div class="user-meta">计算机科学 · 大二</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+    <button class="btn btn-ghost btn-sm menu-btn" onclick="document.getElementById('sidebar').classList.toggle('open')" style="margin-bottom:16px">☰ 菜单</button>
+
+    <!-- ======== PAGE 1: DASHBOARD ======== -->
+    <section class="page active" id="page-dashboard">
+      <div class="hero reveal">
+        <div class="hero-main">
+          <svg class="hero-route" width="150" height="86" viewBox="0 0 150 86" fill="none">
+            <path d="M4 78 C40 78 44 20 84 20 C112 20 120 40 146 14" stroke="rgba(255,255,255,.35)" stroke-width="1.4" stroke-dasharray="4 5"/>
+            <circle cx="4" cy="78" r="3" fill="#E8512A"/>
+            <circle cx="84" cy="20" r="2.5" fill="rgba(255,255,255,.6)"/>
+            <path d="M138 12 L147 13 L141 20 Z" fill="#E8512A"/>
+          </svg>
+          <div class="hello mono" id="helloTime">GOOD EVENING —</div>
+          <div class="hello-name">晚上好，林澈</div>
+          <div class="hello-goal">
+            <span class="goal-chip">目标航线 · Java 后端开发</span>
+            <span class="goal-line">PATH / 直接就业 / GRAD 2028.06</span>
+          </div>
+          <div class="hero-stats">
+            <div class="hstat"><div class="num">78<small>%</small></div><div class="lbl">岗位匹配度</div></div>
+            <div class="hstat"><div class="num">62<small>%</small></div><div class="lbl">本学期进度</div></div>
+            <div class="hstat"><div class="num">8<small>h/周</small></div><div class="lbl">时间预算</div></div>
+            <div class="hstat"><div class="num">v3.2</div><div class="lbl">当前规划版本</div></div>
+          </div>
+        </div>
+        <div class="card match-card">
+          <div class="card-title"><span class="tag-ic"></span>能力匹配度</div>
+          <div class="ring-wrap">
+            <svg width="150" height="150" viewBox="0 0 150 150">
+              <circle cx="75" cy="75" r="64" stroke="#EFEAE0" stroke-width="11" fill="none"/>
+              <circle id="matchRing" cx="75" cy="75" r="64" stroke="#E8512A" stroke-width="11" fill="none"
+                stroke-linecap="round" stroke-dasharray="402" stroke-dashoffset="402"/>
+            </svg>
+            <div class="ring-num"><div class="v serif" id="matchNum">0%</div><div class="u">加权匹配</div></div>
+          </div>
+          <div class="match-note">基于 24 条岗位样本加权计算</div>
+        </div>
+      </div>
+
+      <div class="stat-row">
+        <div class="card stat-card reveal" style="animation-delay:.05s">
+          <div class="k">已完成任务 <span class="mono text-mut">TASKS</span></div>
+          <div class="v">34<small> / 56</small></div>
+          <div class="trend up">▲ 本周 +6</div>
+        </div>
+        <div class="card stat-card reveal" style="animation-delay:.1s">
+          <div class="k">技能证据 <span class="mono text-mut">EVIDENCE</span></div>
+          <div class="v">12<small> 项</small></div>
+          <div class="trend up">▲ 新增 Git 项目证据</div>
+        </div>
+        <div class="card stat-card reveal" style="animation-delay:.15s">
+          <div class="k">进行中项目 <span class="mono text-mut">PROJECTS</span></div>
+          <div class="v">2<small> 个</small></div>
+          <div class="trend" style="color:var(--slate-2)">校园二手集市 API</div>
+        </div>
+        <div class="card stat-card reveal" style="animation-delay:.2s">
+          <div class="k">连续记录 <span class="mono text-mut">STREAK</span></div>
+          <div class="v">21<small> 天</small></div>
+          <div class="trend up">▲ 个人最佳</div>
+        </div>
+      </div>
+
+      <div class="dash-grid">
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <div class="card card-pad reveal" style="animation-delay:.25s">
+            <div class="section-head">
+              <div>
+                <div class="card-title"><span class="tag-ic"></span>核心技能缺口</div>
+                <div class="card-sub">对照 Java 后端岗位样本，按权重排序</div>
+              </div>
+              <button class="btn btn-ghost btn-sm" data-go="jobs">查看岗位分析 →</button>
+            </div>
+            <div class="gap-chip"><div class="gap-name">Redis 缓存 <span class="mono">FREQ 79%</span></div><div style="display:flex;align-items:center;gap:10px"><div class="imp-bar"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div><span class="badge b-risk">需提升</span></div></div>
+            <div class="gap-chip"><div class="gap-name">MySQL 进阶 <span class="mono">FREQ 88%</span></div><div style="display:flex;align-items:center;gap:10px"><div class="imp-bar"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div><span class="badge b-warn">待验证</span></div></div>
+            <div class="gap-chip"><div class="gap-name">消息队列 MQ <span class="mono">FREQ 54%</span></div><div style="display:flex;align-items:center;gap:10px"><div class="imp-bar"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div><span class="badge b-risk">需提升</span></div></div>
+            <div class="gap-chip"><div class="gap-name">Linux 部署 <span class="mono">FREQ 67%</span></div><div style="display:flex;align-items:center;gap:10px"><div class="imp-bar"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div><span class="badge b-mut">未评估</span></div></div>
+          </div>
+
+          <div class="card card-pad reveal" style="animation-delay:.3s">
+            <div class="section-head">
+              <div class="card-title"><span class="tag-ic"></span>近期任务</div>
+              <button class="btn btn-ghost btn-sm" data-go="tasks">任务中心 →</button>
+            </div>
+            <div id="dashTasks"></div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <div class="card card-pad adjust-card reveal" style="animation-delay:.25s">
+            <div class="card-title"><span class="tag-ic"></span>最近一次规划调整</div>
+            <div class="card-sub mono" style="margin-top:2px">v3.1 → v3.2 · 2026-10-21</div>
+            <div style="margin-top:14px">
+              <div class="diff-line"><span class="badge b-ink diff-badge" style="width:auto">原因</span>每周时间 8h → 5h（期中周）</div>
+              <div class="diff-line"><span class="badge b-ok diff-badge" style="width:auto">保留</span>12 项已完成任务及成果</div>
+              <div class="diff-line"><span class="badge b-warn diff-badge" style="width:auto">延后</span>Redis 实战 → 第 5 学期</div>
+              <div class="diff-line"><span class="badge b-risk diff-badge" style="width:auto">取消</span>可选：Elasticsearch 入门</div>
+            </div>
+            <button class="btn btn-primary btn-sm mt18" data-go="planning" style="margin-top:16px">查看完整对比</button>
+          </div>
+
+          <div class="card card-pad reveal" style="animation-delay:.3s">
+            <div class="card-title" style="margin-bottom:14px"><span class="tag-ic"></span>快捷入口</div>
+            <div class="quick-grid">
+              <button class="quick-btn" data-go="advisor"><span class="ic o"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 3 L13.6 8.4 L19 10 L13.6 11.6 L12 17 L10.4 11.6 L5 10 L10.4 8.4 Z"/></svg></span><span class="t">问 AI 顾问</span><span class="d">基于我的档案咨询</span></button>
+              <button class="quick-btn" data-go="roadmap"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 19 C9 19 9 5 15 5" stroke-dasharray="3 3"/></svg></span><span class="t">成长路线</span><span class="d">查看学期时间轴</span></button>
+              <button class="quick-btn" data-go="profile"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 8 L12 3.5 L20 8 V16.5 L12 21 L4 16.5 Z"/></svg></span><span class="t">记录成果</span><span class="d">更新能力档案</span></button>
+              <button class="quick-btn" data-go="jobs"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></span><span class="t">岗位洞察</span><span class="d">刷新招聘样本</span></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======== PAGE 2: JOB INSIGHTS ======== -->
+    <section class="page" id="page-jobs">
+      <div class="topbar">
+        <div>
+          <div class="crumb">02 / Job Intelligence</div>
+          <h1 class="page-title">岗位<em>洞察</em></h1>
+        </div>
+        <div class="top-actions"><button class="btn btn-accent" onclick="fakeRefresh(this)">↻ 重新采集样本</button></div>
+      </div>
+
+      <div class="card search-bar reveal">
+        <div class="field"><label>目标岗位</label><input class="input" value="Java 后端开发" /></div>
+        <div class="field"><label>城市</label><select class="select"><option>杭州</option><option>上海</option><option>深圳</option><option>不限</option></select></div>
+        <div class="field"><label>类型</label><select class="select"><option>实习</option><option>正式校招</option></select></div>
+        <div class="field"><label>学历筛选</label><select class="select"><option>本科及以上</option><option>硕士及以上</option><option>不限</option></select></div>
+        <div style="margin-left:auto;align-self:flex-end"><button class="btn btn-primary" onclick="fakeRefresh(this)">分析岗位要求</button></div>
+      </div>
+
+      <div class="sample-banner reveal" style="animation-delay:.05s">
+        <div><div class="big serif">24</div><div style="font-size:11px;color:#8FA5BA">有效岗位样本</div></div>
+        <div class="sep"></div>
+        <div style="font-size:12.5px;color:#C4D3E2;line-height:1.7">
+          采集于 2026-10-20 · 来源：BOSS 直聘 / 拉勾 / 实习僧 · <b style="color:#FF9A76">4 条解析失败已剔除</b>
+        </div>
+      </div>
+
+      <div class="grid" style="grid-template-columns:1.5fr 1fr;margin-bottom:18px">
+        <div class="card card-pad reveal" style="animation-delay:.1s">
+          <div class="section-head">
+            <div>
+              <div class="card-title"><span class="tag-ic"></span>技能需求频次</div>
+              <div class="card-sub">样本量 n=24 · 统计范围：杭州 · Java 后端实习</div>
+            </div>
+            <div class="role-switch">
+              <button class="on" onclick="switchRole(this,'java')">Java 后端</button>
+              <button onclick="switchRole(this,'fe')">前端开发</button>
+            </div>
+          </div>
+          <div id="chartSkillBar" class="chart-box"></div>
+        </div>
+        <div class="card card-pad reveal" style="animation-delay:.15s">
+          <div class="card-title"><span class="tag-ic"></span>需求分类占比</div>
+          <div class="card-sub">技术 / 框架工具 / 通用能力 / 加分项</div>
+          <div id="chartSkillPie" class="chart-box"></div>
+        </div>
+      </div>
+
+      <div class="grid" style="grid-template-columns:1fr 1fr;margin-bottom:18px">
+        <div class="card card-pad reveal" style="animation-delay:.2s">
+          <div class="card-title"><span class="tag-ic"></span>学历要求分布</div>
+          <div class="card-sub">按岗位样本计数</div>
+          <div id="chartEdu" class="chart-box-sm"></div>
+        </div>
+        <div class="card card-pad reveal" style="animation-delay:.25s">
+          <div class="card-title"><span class="tag-ic"></span>经验要求分布</div>
+          <div class="card-sub">按岗位样本计数</div>
+          <div id="chartExp" class="chart-box-sm"></div>
+        </div>
+      </div>
+
+      <div class="card card-pad reveal" style="animation-delay:.3s">
+        <div class="section-head">
+          <div>
+            <div class="card-title"><span class="tag-ic"></span>岗位样本明细</div>
+          </div>
+          <span class="badge b-ink">显示 5 / 24 条</span>
+        </div>
+        <div style="overflow-x:auto">
+        <table class="job-table">
+          <thead><tr><th>岗位</th><th>公司</th><th>地点</th><th>核心技能</th><th>采集时间</th><th>来源</th></tr></thead>
+          <tbody>
+            <tr><td><b>Java 后端实习生</b></td><td>字节跳动</td><td>杭州</td><td><span class="skill-pill">Java</span><span class="skill-pill">MySQL</span><span class="skill-pill">Redis</span></td><td class="mono text-mut">10-20 14:02</td><td><a class="src-link" href="#" onclick="return false">BOSS 直聘 ↗</a></td></tr>
+            <tr><td><b>后端开发工程师（实习）</b></td><td>蚂蚁集团</td><td>杭州</td><td><span class="skill-pill">Java</span><span class="skill-pill">Spring Boot</span><span class="skill-pill">MQ</span></td><td class="mono text-mut">10-20 14:05</td><td><a class="src-link" href="#" onclick="return false">拉勾 ↗</a></td></tr>
+            <tr><td><b>Java 开发实习生</b></td><td>网易</td><td>杭州</td><td><span class="skill-pill">Java</span><span class="skill-pill">Linux</span><span class="skill-pill">Git</span></td><td class="mono text-mut">10-20 14:11</td><td><a class="src-link" href="#" onclick="return false">实习僧 ↗</a></td></tr>
+            <tr><td><b>服务端开发（校招实习）</b></td><td>阿里云</td><td>杭州</td><td><span class="skill-pill">Java</span><span class="skill-pill">分布式</span><span class="skill-pill">MySQL</span></td><td class="mono text-mut">10-20 14:18</td><td><a class="src-link" href="#" onclick="return false">BOSS 直聘 ↗</a></td></tr>
+            <tr><td><b>Java 后端（日常实习）</b></td><td>有赞</td><td>杭州</td><td><span class="skill-pill">Spring Boot</span><span class="skill-pill">Redis</span><span class="skill-pill">Docker</span></td><td class="mono text-mut">10-20 14:24</td><td><a class="src-link" href="#" onclick="return false">拉勾 ↗</a></td></tr>
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======== PAGE 3: ROADMAP ======== -->
+    <section class="page" id="page-roadmap">
+      <div class="topbar">
+        <div>
+          <div class="crumb">03 / Flight Path</div>
+          <h1 class="page-title">成长<em>路线</em></h1>
+        </div>
+        <div class="top-actions"><span class="badge b-ink mono">规划 v3.2</span><button class="btn btn-ghost">导出路线 PDF</button><button class="btn btn-accent" data-go="planning">调整规划</button></div>
+      </div>
+
+      <div class="card route-summary reveal">
+        <div class="rs-item"><div class="n serif">6</div><div class="l">剩余学期</div></div>
+        <div class="rs-sep"></div>
+        <div class="rs-item"><div class="n serif">1,240<span style="font-size:14px;color:var(--slate-2)">h</span></div><div class="l">预计总投入</div></div>
+        <div class="rs-sep"></div>
+        <div class="rs-item"><div class="n serif">4</div><div class="l">项目里程碑</div></div>
+        <div class="rs-sep"></div>
+        <div class="rs-item"><div class="n serif">2028.06</div><div class="l">目标毕业</div></div>
+      </div>
+
+      <div class="timeline" id="timeline"></div>
+    </section>
+
+    <!-- ======== PAGE 4: DYNAMIC PLANNING ======== -->
+    <section class="page" id="page-planning">
+      <div class="topbar">
+        <div>
+          <div class="crumb">04 / Re-planning</div>
+          <h1 class="page-title">动态<em>规划</em></h1>
+        </div>
+      </div>
+
+      <div class="plan-grid">
+        <div class="card card-pad reveal">
+          <div class="card-title"><span class="tag-ic"></span>当前规划条件</div>
+          <div class="card-sub">修改条件后可生成新规划版本</div>
+
+          <div class="cond-row">
+            <div class="cond-label"><span>每周可投入时间</span><span class="val" id="hoursVal">5h</span></div>
+            <input type="range" min="2" max="20" value="5" id="hoursRange" oninput="document.getElementById('hoursVal').textContent=this.value+'h'" />
+            <div class="text-mut" style="margin-top:8px">原预算 8h · 期中周调整为 5h</div>
+          </div>
+
+          <div class="cond-row">
+            <div class="cond-label"><span>目标岗位</span></div>
+            <select class="select" style="width:100%"><option>Java 后端开发</option><option>前端开发</option><option>AI 应用开发</option><option>数据分析</option></select>
+          </div>
+
+          <div class="cond-row">
+            <div class="cond-label"><span>发展路径</span></div>
+            <div class="seg">
+              <button class="on">直接就业</button>
+              <button>考研</button>
+              <button>暂未确定</button>
+            </div>
+          </div>
+
+          <button class="btn btn-accent" style="width:100%;justify-content:center;margin-top:6px" onclick="runReplan(this)">⟳ 生成新规划版本</button>
+          <div class="text-mut" style="text-align:center;margin-top:10px">生成约需 20–40 秒</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <div class="card card-pad reveal" style="animation-delay:.08s">
+            <div class="section-head">
+              <div>
+                <div class="card-title"><span class="tag-ic"></span>调整前后对比</div>
+                <div class="card-sub">v3.1（8h/周） vs v3.2（5h/周）</div>
+              </div>
+              <span class="badge b-ink mono">2026-10-21 生成</span>
+            </div>
+            <div id="chartCompare" class="chart-box-sm" style="height:250px"></div>
+          </div>
+
+          <div class="grid" style="grid-template-columns:1fr 1fr">
+            <div class="card card-pad reveal" style="animation-delay:.14s">
+              <div class="card-title" style="margin-bottom:8px"><span class="tag-ic"></span>任务变化明细</div>
+              <div class="diff-item"><span class="badge b-ok diff-badge">保留</span><div>MySQL 进阶练习（进行中）<div class="why">进行中任务不打断，成果继续累积</div></div></div>
+              <div class="diff-item"><span class="badge b-warn diff-badge">延后</span><div>Redis 实战项目<div class="why">预计 40h，超出新预算 → 移至第 5 学期</div></div></div>
+              <div class="diff-item"><span class="badge b-warn diff-badge">延后</span><div>Linux 部署实践<div class="why">依赖 Redis 项目成果，联动后移</div></div></div>
+              <div class="diff-item"><span class="badge b-risk diff-badge">取消</span><div>Elasticsearch 入门（可选）<div class="why">可选任务优先裁剪以符合时间预算</div></div></div>
+              <div class="diff-item"><span class="badge b-ink diff-badge">新增</span><div>期中复习周缓冲<div class="why">为课业预留机动时间</div></div></div>
+            </div>
+
+            <div class="card card-pad reveal" style="animation-delay:.2s">
+              <div class="card-title" style="margin-bottom:8px"><span class="tag-ic"></span>规划历史版本</div>
+              <div class="ver-row current"><span class="ver-id">v3.2</span><div style="flex:1">每周时间 8h → 5h<div class="text-mut">2026-10-21 · 当前版本</div></div><span class="badge b-ok">生效中</span></div>
+              <div class="ver-row"><span class="ver-id">v3.1</span><div style="flex:1">完成 Java Web 项目后微调<div class="text-mut">2026-10-07</div></div><button class="btn btn-ghost btn-sm">查看</button></div>
+              <div class="ver-row"><span class="ver-id">v3.0</span><div style="flex:1">目标岗位：全栈 → Java 后端<div class="text-mut">2026-09-20</div></div><button class="btn btn-ghost btn-sm">查看</button></div>
+              <div class="ver-row"><span class="ver-id">v1.0</span><div style="flex:1">首次规划生成<div class="text-mut">2026-09-01</div></div><button class="btn btn-ghost btn-sm">查看</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======== PAGE 5: PROFILE ======== -->
+    <section class="page" id="page-profile">
+      <div class="topbar">
+        <div>
+          <div class="crumb">05 / Capability Archive</div>
+          <h1 class="page-title">能力<em>档案</em></h1>
+        </div>
+        <div class="top-actions"><button class="btn btn-ghost">导出档案</button><button class="btn btn-accent">＋ 新增记录</button></div>
+      </div>
+
+      <div class="grid" style="grid-template-columns:1fr 340px;margin-bottom:18px">
+        <div class="card card-pad reveal">
+          <div class="tabs" id="profileTabs">
+            <button class="tab on" data-tab="skills">技能 <span class="mono text-mut">12</span></button>
+            <button class="tab" data-tab="courses">课程 <span class="mono text-mut">6</span></button>
+            <button class="tab" data-tab="projects">项目 <span class="mono text-mut">3</span></button>
+            <button class="tab" data-tab="contests">竞赛实践 <span class="mono text-mut">2</span></button>
+          </div>
+
+          <div class="tab-pane on" data-pane="skills">
+            <div class="skill-row"><div class="skill-name">Java 语言</div><div class="skill-cat"><span class="skill-pill">编程语言</span></div><div class="level-track"><div class="level-fill" style="width:78%"></div></div><span class="badge b-ok"><span class="b-dot"></span>已有证据</span></div>
+            <div class="skill-row"><div class="skill-name">数据结构与算法</div><div class="skill-cat"><span class="skill-pill">CS 基础</span></div><div class="level-track"><div class="level-fill" style="width:70%"></div></div><span class="badge b-ok"><span class="b-dot"></span>已有证据</span></div>
+            <div class="skill-row"><div class="skill-name">MySQL</div><div class="skill-cat"><span class="skill-pill">数据库</span></div><div class="level-track"><div class="level-fill" style="width:55%"></div></div><span class="badge b-warn"><span class="b-dot"></span>待验证</span></div>
+            <div class="skill-row"><div class="skill-name">Git 协作</div><div class="skill-cat"><span class="skill-pill">工具</span></div><div class="level-track"><div class="level-fill" style="width:64%"></div></div><span class="badge b-ok"><span class="b-dot"></span>已有证据</span></div>
+            <div class="skill-row"><div class="skill-name">Spring Boot</div><div class="skill-cat"><span class="skill-pill">框架</span></div><div class="level-track"><div class="level-fill" style="width:32%"></div></div><span class="badge b-risk"><span class="b-dot"></span>需要提升</span></div>
+            <div class="skill-row"><div class="skill-name">Redis</div><div class="skill-cat"><span class="skill-pill">数据库</span></div><div class="level-track"><div class="level-fill" style="width:10%"></div></div><span class="badge b-risk"><span class="b-dot"></span>需要提升</span></div>
+            <div class="skill-row"><div class="skill-name">Linux</div><div class="skill-cat"><span class="skill-pill">部署运维</span></div><div class="level-track"><div class="level-fill" style="width:8%"></div></div><span class="badge b-mut"><span class="b-dot"></span>未评估</span></div>
+          </div>
+
+          <div class="tab-pane" data-pane="courses">
+            <div class="exp-grid">
+              <div class="card exp-card"><div class="exp-type" style="color:var(--teal)">已修完 · 92 分</div><div class="exp-title">数据结构</div><div class="exp-desc">关联技能：数据结构与算法。课程项目：哈夫曼编码压缩器（C++）。</div></div>
+              <div class="card exp-card"><div class="exp-type" style="color:var(--teal)">已修完 · 88 分</div><div class="exp-title">Java 程序设计</div><div class="exp-desc">关联技能：Java 语言。完成 12 次实验与期末大作业。</div></div>
+              <div class="card exp-card"><div class="exp-type" style="color:var(--amber)">进行中</div><div class="exp-title">数据库系统原理</div><div class="exp-desc">关联技能：MySQL、SQL。课程设计：图书管理系统（进行中）。</div></div>
+              <div class="card exp-card"><div class="exp-type" style="color:var(--amber)">进行中</div><div class="exp-title">计算机网络</div><div class="exp-desc">关联技能：网络基础。为后端方向补充 HTTP / TCP 知识。</div></div>
+            </div>
+          </div>
+
+          <div class="tab-pane" data-pane="projects">
+            <div class="exp-grid">
+              <div class="card exp-card"><div class="flex-between"><div class="exp-type" style="color:var(--accent)">进行中</div><span class="badge b-ink">核心项目</span></div><div class="exp-title">校园二手集市 API</div><div class="exp-desc">Spring Boot + MySQL 的增删改查后端，含 JWT 登录与 RESTful 接口。目标产出：可访问的测试环境部署 + README。</div><div style="margin-top:10px"><span class="skill-pill">Spring Boot</span><span class="skill-pill">MySQL</span><span class="skill-pill">JWT</span></div></div>
+              <div class="card exp-card"><div class="flex-between"><div class="exp-type" style="color:var(--teal)">已完成 · 2026-06</div><span class="badge b-ok">有证据</span></div><div class="exp-title">Java 控制台图书馆</div><div class="exp-desc">课程大作业，JDBC + MySQL 实现借阅流程，GitHub 仓库与演示视频已关联为证据。</div><div style="margin-top:10px"><span class="skill-pill">Java</span><span class="skill-pill">JDBC</span><span class="skill-pill">MySQL</span></div></div>
+              <div class="card exp-card"><div class="flex-between"><div class="exp-type" style="color:var(--teal)">已完成 · 2026-03</div><span class="badge b-ok">有证据</span></div><div class="exp-title">算法题解仓库</div><div class="exp-desc">LeetCode 热题 100 刷题记录，含每题思路笔记，持续更新中。</div><div style="margin-top:10px"><span class="skill-pill">算法</span><span class="skill-pill">Java</span></div></div>
+            </div>
+          </div>
+
+          <div class="tab-pane" data-pane="contests">
+            <div class="exp-grid">
+              <div class="card exp-card"><div class="exp-type" style="color:var(--teal)">2026-04 · 队长</div><div class="exp-title">校程序设计竞赛 · 二等奖</div><div class="exp-desc">负责图论与动态规划题目，获奖证书已上传为证明材料。</div></div>
+              <div class="card exp-card"><div class="exp-type" style="color:var(--amber)">2026-08 · 成员</div><div class="exp-title">开源社区文档翻译</div><div class="exp-desc">参与 Spring 官方文档中文翻译，累计合并 6 个 PR。</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <div class="card card-pad reveal" style="animation-delay:.1s">
+            <div class="card-title"><span class="tag-ic"></span>能力雷达</div>
+            <div class="card-sub">按维度聚合当前状态</div>
+            <div id="chartRadar" style="height:300px"></div>
+          </div>
+          <div class="card card-pad reveal" style="animation-delay:.15s">
+            <div class="card-title" style="margin-bottom:12px"><span class="tag-ic"></span>缺口建议</div>
+            <div style="font-size:12.5px;line-height:2;color:var(--slate)">
+              <b style="color:var(--ink)">①</b> 优先为 <b style="color:var(--accent)">MySQL</b> 补充课程设计证据<br>
+              <b style="color:var(--ink)">②</b> Spring Boot 通过「二手集市」项目实战<br>
+              <b style="color:var(--ink)">③</b> Redis 在第 5 学期项目前完成入门<br>
+              <b style="color:var(--ink)">④</b> 算法保持每周 3 题频率
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======== PAGE 6: TASKS ======== -->
+    <section class="page" id="page-tasks">
+      <div class="topbar">
+        <div>
+          <div class="crumb">06 / Mission Control</div>
+          <h1 class="page-title">任务<em>中心</em></h1>
+        </div>
+        <div class="top-actions"><span class="badge b-ok"><span class="b-dot"></span>手机端同步正常</span><button class="btn btn-accent">＋ 新建任务</button></div>
+      </div>
+
+      <div class="today-strip reveal">
+        <div class="today-card">
+          <div class="hh">TODAY · 01</div>
+          <div class="tt">MySQL 索引与查询优化练习 × 5 题</div>
+          <div style="display:flex;justify-content:space-between;align-items:center"><span class="mono" style="font-size:11px;opacity:.7">预计 1.5h</span><button class="btn btn-sm" style="background:#fff;color:var(--ink)">开始</button></div>
+        </div>
+        <div class="today-card alt">
+          <div class="hh">TODAY · 02</div>
+          <div class="tt">二手集市 API：完成商品 CRUD 接口</div>
+          <div style="display:flex;justify-content:space-between;align-items:center"><span class="mono" style="font-size:11px;opacity:.8">预计 2.5h</span><button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff">进行中</button></div>
+        </div>
+        <div class="today-card" style="background:#fff;color:var(--ink);border:1px solid var(--line)">
+          <div class="hh" style="color:var(--slate-2)">TODAY · 03</div>
+          <div class="tt">LeetCode 热题 · 链表 × 3</div>
+          <div style="display:flex;justify-content:space-between;align-items:center"><span class="mono" style="font-size:11px;color:var(--slate-2)">预计 1h</span><button class="btn btn-ghost btn-sm">待开始</button></div>
+        </div>
+      </div>
+
+      <div class="kanban reveal" style="animation-delay:.1s" id="kanban"></div>
+
+      <div class="grid mt18" style="grid-template-columns:1fr 1fr">
+        <div class="card card-pad reveal" style="animation-delay:.15s">
+          <div class="card-title"><span class="tag-ic"></span>本学期完成率</div>
+          <div class="card-sub">当前学期任务完成情况</div>
+          <div id="chartDone" class="chart-box-sm"></div>
+        </div>
+        <div class="card card-pad reveal" style="animation-delay:.2s">
+          <div class="card-title"><span class="tag-ic"></span>计划 vs 实际投入</div>
+          <div class="card-sub">近 6 周 · 单位：小时</div>
+          <div id="chartHours" class="chart-box-sm"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======== PAGE 7: AI ADVISOR ======== -->
+    <section class="page" id="page-advisor">
+      <div class="topbar">
+        <div>
+          <div class="crumb">07 / Career Copilot</div>
+          <h1 class="page-title">AI <em>职业顾问</em></h1>
+        </div>
+      </div>
+
+      <div class="chat-wrap">
+        <div class="card chat-panel reveal">
+          <div class="chat-scroll" id="chatScroll">
+            <div class="msg ai">
+              <div class="msg-av">P</div>
+              <div class="bubble">
+                你好，林澈。今天想聊点什么？
+                <div class="cite-row"><span class="cite">个人档案</span><span class="cite">岗位分析 · n=24</span><span class="cite">规划 v3.2</span></div>
+              </div>
+            </div>
+            <div class="msg user">
+              <div class="msg-av">澈</div>
+              <div class="bubble">我目前最应该学习什么？</div>
+            </div>
+            <div class="msg ai">
+              <div class="msg-av">P</div>
+              <div class="bubble">
+                基于你当前的证据状态，优先级建议是：<b>MySQL 进阶 → Spring Boot 实战 → Redis 入门</b>。
+                <div class="evi-block">
+                  <b>依据（事实）：</b>在 24 条岗位样本中，MySQL 出现频率 88%，你的状态为「待验证」；本学期数据库课程设计可直接转化为证据。<br>
+                  <b>推断：</b>完成二手集市项目的 CRUD 接口后，Spring Boot 熟练度预计可从 32% 提升到约 60%。<br>
+                  <b>建议：</b>Redis 已按 v3.2 规划调整至第 5 学期，无需现在投入。
+                </div>
+                <div class="cite-row"><span class="cite">岗位分析 · 技能频次</span><span class="cite">档案 · MySQL 待验证</span><span class="cite">规划 v3.2 · 第 4 学期</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="chat-input">
+            <input class="input" id="chatInput" placeholder="输入你的问题，例如：换成 AI 应用开发还需要补什么？" onkeydown="if(event.key==='Enter')sendMsg()" />
+            <button class="btn btn-accent" onclick="sendMsg()">发送</button>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <div class="card card-pad reveal" style="animation-delay:.1s">
+            <div class="card-title" style="margin-bottom:14px"><span class="tag-ic"></span>推荐问题</div>
+            <button class="sugg-chip" onclick="askSugg(this)">为什么推荐我完成「二手集市」这个项目？</button>
+            <button class="sugg-chip" onclick="askSugg(this)">我适合优先准备就业还是考研？</button>
+            <button class="sugg-chip" onclick="askSugg(this)">我的项目经历还缺少哪些证据？</button>
+            <button class="sugg-chip" onclick="askSugg(this)">如果换成 AI 应用开发方向，需要补充什么？</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ================= DATA ================= */
+const T = {ok:'b-ok',warn:'b-warn',risk:'b-risk',mut:'b-mut'};
+const dashTasks = [
+  {t:'MySQL 索引与查询优化练习 × 5 题', meta:'今天 · 1.5h', done:false},
+  {t:'二手集市 API：商品 CRUD 接口', meta:'今天 · 2.5h · 进行中', done:false},
+  {t:'LeetCode 热题 · 链表 × 3', meta:'今天 · 1h', done:false},
+  {t:'数据库课程设计：ER 图定稿', meta:'昨天', done:true},
+  {t:'Spring Boot 官方文档 · 第 3 章', meta:'昨天', done:true},
+];
+const semesters = [
+  {term:'大二 · 上', state:'done', goal:'夯实 Java 与数据结构基础', tags:['Java','数据结构','Git'], hours:180, prog:100, mile:'里程碑：Java 控制台图书馆（已交付 ✓）', tasks:'12/12 任务'},
+  {term:'大二 · 下', state:'done', goal:'数据库入门 + 算法持续训练', tags:['MySQL','SQL','算法'], hours:190, prog:100, mile:'里程碑：算法题解仓库 100 题（已交付 ✓）', tasks:'14/14 任务'},
+  {term:'大三 · 上', state:'now', goal:'Spring Boot 实战 + 数据库进阶', tags:['Spring Boot','MySQL 进阶','JWT'], hours:200, prog:62, mile:'里程碑：校园二手集市 API 部署上线（进行中）', tasks:'8/13 任务'},
+  {term:'大三 · 下', state:'future', goal:'Redis / MQ / Linux 部署三件套', tags:['Redis','消息队列','Linux'], hours:220, prog:0, mile:'里程碑：缓存与高并发改造项目', tasks:'0/15 任务', dep:'依赖：二手集市项目上线'},
+  {term:'大四 · 上', state:'future', goal:'实习冲刺：项目复盘 + 简历 + 面试', tags:['系统设计','面试','简历'], hours:240, prog:0, mile:'里程碑：投递暑期实习（目标 30 家）', tasks:'0/12 任务', dep:'依赖：第 4 学期项目成果'},
+  {term:'大四 · 下', state:'future', goal:'校招收尾与 Offer 决策', tags:['毕业设计','校招'], hours:210, prog:0, mile:'里程碑：完成校招签约', tasks:'0/10 任务'},
+];
+const kanbanData = [
+  {col:'未开始', key:'todo', cards:[
+    {t:'Redis 入门：数据结构章节', h:'2h', p:'low', d:'笔记 + 练习代码'},
+    {t:'阅读《高性能 MySQL》第 5 章', h:'1.5h', p:'mid', d:'读书笔记'},
+    {t:'LeetCode 热题 · 栈与队列 × 3', h:'1h', p:'mid', d:'AC 记录'},
+  ]},
+  {col:'进行中', key:'doing', cards:[
+    {t:'二手集市 API：商品 CRUD 接口', h:'2.5h', p:'high', d:'Postman 测试通过截图'},
+    {t:'MySQL 索引与查询优化练习', h:'1.5h', p:'high', d:'EXPLAIN 分析记录'},
+  ]},
+  {col:'已完成', key:'done', cards:[
+    {t:'数据库课程设计：ER 图定稿', h:'2h', p:'mid', d:'ER 图 v2 · 已入库'},
+    {t:'Spring Boot 文档 · 第 3 章', h:'1h', p:'low', d:'笔记已关联技能'},
+    {t:'Git 分支协作练习', h:'1h', p:'low', d:'PR 合并记录'},
+  ]},
+  {col:'已延期', key:'delay', cards:[
+    {t:'Redis 实战项目', h:'40h', p:'mid', d:'原因：时间预算调整 → 第 5 学期'},
+  ]},
+];
+
+/* ================= ROUTER ================= */
+const pageMeta = {};
+document.querySelectorAll('.nav-item').forEach(n=>{
+  n.addEventListener('click',()=>go(n.dataset.page));
+});
+document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go)));
+const chartInit = {};
+function go(page){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.page===page));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  document.getElementById('sidebar').classList.remove('open');
+  window.scrollTo({top:0});
+  if(chartInit[page]){ chartInit[page](); chartInit[page]=null; }
+}
+
+/* ================= DASHBOARD ================= */
+const dt = document.getElementById('dashTasks');
+dashTasks.forEach((tk,i)=>{
+  const row = document.createElement('div'); row.className='task-row';
+  row.innerHTML = `<div class="task-check ${tk.done?'done':''}">${tk.done?'✓':''}</div>
+    <div class="task-title ${tk.done?'done':''}">${tk.t}</div>
+    <div class="task-meta">${tk.meta}</div>`;
+  row.querySelector('.task-check').onclick = function(){
+    this.classList.toggle('done'); const on=this.classList.contains('done');
+    this.textContent = on?'✓':''; row.querySelector('.task-title').classList.toggle('done',on);
+  };
+  dt.appendChild(row);
+});
+// greeting
+const h = new Date().getHours();
+const greet = h<6?'GOOD NIGHT':h<12?'GOOD MORNING':h<18?'GOOD AFTERNOON':'GOOD EVENING';
+const cn = h<6?'夜深了':h<12?'早上好':h<18?'下午好':'晚上好';
+document.getElementById('helloTime').textContent = greet+' —';
+document.querySelector('.hello-name').textContent = cn+'，林澈';
+// match ring animation
+setTimeout(()=>{
+  const ring=document.getElementById('matchRing'), num=document.getElementById('matchNum');
+  const target=78, C=402;
+  ring.style.transition='stroke-dashoffset 1.6s cubic-bezier(.22,1,.36,1)';
+  ring.style.strokeDashoffset = C*(1-target/100);
+  let cur=0; const step=()=>{ cur+=2; if(cur>=target)cur=target; num.textContent=cur+'%'; if(cur<target)requestAnimationFrame(step); };
+  step();
+},300);
+
+/* ================= ROADMAP ================= */
+const tl = document.getElementById('timeline');
+semesters.forEach((s,i)=>{
+  const n = document.createElement('div');
+  n.className = 't-node '+s.state;
+  n.innerHTML = `
+    <div class="t-dot">${String(i+1).padStart(2,'0')}</div>
+    <div class="card t-card">
+      <div class="t-head">
+        <div>
+          <div class="t-term">${s.term} ${s.state==='now'?'· IN PROGRESS':s.state==='done'?'· COMPLETED':''}</div>
+          <div class="t-goal">${s.goal}</div>
+        </div>
+        <span class="badge ${s.state==='done'?'b-ok':s.state==='now'?'b-risk':'b-mut'}">${s.state==='done'?'已完成':s.state==='now'?'进行中':'待启动'}</span>
+      </div>
+      <div class="t-tags">${s.tags.map(t=>`<span class="skill-pill">${t}</span>`).join('')}</div>
+      <div class="t-foot">
+        <span>预计投入 <b>${s.hours}h</b></span>
+        <span>任务 <b>${s.tasks}</b></span>
+        ${s.dep?`<span style="color:var(--amber)">⛓ ${s.dep}</span>`:''}
+      </div>
+      <div class="milestone"><span class="flag">⚑</span>${s.mile}</div>
+      <div class="progress"><i style="width:${s.prog}%"></i></div>
+    </div>`;
+  tl.appendChild(n);
+});
+
+/* ================= PROFILE TABS ================= */
+document.querySelectorAll('#profileTabs .tab').forEach(t=>{
+  t.onclick = ()=>{
+    document.querySelectorAll('#profileTabs .tab').forEach(x=>x.classList.toggle('on',x===t));
+    document.querySelectorAll('.tab-pane').forEach(p=>p.classList.toggle('on',p.dataset.pane===t.dataset.tab));
+  };
+});
+
+/* ================= KANBAN ================= */
+const kb = document.getElementById('kanban');
+kanbanData.forEach(col=>{
+  const c = document.createElement('div'); c.className='kb-col';
+  c.innerHTML = `<div class="kb-head"><span>${col.col}</span><span class="kb-count">${col.cards.length}</span></div>`;
+  col.cards.forEach(card=>{
+    const el = document.createElement('div'); el.className='kb-card';
+    el.innerHTML = `<div class="kt"><span class="pri pri-${card.p}"></span>${card.t}</div>
+      <div class="km"><span>⏱ ${card.h}</span><span>${card.d.length>14?'':card.d}</span></div>
+      ${card.d.length>14?`<div class="text-mut" style="margin-top:8px;font-size:11px">${card.d}</div>`:''}
+      ${col.key!=='done'?`<div class="kb-act"><button onclick="advanceCard(this)">✓ 完成</button><button onclick="delayCard(this)">⏸ 延期</button></div>`:''}`;
+    c.appendChild(el);
+  });
+  kb.appendChild(c);
+});
+function advanceCard(btn){
+  const card = btn.closest('.kb-card'); const col = btn.closest('.kb-col');
+  const doneCol = document.querySelectorAll('.kb-col')[2];
+  card.querySelector('.kb-act').remove();
+  doneCol.appendChild(card); updateCounts();
+}
+function delayCard(btn){
+  const card = btn.closest('.kb-card');
+  const delayCol = document.querySelectorAll('.kb-col')[3];
+  card.querySelector('.kb-act').remove();
+  delayCol.appendChild(card); updateCounts();
+}
+function updateCounts(){
+  document.querySelectorAll('.kb-col').forEach(c=>{
+    c.querySelector('.kb-count').textContent = c.querySelectorAll('.kb-card').length;
+  });
+}
+
+/* ================= ADVISOR CHAT ================= */
+const canned = [
+  {q:'证据', a:'目前你的项目经历中，「二手集市 API」还缺少两类证据：<b>可访问的部署地址</b>与<b>接口测试记录</b>。完成后该项目即可作为 Spring Boot 的「已有证据」。<div class="evi-block"><b>依据（事实）：</b>档案中该项目状态为「进行中」，evidence_url 字段为空。<br><b>建议：</b>本周任务的 Postman 测试截图可直接关联为证据。</div><div class="cite-row"><span class="cite">档案 · 项目记录</span><span class="cite">任务中心 · TODAY-02</span></div>'},
+  {q:'考研', a:'<b>事实：</b>你的档案显示目标路径为「直接就业」，每周 5h 预算下当前规划已占满。<b>推断：</b>若转向考研，数据结构、计网两门课的成绩基础不错，但需要重新分配约 60% 时间到数学与英语。<b>建议：</b>可以先在「动态规划」页切换路径试运行一版，对比差异后再决定，旧版本会保留。<div class="cite-row"><span class="cite">个人档案</span><span class="cite">规划 v3.2</span></div>'},
+  {q:'AI', a:'若切换为 <b>AI 应用开发</b> 方向，需要补充：<b>Python、LangChain/RAG 实战、向量数据库</b>。<div class="evi-block"><b>事实：</b>当前样本库中 AI 应用开发岗位样本仅 6 条（数据不足，结论可信度有限）。<b>推断：</b>你的 Java 后端基础可迁移约 40%，建议保留二手集市项目作为工程能力证据。</div><div class="cite-row"><span class="cite">岗位分析 · n=6（样本不足）</span></div>'},
+];
+const fallback = '这个问题我需要结合你的档案分析。基于当前数据：你的核心路径仍是 <b>MySQL 证据补齐 → 二手集市项目上线 → Redis/MQ 进阶</b>。如果涉及目标或时间变更，建议先到「动态规划」页生成新版本进行对比。<div class="cite-row"><span class="cite">规划 v3.2</span><span class="cite">个人档案</span></div>';
+function sendMsg(){
+  const inp = document.getElementById('chatInput');
+  const v = inp.value.trim(); if(!v) return;
+  addMsg('user', v); inp.value='';
+  replyAI(v);
+}
+function askSugg(btn){ addMsg('user', btn.textContent.trim()); replyAI(btn.textContent); }
+function addMsg(who, html){
+  const sc = document.getElementById('chatScroll');
+  const m = document.createElement('div'); m.className='msg '+who;
+  m.innerHTML = `<div class="msg-av">${who==='ai'?'P':'澈'}</div><div class="bubble">${html}</div>`;
+  sc.appendChild(m); sc.scrollTop = sc.scrollHeight;
+  return m;
+}
+function replyAI(q){
+  const typing = addMsg('ai','<span class="typing"><i></i><i></i><i></i></span>');
+  setTimeout(()=>{
+    const hit = canned.find(c=>q.includes(c.q));
+    typing.querySelector('.bubble').innerHTML = hit?hit.a:fallback;
+    const sc = document.getElementById('chatScroll'); sc.scrollTop = sc.scrollHeight;
+  }, 900);
+}
+
+/* ================= FAKE ACTIONS ================= */
+function fakeRefresh(btn){
+  const old = btn.textContent; btn.disabled=true; btn.textContent='采集中…';
+  setTimeout(()=>{btn.textContent='✓ 已更新样本'; setTimeout(()=>{btn.textContent=old;btn.disabled=false;},1400);},1400);
+}
+function runReplan(btn){
+  const old = btn.innerHTML; btn.disabled=true; btn.innerHTML='⟳ 规划生成中…';
+  setTimeout(()=>{ btn.innerHTML='✓ 新版本 v3.3 已生成'; setTimeout(()=>{btn.innerHTML=old;btn.disabled=false;},1800); },1800);
+}
+
+/* ================= CHARTS ================= */
+const chartText = {color:'#5A6B7E',fontFamily:'Noto Sans SC'};
+const axisStyle = {axisLine:{lineStyle:{color:'#E3DED1'}},axisLabel:{color:'#8A97A6',fontFamily:'JetBrains Mono',fontSize:10},splitLine:{lineStyle:{color:'#F0EEE7'}}};
+function mk(id){ const el=document.getElementById(id); if(!el) return null; const c=echarts.init(el); window.addEventListener('resize',()=>c.resize()); return c; }
+
+const roleData = {
+  java: {skills:['Java','MySQL','Spring Boot','Redis','Linux','Git','MQ','Docker'], vals:[96,88,79,79,67,63,54,38]},
+  fe:   {skills:['JavaScript','React','TypeScript','CSS','Vue','Node.js','Git','Vite'], vals:[92,75,71,67,54,46,42,33]},
+};
+let skillBar;
+function renderSkillBar(role){
+  const d = roleData[role];
+  if(!skillBar) skillBar = mk('chartSkillBar');
+  if(!skillBar) return;
+  skillBar.setOption({
+    grid:{left:8,right:30,top:16,bottom:0,containLabel:true},
+    tooltip:{trigger:'axis',axisPointer:{type:'shadow'},backgroundColor:'#0B2239',borderWidth:0,textStyle:{color:'#fff',fontSize:12},formatter:p=>`${p[0].name}<br/>出现频率 ${p[0].value}%（n=24）`},
+    xAxis:{type:'value',max:100,...axisStyle},
+    yAxis:{type:'category',data:d.skills.slice().reverse(),axisLine:{show:false},axisTick:{show:false},axisLabel:{color:'#102C4A',fontWeight:600,fontSize:12}},
+    series:[{type:'bar',data:d.vals.slice().reverse(),barWidth:15,
+      itemStyle:{borderRadius:[0,8,8,0],color:{type:'linear',x:0,y:0,x2:1,y2:0,colorStops:[{offset:0,color:'#102C4A'},{offset:1,color:'#E8512A'}]}},
+      label:{show:true,position:'right',formatter:'{c}%',fontFamily:'JetBrains Mono',fontSize:10,color:'#8A97A6'}}],
+    animationDuration:800
+  }, true);
+}
+function switchRole(btn, role){
+  btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b===btn));
+  renderSkillBar(role);
+}
+chartInit['jobs'] = ()=>{
+  renderSkillBar('java');
+  const pie = mk('chartSkillPie');
+  pie && pie.setOption({
+    tooltip:{trigger:'item',backgroundColor:'#0B2239',borderWidth:0,textStyle:{color:'#fff',fontSize:12}},
+    legend:{bottom:0,icon:'circle',itemWidth:8,textStyle:{fontSize:11,color:'#5A6B7E'}},
+    series:[{type:'pie',radius:['52%','76%'],center:['50%','44%'],
+      itemStyle:{borderColor:'#F5F2EA',borderWidth:3,borderRadius:6},
+      label:{show:true,position:'center',formatter:'{a|需求分类}\n{b|n=24}',rich:{a:{fontSize:11,color:'#8A97A6'},b:{fontSize:10,fontFamily:'JetBrains Mono',color:'#8A97A6',padding:[4,0,0,0]}}},
+      data:[
+        {value:42,name:'技术技能',itemStyle:{color:'#0B2239'}},
+        {value:28,name:'框架与工具',itemStyle:{color:'#E8512A'}},
+        {value:18,name:'通用能力',itemStyle:{color:'#0E7C6B'}},
+        {value:12,name:'加分项',itemStyle:{color:'#D9A13B'}},
+      ]}],
+    animationDuration:900
+  });
+  const edu = mk('chartEdu');
+  edu && edu.setOption({
+    grid:{left:8,right:16,top:20,bottom:0,containLabel:true},
+    tooltip:{trigger:'axis',backgroundColor:'#0B2239',borderWidth:0,textStyle:{color:'#fff',fontSize:12}},
+    xAxis:{type:'category',data:['大专','本科','硕士','不限'],...axisStyle},
+    yAxis:{type:'value',...axisStyle},
+    series:[{type:'bar',data:[2,17,3,2],barWidth:26,itemStyle:{borderRadius:[7,7,0,0],color:'#102C4A'},label:{show:true,position:'top',fontFamily:'JetBrains Mono',fontSize:10,color:'#8A97A6'}}]
+  });
+  const exp = mk('chartExp');
+  exp && exp.setOption({
+    grid:{left:8,right:16,top:20,bottom:0,containLabel:true},
+    tooltip:{trigger:'axis',backgroundColor:'#0B2239',borderWidth:0,textStyle:{color:'#fff',fontSize:12}},
+    xAxis:{type:'category',data:['无要求','在读/实习','1 年','1-3 年'],...axisStyle},
+    yAxis:{type:'value',...axisStyle},
+    series:[{type:'bar',data:[9,11,3,1],barWidth:26,itemStyle:{borderRadius:[7,7,0,0],color:'#E8512A'},label:{show:true,position:'top',fontFamily:'JetBrains Mono',fontSize:10,color:'#8A97A6'}}]
+  });
+};
+
+chartInit['planning'] = ()=>{
+  const cmp = mk('chartCompare');
+  cmp && cmp.setOption({
+    tooltip:{trigger:'axis',backgroundColor:'#0B2239',borderWidth:0,textStyle:{color:'#fff',fontSize:12}},
+    legend:{bottom:0,icon:'roundRect',itemWidth:12,itemHeight:8,textStyle:{fontSize:11,color:'#5A6B7E'}},
+    grid:{left:8,right:8,top:24,bottom:30,containLabel:true},
+    xAxis:{type:'category',data:['任务总数','高优任务','总时长(h)','学期数'],...axisStyle},
+    yAxis:{type:'value',...axisStyle},
+    series:[
+      {name:'v3.1（8h/周）',type:'bar',data:[15,6,86,6],barWidth:18,itemStyle:{borderRadius:[6,6,0,0],color:'#102C4A'}},
+      {name:'v3.2（5h/周）',type:'bar',data:[13,5,64,6],barWidth:18,itemStyle:{borderRadius:[6,6,0,0],color:'#E8512A'}},
+    ]
+  });
+};
+
+chartInit['profile'] = ()=>{
+  const radar = mk('chartRadar');
+  radar && radar.setOption({
+    radar:{
+      indicator:[
+        {name:'编程语言',max:100},{name:'CS 基础',max:100},{name:'数据库',max:100},
+        {name:'框架工具',max:100},{name:'系统设计',max:100},{name:'部署运维',max:100}],
+      radius:'64%',splitNumber:4,
+      axisName:{color:'#5A6B7E',fontSize:11,fontWeight:600},
+      splitArea:{areaStyle:{color:['#FDFCF9','#F5F2EA']}},
+      splitLine:{lineStyle:{color:'#E3DED1'}},axisLine:{lineStyle:{color:'#E3DED1'}},
+    },
+    tooltip:{backgroundColor:'#0B2239',borderWidth:0,textStyle:{color:'#fff',fontSize:12}},
+    series:[{type:'radar',
+      data:[
+        {value:[78,70,45,50,30,10],name:'当前状态（示例）',areaStyle:{color:'rgba(232,81,42,.18)'},lineStyle:{color:'#E8512A',width:2},itemStyle:{color:'#E8512A'}},
+        {value:[90,75,85,80,60,65],name:'岗位要求基准',areaStyle:{color:'rgba(11,34,57,.06)'},lineStyle:{color:'#102C4A',width:2,type:'dashed'},itemStyle:{color:'#102C4A'}},
+      ]}],
+    legend:{bottom:0,icon:'roundRect',itemWidth:12,itemHeight:8,textStyle:{fontSize:11,color:'#5A6B7E'}}
+  });
+};
+
+chartInit['tasks'] = ()=>{
+  const done = mk('chartDone');
+  done && done.setOption({
+    tooltip:{trigger:'item',backgroundColor:'#0B2239',borderWidth:0,textStyle:{color:'#fff',fontSize:12}},
+    series:[{type:'pie',radius:['58%','82%'],center:['50%','50%'],
+      itemStyle:{borderColor:'#F5F2EA',borderWidth:4,borderRadius:8},
+      label:{show:true,position:'center',formatter:'{a|62%}\n{b|13 项任务}',rich:{a:{fontSize:30,fontFamily:'Fraunces',fontWeight:600,color:'#0B2239'},b:{fontSize:11,color:'#8A97A6',padding:[6,0,0,0]}}},
+      data:[
+        {value:8,name:'已完成',itemStyle:{color:'#0E7C6B'}},
+        {value:2,name:'进行中',itemStyle:{color:'#E8512A'}},
+        {value:3,name:'未开始',itemStyle:{color:'#E3DED1'}},
+      ]}]
+  });
+  const hrs = mk('chartHours');
+  hrs && hrs.setOption({
+    tooltip:{trigger:'axis',backgroundColor:'#0B2239',borderWidth:0,textStyle:{color:'#fff',fontSize:12}},
+    legend:{bottom:0,icon:'roundRect',itemWidth:12,itemHeight:8,textStyle:{fontSize:11,color:'#5A6B7E'}},
+    grid:{left:8,right:8,top:24,bottom:30,containLabel:true},
+    xAxis:{type:'category',data:['W38','W39','W40','W41','W42','W43'],...axisStyle},
+    yAxis:{type:'value',...axisStyle},
+    series:[
+      {name:'计划',type:'bar',data:[8,8,8,8,5,5],barWidth:14,itemStyle:{borderRadius:[5,5,0,0],color:'#D8D2C2'}},
+      {name:'实际',type:'line',data:[7.5,9,6,8.5,4.5,5.5],smooth:true,lineStyle:{color:'#E8512A',width:2.5},itemStyle:{color:'#E8512A'},symbolSize:7},
+    ]
+  });
+};
+
+// init charts for the visible page lazily on first visit; dashboard has none
+</script>
+</body>
+</html>
