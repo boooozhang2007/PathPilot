@@ -154,7 +154,6 @@ export function generateRoadmapByRules(input: RulesRoadmapInput): { roadmap: Roa
     risks: [
       ...(fit.deferred.length ? [`时间预算不足，${fit.deferred.length} 项任务被延后`] : []),
       ...(input.weeklyHours < 6 ? ['每周投入时间较少，建议优先保证高优先级任务'] : []),
-      '规则引擎基于任务库模板生成，建议结合 AI 模型通道（配置 API Key 后）获得更个性化规划',
     ],
     evidence_refs: [
       ...(input.topJobSkills?.length ? [`岗位分析：${input.topJobSkills.slice(0, 5).join(' / ')}`] : []),

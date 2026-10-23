@@ -71,6 +71,18 @@ export default function ProfilePage() {
     }
   }
 
+  async function exportProfile() {
+    const data = await api<Record<string, unknown>>('/api/profile/export');
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pathpilot-profile-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setMsg('资料已导出为 JSON 文件');
+  }
+
   async function addSkill() {
     if (!skillForm.skillName.trim()) return;
     setSaving(true);
@@ -124,7 +136,7 @@ export default function ProfilePage() {
   return (
     <div className="pp-anim">
       <PageHeader title="能力档案" desc="个人资料与真实经历 · 未填信息标记为未知，不擅自补全" right={
-        <button className="pp-btn pp-btn-ghost px-3 py-2 text-xs" onClick={() => window.open(`${location.origin}`, '_self')}>导出资料（API：/api/profile/export）</button>
+        <button className="pp-btn pp-btn-ghost px-3 py-2 text-xs" onClick={exportProfile}>导出资料 JSON</button>
       } />
       {err && <div className="mb-4"><ErrorState message={err} onRetry={load} /></div>}
       {msg && <div className="mb-4 rounded-card bg-teal-soft px-4 py-3 text-sm text-teal">{msg}</div>}

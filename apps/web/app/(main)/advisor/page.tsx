@@ -153,8 +153,8 @@ export default function AdvisorPage() {
             )}
           </div>
           <div className="pp-card p-5 text-xs leading-5 text-slate-1">
-            <div className="mb-1 text-sm font-bold text-ink">顾问规范</div>
-            只基于你授权的档案与规划数据回答；事实判断附数据依据；不保证录用、薪资或升学结果；档案更新后自动使用最新数据。
+            <div className="mb-1 text-sm font-bold text-ink">数据来源</div>
+            回答引用你的档案、岗位分析与当前规划；每条回答标注生成引擎，事实判断附样本数据。
           </div>
         </div>
       </div>

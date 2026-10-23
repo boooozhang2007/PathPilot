@@ -43,8 +43,8 @@ export default function DashboardPage() {
           <div className="mb-1 text-xs font-semibold text-slate-1">岗位能力匹配度</div>
           {data.matchScore !== null ? (
             <>
-              <Ring value={data.matchScore} label={`基于 ${data.matchSampleCount} 条真实样本`} />
-              <p className="mt-2 text-[11px] leading-4 text-slate-2">透明加权公式 · 仅供参考，不代表就业概率</p>
+              <Ring value={data.matchScore} label={`${data.matchSampleCount} 条真实样本`} />
+              <p className="mt-2 text-[11px] leading-4 text-slate-2">辅助指标 · 非就业概率</p>
             </>
           ) : (
             <div className="py-8 text-xs text-slate-1">

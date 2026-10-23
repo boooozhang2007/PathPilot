@@ -75,10 +75,15 @@ export async function chat(
       1
     );
     try {
-      const outcome = await runPiAgent({
-        systemPrompt: `你是 PathPilot AI 职业顾问，服务对象是计算机专业大学生。\n回答规范：\n1. 只基于下方用户真实数据作答；区分【事实】【推断】【建议】；事实判断尽量给出数据依据（如岗位样本频次）。\n2. 不得访问或猜测其他用户数据；不得保证录用、薪资或升学结果。\n3. 用户档案/规划变化后以最新数据为准。\n4. 中文回答，简洁分段，必要时给下一步行动。\n\n用户真实数据（授权范围）：\n${ctxSummary}`,
+      const { runAgentWith, pilotModels } = await import('./pi/runtime.js');
+      const { getPilotModel } = await import('./pi/provider.js');
+      const { buildReadOnlyTools } = await import('./pi/tools.js');
+      const models = pilotModels();
+      const outcome = await runAgentWith(models, getPilotModel(models), {
+        systemPrompt: `你是 PathPilot AI 职业顾问，服务对象是计算机专业大学生。\n回答规范：\n1. 基于用户真实数据作答：可通过工具读取档案、当前规划与岗位分析；上下文摘要已有部分数据，需要更多细节时调用工具。\n2. 区分【事实】【推断】【建议】；事实判断给出数据依据（如岗位样本频次）。\n3. 不得访问或猜测其他用户数据；不得保证录用、薪资或升学结果。\n4. 用户档案/规划变化后以工具读取的最新数据为准。\n5. 中文回答，简洁分段，必要时给下一步行动。\n\n用户数据摘要（授权范围）：\n${ctxSummary}`,
         prompt: input.message,
         history: recent,
+        tools: buildReadOnlyTools(userId),
         wallClockMs: 120_000,
       });
       if (!outcome.text) throw new Error('模型返回为空');
