@@ -26,3 +26,8 @@ pi/
 # misc
 .DS_Store
 *.log
+
+# misc artifacts
+apps/web/.playwright-cli/
+apps/web/next-env.d.ts
+*.log
