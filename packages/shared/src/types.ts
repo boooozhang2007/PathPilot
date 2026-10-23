@@ -14,8 +14,8 @@ import type {
   SourceType,
   TaskStatus,
   AgentRunStatus,
-} from './enums.js';
-import type { JobAnalysisResult, RoadmapResult, RoadmapDiff, SkillGapItem, SkillGapResult } from './schemas.js';
+} from './enums';
+import type { JobAnalysisResult, RoadmapResult, RoadmapDiff, SkillGapItem, SkillGapResult } from './schemas';
 
 export interface AuthUser {
   id: number;

@@ -1,0 +1,109 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-ink: #0b2239;
+  --color-ink-2: #1c3a57;
+  --color-paper: #f5f2ea;
+  --color-paper-2: #ede8db;
+  --color-accent: #e8512a;
+  --color-accent-soft: #fbe9e2;
+  --color-teal: #0e7c6b;
+  --color-teal-soft: #e3f0ed;
+  --color-amber: #b97a0b;
+  --color-amber-soft: #f7eed9;
+  --color-slate-1: #5b6b7c;
+  --color-slate-2: #8d99a8;
+  --color-line: #e2ddd0;
+  --radius-card: 14px;
+  --font-sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+html {
+  background: var(--color-paper);
+}
+
+body {
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 通用组件样式（与设计稿一致的设计令牌） */
+.pp-card {
+  background: #fff;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
+}
+.pp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 10px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pp-btn-primary {
+  background: var(--color-accent);
+  color: #fff;
+}
+.pp-btn-primary:hover {
+  background: #d14420;
+}
+.pp-btn-primary:disabled {
+  background: var(--color-slate-2);
+  cursor: not-allowed;
+}
+.pp-btn-ghost {
+  background: transparent;
+  color: var(--color-ink);
+  border: 1px solid var(--color-line);
+}
+.pp-btn-ghost:hover {
+  border-color: var(--color-ink);
+}
+.pp-input {
+  width: 100%;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: #fff;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.pp-input:focus {
+  border-color: var(--color-accent);
+}
+.pp-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-slate-1);
+  margin-bottom: 4px;
+}
+.pp-tag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+@keyframes pp-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.pp-anim {
+  animation: pp-fade-up 0.35s ease both;
+}

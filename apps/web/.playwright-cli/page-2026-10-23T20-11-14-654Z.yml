@@ -1,0 +1,46 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]: PP
+        - generic [ref=e6]:
+          - generic [ref=e7]: PathPilot
+          - generic [ref=e8]: AI 职业成长规划
+      - navigation [ref=e9]:
+        - link "◧ 首页" [ref=e10] [cursor=pointer]:
+          - /url: /dashboard
+          - generic [ref=e11]: ◧
+          - text: 首页
+        - link "◎ 岗位洞察" [ref=e12] [cursor=pointer]:
+          - /url: /jobs
+          - generic [ref=e13]: ◎
+          - text: 岗位洞察
+        - link "◇ 成长路线" [ref=e14] [cursor=pointer]:
+          - /url: /roadmap
+          - generic [ref=e15]: ◇
+          - text: 成长路线
+        - link "↻ 动态规划" [ref=e16] [cursor=pointer]:
+          - /url: /planning
+          - generic [ref=e17]: ↻
+          - text: 动态规划
+        - link "☰ 能力档案" [ref=e18] [cursor=pointer]:
+          - /url: /profile
+          - generic [ref=e19]: ☰
+          - text: 能力档案
+        - link "✓ 任务中心" [ref=e20] [cursor=pointer]:
+          - /url: /tasks
+          - generic [ref=e21]: ✓
+          - text: 任务中心
+        - link "✦ AI 顾问" [ref=e22] [cursor=pointer]:
+          - /url: /advisor
+          - generic [ref=e23]: ✦
+          - text: AI 顾问
+      - generic [ref=e24]:
+        - generic [ref=e25]: 规则引擎通道
+        - button "退出" [ref=e28]
+    - main [ref=e29]:
+      - generic [ref=e30]:
+        - generic [ref=e31]: 出错了
+        - generic [ref=e32]: 请重新登录
+        - button "重试" [ref=e33] [cursor=pointer]
+  - alert [ref=e34]

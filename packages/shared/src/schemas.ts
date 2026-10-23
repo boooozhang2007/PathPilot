@@ -10,7 +10,7 @@ import {
   SOURCE_TYPES,
   TASK_STATUSES,
   EMPLOYMENT_TYPES,
-} from './enums.js';
+} from './enums';
 
 // ---------- 通用 ----------
 export const idSchema = z.number().int().positive();

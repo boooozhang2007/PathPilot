@@ -1,0 +1,69 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]: PP
+        - generic [ref=e6]:
+          - generic [ref=e7]: PathPilot
+          - generic [ref=e8]: AI 职业成长规划
+      - navigation [ref=e9]:
+        - link "◧ 首页" [ref=e10] [cursor=pointer]:
+          - /url: /dashboard
+          - generic [ref=e11]: ◧
+          - text: 首页
+        - link "◎ 岗位洞察" [ref=e12] [cursor=pointer]:
+          - /url: /jobs
+          - generic [ref=e13]: ◎
+          - text: 岗位洞察
+        - link "◇ 成长路线" [ref=e14] [cursor=pointer]:
+          - /url: /roadmap
+          - generic [ref=e15]: ◇
+          - text: 成长路线
+        - link "↻ 动态规划" [ref=e16] [cursor=pointer]:
+          - /url: /planning
+          - generic [ref=e17]: ↻
+          - text: 动态规划
+        - link "☰ 能力档案" [ref=e18] [cursor=pointer]:
+          - /url: /profile
+          - generic [ref=e19]: ☰
+          - text: 能力档案
+        - link "✓ 任务中心" [ref=e20] [cursor=pointer]:
+          - /url: /tasks
+          - generic [ref=e21]: ✓
+          - text: 任务中心
+        - link "✦ AI 顾问" [ref=e22] [cursor=pointer]:
+          - /url: /advisor
+          - generic [ref=e23]: ✦
+          - text: AI 顾问
+      - generic [ref=e24]:
+        - generic [ref=e25]: 规则引擎通道
+        - button "退出" [ref=e28]
+    - main [ref=e29]:
+      - generic [ref=e30]:
+        - generic [ref=e31]:
+          - generic [ref=e32]:
+            - heading "AI 职业顾问" [level=1] [ref=e33]
+            - paragraph [ref=e34]: 回答基于你的档案、岗位分析与规划的最新数据；区分事实与建议
+          - generic [ref=e35]: 规则引擎通道
+        - generic [ref=e36]:
+          - generic [ref=e37]:
+            - generic [ref=e39]:
+              - generic [ref=e40]: 问我任何职业规划问题
+              - generic [ref=e41]:
+                - button "我目前最应该学习什么？" [ref=e42]
+                - button "为什么推荐我完成这个项目？" [ref=e43]
+                - button "我适合优先准备就业还是考研？" [ref=e44]
+                - button "如果换成 AI 应用开发，还需要补充什么？" [ref=e45]
+                - button "我的项目经历还缺少哪些证据？" [ref=e46]
+            - generic [ref=e47]:
+              - textbox "输入你的问题…" [ref=e48]
+              - button "发送" [disabled] [ref=e49]
+          - generic [ref=e50]:
+            - generic [ref=e51]:
+              - generic [ref=e52]: 简历草稿
+              - paragraph [ref=e53]: 从你的真实经历生成结构化简历描述；不虚构数据与指标，可编辑后导出。
+              - button "生成简历草稿" [ref=e54] [cursor=pointer]
+            - generic [ref=e55]:
+              - generic [ref=e56]: 顾问规范
+              - text: 只基于你授权的档案与规划数据回答；事实判断附数据依据；不保证录用、薪资或升学结果；档案更新后自动使用最新数据。
+  - alert [ref=e57]

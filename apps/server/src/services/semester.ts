@@ -1,25 +1,13 @@
-// 学期与时间预算计算（PRD 4.5：总任务量必须符合时间预算，预留机动空间）
+// 时间预算计算（PRD 4.5：总任务量必须符合时间预算，预留机动空间）
+// 学期映射纯函数来自 @pathpilot/shared（三端共用）
 import type { Grade, Priority } from '@pathpilot/shared';
+import { currentSemesterOf, MAX_SEMESTER, semesterLabel } from '@pathpilot/shared';
+
+export { currentSemesterOf, MAX_SEMESTER, semesterLabel };
 
 /** 每学期按 18 教学周、75% 利用率估算（预留 25% 机动空间，不允许超强度计划） */
 export const WEEKS_PER_SEMESTER = 18;
 export const UTILIZATION = 0.75;
-
-/** 年级 → 当前所处学期序号（1=大一上 … 8=大四下） */
-const GRADE_TO_CURRENT_SEMESTER: Record<Grade, number> = {
-  freshman: 1,
-  sophomore: 3,
-  junior: 5,
-  senior: 7,
-  graduate: 9, // 研究生按 3 年制，学期序号 9-14
-  other: 5,
-};
-
-export const MAX_SEMESTER = 14;
-
-export function currentSemesterOf(grade: Grade): number {
-  return GRADE_TO_CURRENT_SEMESTER[grade] ?? 5;
-}
 
 /** 剩余学期列表（含当前学期） */
 export function remainingSemesters(grade: Grade): number[] {
@@ -29,12 +17,6 @@ export function remainingSemesters(grade: Grade): number[] {
   for (let s = start; s <= total; s++) list.push(s);
   return list.length ? list : [start];
 }
-
-export const semesterLabel = (index: number): string => {
-  const year = Math.ceil(index / 2);
-  const half = index % 2 === 1 ? '上' : '下';
-  return `第${year}学年 ${half}学期`;
-};
 
 /** 某学期可用学习小时数 */
 export function semesterBudget(weeklyHours: number): number {
