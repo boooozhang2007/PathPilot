@@ -14,6 +14,39 @@ export interface ToolTraceEntry {
   summary: string;
 }
 
+/**
+ * DB 聊天记录 → Pi 消息结构。
+ * 关键：assistant 消息必须带完整 usage（零值）与 stopReason，否则 pi-ai 的
+ * estimateContextTokens 读取 usage.totalTokens 会在会话第二轮起崩溃
+ * （Cannot read properties of undefined (reading 'totalTokens')）。
+ */
+const ZERO_USAGE = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  reasoning: 0,
+  totalTokens: 0,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+
+export function toPiHistory(rows: { role: 'user' | 'assistant'; content: string; createdAt: string }[]): unknown[] {
+  return rows.map((m) =>
+    m.role === 'assistant'
+      ? {
+          role: 'assistant',
+          content: [{ type: 'text', text: m.content }],
+          usage: ZERO_USAGE,
+          stopReason: 'stop',
+          api: 'openai-completions',
+          provider: 'pathpilot',
+          model: 'history',
+          timestamp: Date.parse(m.createdAt),
+        }
+      : { role: 'user', content: m.content, timestamp: Date.parse(m.createdAt) }
+  );
+}
+
 /** 包一层工具执行：记录调用与结果摘要（前端展示工具调用链路） */
 function tracedTools(tools: AgentTool<any>[], trace: ToolTraceEntry[]): AgentTool<any>[] {
   return tools.map((tool) => ({
@@ -61,11 +94,9 @@ export async function chat(
       .where(eq(agentChatMessages.sessionId, sid))
       .orderBy(asc(agentChatMessages.id))
       .limit(200);
-    const recent = history.slice(-12).map((m) => ({
-      role: m.role,
-      content: m.content,
-      timestamp: Date.parse(m.createdAt),
-    }));
+    const recent = toPiHistory(
+      history.slice(-12).map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content, createdAt: m.createdAt }))
+    );
     const ctxSummary = JSON.stringify(
       {
         个人资料: ctx.profile,

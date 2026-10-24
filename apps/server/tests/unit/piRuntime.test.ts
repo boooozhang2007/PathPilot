@@ -50,6 +50,27 @@ describe('Pi Agent 运行时（fauxProvider）', () => {
     expect(out.aborted).toBe(false);
   });
 
+  it('带历史（assistant 缺 usage 的裸结构会导致 estimate 崩溃）——toPiHistory 映射后正常', async () => {
+    const { toPiHistory } = await import('../../src/agent/advisor.js');
+    const rows = [
+      { role: 'user' as const, content: '第一问', createdAt: '2026-10-24T10:00:00.000Z' },
+      { role: 'assistant' as const, content: '第一答', createdAt: '2026-10-24T10:00:05.000Z' },
+    ];
+    // 显式构造裸历史（旧 bug 形态）→ 证明会崩
+    {
+      const { models, model } = setupFaux([fauxAssistantMessage('任意')]);
+      await expect(
+        runAgentWith(models, model, { systemPrompt: 't', prompt: '第二问', history: rows.map((r) => ({ role: r.role, content: r.content, timestamp: 0 })) })
+      ).rejects.toThrow(); // 裸 assistant 结构必然崩溃（真实场景崩在 usage.totalTokens）
+    }
+    // toPiHistory 映射后 → 正常
+    {
+      const { models, model } = setupFaux([fauxAssistantMessage('第二答')]);
+      const out = await runAgentWith(models, model, { systemPrompt: 't', prompt: '第二问', history: toPiHistory(rows) });
+      expect(out.text).toBe('第二答');
+    }
+  });
+
   it('模型错误 stopReason 抛 MODEL_CALL_FAILED', async () => {
     const { models, model } = setupFaux([fauxAssistantMessage('x', { stopReason: 'error', errorMessage: 'quota' })]);
     await expect(runAgentWith(models, model, { systemPrompt: 't', prompt: 'p' })).rejects.toThrow(/quota|模型返回错误/);
