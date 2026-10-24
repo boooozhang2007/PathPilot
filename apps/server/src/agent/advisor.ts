@@ -48,7 +48,7 @@ export function toPiHistory(rows: { role: 'user' | 'assistant'; content: string;
 }
 
 /** 包一层工具执行：记录调用与结果摘要（前端展示工具调用链路） */
-function tracedTools(tools: AgentTool<any>[], trace: ToolTraceEntry[]): AgentTool<any>[] {
+export function tracedTools(tools: AgentTool<any>[], trace: ToolTraceEntry[]): AgentTool<any>[] {
   return tools.map((tool) => ({
     ...tool,
     execute: async (id: string, params: unknown, signal?: AbortSignal, onUpdate?: (partial: unknown) => void) => {

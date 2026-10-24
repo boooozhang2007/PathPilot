@@ -107,6 +107,11 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- AI 顾问 ----------
+  app.post('/api/agent/chat/stream', { preHandler: [auth] }, async (req, reply) => {
+    const { streamChat } = await import('../agent/stream.js');
+    return streamChat(req, reply);
+  });
+
   app.post('/api/agent/chat', { preHandler: [auth] }, async (req) => {
     const userId = getUserId(req);
     const input = agentChatInput.parse(req.body);

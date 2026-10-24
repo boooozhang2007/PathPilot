@@ -1,7 +1,7 @@
 // AI 顾问（PRD 5.2）：对话 + 推荐问题
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
-import { api } from '../../lib/api';
+import { api, getApiBase, getToken } from '../../lib/api';
 import { C, Tag } from '../../components/ui';
 import { Markdown } from '../../components/Markdown';
 import type { ChatMessageDTO } from '@pathpilot/shared';
@@ -14,6 +14,7 @@ export default function AdvisorTab() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [stream, setStream] = useState<{ text: string; thinking: string; tools: { name: string; status: 'running' | 'done'; summary?: string }[] } | null>(null);
   const listRef = useRef<React.ComponentRef<typeof ScrollView> | null>(null);
 
   const loadHistory = useCallback(() => {
@@ -37,14 +38,71 @@ export default function AdvisorTab() {
     setInput('');
     setErr('');
     setBusy(true);
+    setStream({ text: '', thinking: '', tools: [] });
     setMessages((prev) => [...prev, { id: Date.now(), sessionId: sessionId ?? 0, role: 'user', content: message, engine: null, toolCalls: [], createdAt: new Date().toISOString() } as never]);
     try {
-      const res = await api<{ sessionId: number; reply: ChatMessageDTO; fallbackReason?: string }>('/api/agent/chat', { method: 'POST', json: { sessionId, message }, timeoutMs: 300_000 });
-      setSessionId(res.sessionId);
-      setMessages((prev) => [...prev, res.reply]);
-      if (res.fallbackReason) setErr(res.fallbackReason);
+      const base = await getApiBase();
+      const token = (await getToken()) ?? '';
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 300000);
+      const res = await fetch(`${base}/api/agent/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ sessionId, message }),
+        signal: controller.signal,
+      });
+      if (!res.ok || !res.body) throw new Error(`请求失败(${res.status})`);
+      const reader = (res.body as unknown as { getReader: () => { read: () => Promise<{ done: boolean; value?: Uint8Array }> } }).getReader();
+      let buf = '';
+      let doneEngine: string | undefined;
+      let doneFallback: string | undefined;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += String.fromCharCode(...Array.from(value ?? []));
+        const parts = buf.split('\n\n');
+        buf = parts.pop() ?? '';
+        for (const part of parts) {
+          const line = part.split('\n').find((l) => l.startsWith('data: '));
+          if (!line) continue;
+          let ev: { type: string; delta?: string; name?: string; summary?: string; engine?: string; fallbackReason?: string; sessionId?: number };
+          try {
+            ev = JSON.parse(line.slice(6));
+          } catch {
+            continue;
+          }
+          if (ev.sessionId) setSessionId(ev.sessionId);
+          if (ev.type === 'done') {
+            doneEngine = ev.engine;
+            doneFallback = ev.fallbackReason;
+          }
+          setStream((st) => {
+            const cur = st ?? { text: '', thinking: '', tools: [] as never[] };
+            if (ev.type === 'thinking') return { ...cur, thinking: cur.thinking + (ev.delta ?? '') };
+            if (ev.type === 'text') return { ...cur, text: cur.text + (ev.delta ?? '') };
+            if (ev.type === 'tool_start') return { ...cur, tools: [...cur.tools, { name: ev.name ?? '', status: 'running' as const }] };
+            if (ev.type === 'tool_end') {
+              return { ...cur, tools: cur.tools.map((t) => (t.name === ev.name && t.status === 'running' ? { ...t, status: 'done' as const, summary: ev.summary } : t)) };
+            }
+            return cur;
+          });
+        }
+      }
+      clearTimeout(timer);
+      if (doneFallback) setErr(doneFallback);
+      // 落为正式消息
+      setStream((st) => {
+        if (st && st.text.trim()) {
+          setMessages((prev) => [
+            ...prev,
+            { id: Date.now() + 1, sessionId: sessionId ?? 0, role: 'assistant', content: st.text, engine: (doneEngine as never) ?? null, toolCalls: st.tools.filter((t) => t.status === 'done').map((t) => ({ name: t.name, summary: t.summary ?? '' })), createdAt: new Date().toISOString() } as never,
+          ]);
+        }
+        return null;
+      });
     } catch (e) {
       setErr(e instanceof Error ? e.message : '发送失败');
+      setStream(null);
     } finally {
       setBusy(false);
     }

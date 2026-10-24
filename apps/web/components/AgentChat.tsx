@@ -2,7 +2,7 @@
 // Agent 对话组件（真实 /api/agent/chat）：仪表盘与 AI 顾问页共用
 // 含模型选择（目录来自 /api/agent/models）、工具调用链路展示、Markdown 渲染
 import { useEffect, useRef, useState } from 'react';
-import { api } from '@/lib/api';
+import { api, API_BASE, getToken } from '@/lib/api';
 import { Markdown } from '@/components/Markdown';
 import type { ChatMessageDTO, ModelCatalogItem } from '@pathpilot/shared';
 
@@ -22,6 +22,8 @@ export function AgentChat({
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  // 流式状态：正在生成的那条消息
+  const [streaming, setStreaming] = useState<{ text: string; thinking: string; tools: { name: string; status: 'running' | 'done'; summary?: string }[] } | null>(null);
   const [catalog, setCatalog] = useState<ModelCatalogItem[]>([]);
   const [currentModel, setCurrentModel] = useState('');
   const [configured, setConfigured] = useState(false);
@@ -62,17 +64,80 @@ export function AgentChat({
     setInput('');
     setErr('');
     setBusy(true);
+    setStreaming({ text: '', thinking: '', tools: [] });
     setMessages((prev) => [...prev, { id: Date.now(), sessionId: sessionId ?? 0, role: 'user', content: message, engine: null, toolCalls: [], createdAt: new Date().toISOString() }]);
     try {
-      const res = await api<{ sessionId: number; reply: ChatMessageDTO; fallbackReason?: string }>('/api/agent/chat', {
+      const token = getToken() ?? '';
+      const res = await fetch(`${API_BASE}/api/agent/chat/stream`, {
         method: 'POST',
-        json: { sessionId, message, model: currentModel || undefined },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ sessionId, message, model: currentModel || undefined }),
       });
-      setSessionId(res.sessionId);
-      setMessages((prev) => [...prev, res.reply]);
-      if (res.fallbackReason) setErr(res.fallbackReason);
+      if (!res.ok || !res.body) throw new Error(`请求失败(${res.status})`);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let doneEngine: string | undefined;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const parts = buf.split('\n\n');
+        buf = parts.pop() ?? '';
+        for (const part of parts) {
+          const line = part.split('\n').find((l) => l.startsWith('data: '));
+          if (!line) continue;
+          let ev: { type: string; delta?: string; name?: string; summary?: string; engine?: string; model?: string; fallbackReason?: string; sessionId?: number };
+          try {
+            ev = JSON.parse(line.slice(6));
+          } catch {
+            continue;
+          }
+          if (ev.sessionId) setSessionId(ev.sessionId);
+          setStreaming((st) => {
+            const cur = st ?? { text: '', thinking: '', tools: [] };
+            switch (ev.type) {
+              case 'thinking':
+                return { ...cur, thinking: cur.thinking + (ev.delta ?? '') };
+              case 'text':
+                return { ...cur, text: cur.text + (ev.delta ?? '') };
+              case 'tool_start':
+                return { ...cur, tools: [...cur.tools, { name: ev.name ?? '', status: 'running' }] };
+              case 'tool_end': {
+                const tools = cur.tools.map((t) => (t.name === ev.name && t.status === 'running' ? { ...t, status: 'done' as const, summary: ev.summary } : t));
+                return { ...cur, tools };
+              }
+              default:
+                return cur;
+            }
+          });
+          if (ev.type === 'done') {
+            doneEngine = ev.engine;
+            if (ev.fallbackReason) setErr(ev.fallbackReason);
+          }
+        }
+      }
+      // 流结束：把流式消息落为正式消息
+      setStreaming((st) => {
+        if (st && st.text.trim()) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: Date.now(),
+              sessionId: sessionId ?? 0,
+              role: 'assistant',
+              content: st.text,
+              engine: (doneEngine as 'pi-llm' | 'rules') ?? null,
+              toolCalls: st.tools.filter((t) => t.status === 'done').map((t) => ({ name: t.name, summary: t.summary ?? '' })),
+              createdAt: new Date().toISOString(),
+            },
+          ]);
+        }
+        return null;
+      });
     } catch (e) {
       setErr(e instanceof Error ? e.message : '发送失败');
+      setStreaming(null);
     } finally {
       setBusy(false);
     }
@@ -136,7 +201,50 @@ export function AgentChat({
             </div>
           </div>
         ))}
-        {busy && (
+        {streaming && (
+          <div className="flex justify-start">
+            <div className="w-full rounded-2xl rounded-bl-sm border border-line bg-white px-4 py-2.5">
+              {streaming.thinking && (
+                <details className="mb-2 rounded-lg bg-paper-2/60 px-3 py-2" open={false}>
+                  <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-semibold text-slate-1">
+                    <span className="animate-pulse">🧠</span> 思考中
+                  </summary>
+                  <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap text-[11px] leading-4 text-slate-2">{streaming.thinking}</pre>
+                </details>
+              )}
+              {streaming.tools.length > 0 && (
+                <div className="mb-2 space-y-1.5">
+                  {streaming.tools.map((t, i) => (
+                    <div key={i} className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs ${t.status === 'running' ? 'border-accent/40 bg-accent-soft/50' : 'border-line bg-paper-2/60'}`}>
+                      {t.status === 'running' ? (
+                        <>
+                          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                          <span className="font-mono text-[11px] text-accent">{t.name}</span>
+                          <span className="text-slate-2">调用中…</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-teal">✓</span>
+                          <span className="font-mono text-[11px] text-ink">{t.name}</span>
+                          {t.summary && <span className="truncate text-slate-2">{t.summary.slice(0, 60)}</span>}
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {streaming.text ? (
+                <Markdown text={streaming.text} />
+              ) : (
+                !streaming.thinking && streaming.tools.length === 0 && (
+                  <span className="inline-block h-3 w-3 animate-bounce rounded-full bg-accent" />
+                )
+              )}
+              <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-accent align-middle" />
+            </div>
+          </div>
+        )}
+        {busy && !streaming && (
           <div className="flex justify-start">
             <div className="rounded-2xl rounded-bl-sm border border-line bg-white px-4 py-3">
               <span className="inline-block h-3 w-3 animate-bounce rounded-full bg-accent [animation-delay:0ms]" />
