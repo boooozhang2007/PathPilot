@@ -19,6 +19,21 @@ export default function MineTab() {
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [connResult, setConnResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  async function testConnection() {
+    setConnResult(null);
+    try {
+      await setApiBase(server);
+      const h = await api<{ ok: boolean; time: string }>('/api/health');
+      setConnResult({ ok: true, message: `连接成功（服务器时间 ${h.time.slice(11, 19)}）。现在可以登录使用。` });
+    } catch (e) {
+      setConnResult({
+        ok: false,
+        message: `连接失败：${e instanceof Error ? e.message : '未知错误'}\n排查：1) 手机与电脑连同一 WiFi；2) 电脑后端已运行；3) 地址填电脑局域网 IP；4) 电脑防火墙已放行 3000 端口。`,
+      });
+    }
+  }
 
   const load = useCallback(() => {
     Promise.all([api<ProfileDTO | null>('/api/profile'), api<ProfileSkillDTO[]>('/api/skills'), api<RoadmapVersionSummary[]>('/api/roadmaps'), getNickname(), getApiBase()])
@@ -167,7 +182,15 @@ export default function MineTab() {
           placeholder="http://10.0.2.2:3000"
           placeholderTextColor={C.slate2}
         />
-        <Btn title="保存服务器地址" kind="ghost" onPress={saveServer} />
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <Btn title="测试连接" kind="ghost" onPress={testConnection} style={{ flex: 1 }} />
+          <Btn title="保存地址" onPress={saveServer} style={{ flex: 1 }} />
+        </View>
+        {connResult ? (
+          <View style={{ backgroundColor: connResult.ok ? C.tealSoft : C.accentSoft, borderRadius: 10, padding: 10, marginTop: 10 }}>
+            <Text style={{ color: connResult.ok ? C.teal : C.accent, fontSize: 12, lineHeight: 17 }}>{connResult.message}</Text>
+          </View>
+        ) : null}
       </Card>
 
       <View style={{ gap: 10 }}>

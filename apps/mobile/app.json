@@ -15,6 +15,7 @@
       "package": "com.pathpilot.app",
       "versionCode": 1,
       "permissions": ["INTERNET"],
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#0B2239",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
