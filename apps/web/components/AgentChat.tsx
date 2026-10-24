@@ -24,14 +24,16 @@ export function AgentChat({
   const [catalog, setCatalog] = useState<ModelCatalogItem[]>([]);
   const [currentModel, setCurrentModel] = useState('');
   const [configured, setConfigured] = useState(false);
+  const [availability, setAvailability] = useState<Record<string, { available: boolean; error?: string }> | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    api<{ catalog: ModelCatalogItem[]; current: string; configured: boolean }>('/api/agent/models')
+    api<{ catalog: ModelCatalogItem[]; current: string; configured: boolean; availability: Record<string, { available: boolean; error?: string }> | null }>('/api/agent/models?probe=1')
       .then((m) => {
         setCatalog(m.catalog);
         setCurrentModel(localStorage.getItem('pp_model') ?? m.current);
         setConfigured(m.configured);
+        setAvailability(m.availability);
       })
       .catch(() => {});
     api<{ sessionId: number; messages: ChatMessageDTO[] } | null>('/api/agent/session')
@@ -80,12 +82,16 @@ export function AgentChat({
       {showModel && (
         <div className="flex items-center justify-between border-b border-line px-5 py-3">
           <div className="text-xs font-semibold text-slate-1">模型</div>
-          <select className="pp-input w-56 py-1.5 text-xs" value={currentModel} onChange={(e) => pickModel(e.target.value)} disabled={!configured}>
-            {catalog.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} · {c.price}
-              </option>
-            ))}
+          <select className="pp-input w-60 py-1.5 text-xs" value={currentModel} onChange={(e) => pickModel(e.target.value)} disabled={!configured}>
+            {catalog.map((c) => {
+              const avail = availability?.[c.id];
+              return (
+                <option key={c.id} value={c.id}>
+                  {c.name} · {c.price}
+                  {avail ? (avail.available ? ' ✓' : ' ✕不可用') : ''}
+                </option>
+              );
+            })}
           </select>
         </div>
       )}

@@ -46,9 +46,29 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return { baseUrl, models };
   });
 
-  /** 前端模型选择器数据（登录用户可访问） */
-  app.get('/api/agent/models', { preHandler: [app.authPreHandler] }, async () => {
+  /** 前端模型选择器数据（登录用户可访问）；?probe=1 时实测各模型可用性（10 分钟缓存） */
+  app.get('/api/agent/models', { preHandler: [app.authPreHandler] }, async (req) => {
     const s = await getLlmSettings();
-    return { catalog: MODEL_CATALOG, current: s.model, configured: await isLlmConfigured() };
+    const base = { catalog: MODEL_CATALOG, current: s.model, configured: await isLlmConfigured() };
+    const probe = (req.query as { probe?: string }).probe === '1';
+    if (!probe || !base.configured) return { ...base, availability: null };
+    if (probeCache && Date.now() - probeCache.at < 10 * 60 * 1000) return { ...base, availability: probeCache.data };
+    const { resolveModel } = await import('../agent/pi/provider.js');
+    const { runAgentWith } = await import('../agent/pi/runtime.js');
+    const availability: Record<string, { available: boolean; error?: string }> = {};
+    // 串行探测，避免并发压垮小端点
+    for (const m of MODEL_CATALOG) {
+      try {
+        const { models, model } = await resolveModel(m.id);
+        const out = await runAgentWith(models, model, { systemPrompt: 'ping', prompt: '回复ok', wallClockMs: 30000, maxToolCalls: 0 });
+        availability[m.id] = out.aborted ? { available: false, error: '响应超时' } : { available: true };
+      } catch (err) {
+        availability[m.id] = { available: false, error: (err instanceof Error ? err.message : String(err)).slice(0, 80) };
+      }
+    }
+    probeCache = { at: Date.now(), data: availability };
+    return { ...base, availability };
   });
+
+  let probeCache: { at: number; data: Record<string, { available: boolean; error?: string }> } | null = null;
 }
