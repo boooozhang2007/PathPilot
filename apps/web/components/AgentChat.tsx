@@ -61,12 +61,13 @@ export function AgentChat({
     setBusy(true);
     setMessages((prev) => [...prev, { id: Date.now(), sessionId: sessionId ?? 0, role: 'user', content: message, engine: null, toolCalls: [], createdAt: new Date().toISOString() }]);
     try {
-      const res = await api<{ sessionId: number; reply: ChatMessageDTO }>('/api/agent/chat', {
+      const res = await api<{ sessionId: number; reply: ChatMessageDTO; fallbackReason?: string }>('/api/agent/chat', {
         method: 'POST',
         json: { sessionId, message, model: currentModel || undefined },
       });
       setSessionId(res.sessionId);
       setMessages((prev) => [...prev, res.reply]);
+      if (res.fallbackReason) setErr(res.fallbackReason);
     } catch (e) {
       setErr(e instanceof Error ? e.message : '发送失败');
     } finally {
@@ -138,7 +139,7 @@ export function AgentChat({
           </div>
         )}
       </div>
-      {err && <div className="px-5 pb-2 text-xs text-accent">{err}</div>}
+      {err && <div className="px-5 pb-2 text-xs text-amber">{err}</div>}
       <form
         className="flex gap-2 border-t border-line p-4"
         onSubmit={(e) => {

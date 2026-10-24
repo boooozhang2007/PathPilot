@@ -55,11 +55,11 @@ export async function clearAuth(): Promise<void> {
   await AsyncStorage.multiRemove([KEY_TOKEN, KEY_NICKNAME, KEY_GUEST]);
 }
 
-export async function api<T = unknown>(path: string, init?: { method?: string; json?: unknown }): Promise<T> {
+export async function api<T = unknown>(path: string, init?: { method?: string; json?: unknown; timeoutMs?: number }): Promise<T> {
   const base = await getApiBase();
   const token = await getToken();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30000);
+  const timer = setTimeout(() => controller.abort(), init?.timeoutMs ?? 30000);
   try {
     const res = await fetch(`${base}${path}`, {
       method: init?.method ?? 'GET',
@@ -81,7 +81,7 @@ export async function api<T = unknown>(path: string, init?: { method?: string; j
     return data as T;
   } catch (e) {
     if (e instanceof ApiError) throw e;
-    if (e instanceof Error && e.name === 'AbortError') throw new ApiError('NETWORK_ERROR', '网络请求超时，请检查服务器地址与网络');
+    if (e instanceof Error && e.name === 'AbortError') throw new ApiError('NETWORK_ERROR', '请求超时（模型响应较慢，可稍后重试）');
     throw new ApiError('NETWORK_ERROR', '网络不可用：请检查服务器地址设置与后端是否运行（真机需填电脑局域网 IP）');
   } finally {
     clearTimeout(timer);

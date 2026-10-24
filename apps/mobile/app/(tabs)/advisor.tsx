@@ -38,9 +38,10 @@ export default function AdvisorTab() {
     setBusy(true);
     setMessages((prev) => [...prev, { id: Date.now(), sessionId: sessionId ?? 0, role: 'user', content: message, engine: null, toolCalls: [], createdAt: new Date().toISOString() } as never]);
     try {
-      const res = await api<{ sessionId: number; reply: ChatMessageDTO }>('/api/agent/chat', { method: 'POST', json: { sessionId, message } });
+      const res = await api<{ sessionId: number; reply: ChatMessageDTO; fallbackReason?: string }>('/api/agent/chat', { method: 'POST', json: { sessionId, message }, timeoutMs: 300_000 });
       setSessionId(res.sessionId);
       setMessages((prev) => [...prev, res.reply]);
+      if (res.fallbackReason) setErr(res.fallbackReason);
     } catch (e) {
       setErr(e instanceof Error ? e.message : '发送失败');
     } finally {

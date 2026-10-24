@@ -30,7 +30,7 @@ function tracedTools(tools: AgentTool<any>[], trace: ToolTraceEntry[]): AgentToo
 export async function chat(
   userId: number,
   input: { sessionId?: number; message: string; model?: string }
-): Promise<{ sessionId: number; reply: ChatMessageDTO; engine: 'pi-llm' | 'rules'; model?: string }> {
+): Promise<{ sessionId: number; reply: ChatMessageDTO; engine: 'pi-llm' | 'rules'; model?: string; fallbackReason?: string }> {
   // 会话管理（会话记忆不代替正式业务记录，PRD 4.8）
   let sessionId = input.sessionId;
   if (sessionId) {
@@ -48,9 +48,10 @@ export async function chat(
   await db.insert(agentChatMessages).values({ sessionId: sid, role: 'user', content: input.message });
 
   const ctx = await buildUserContext(userId);
-  let replyText: string;
+  let replyText = '';
   let engine: 'pi-llm' | 'rules' = 'rules';
   let usedModel: string | undefined;
+  let fallbackReason = '';
   let toolTrace: ToolTraceEntry[] = [];
 
   if (await isLlmConfigured()) {
@@ -78,11 +79,12 @@ export async function chat(
       null,
       1
     );
-    try {
+    let llmErr = '';
+    const attemptLlm = async (modelId?: string): Promise<void> => {
       const { runAgentWith } = await import('./pi/runtime.js');
       const { resolveModel } = await import('./pi/provider.js');
       const { buildAgentTools } = await import('./pi/tools.js');
-      const { models, model, cfg } = await resolveModel(input.model);
+      const { models, model, cfg } = await resolveModel(modelId);
       usedModel = model.id ?? cfg.model;
       const trace: ToolTraceEntry[] = [];
       const outcome = await runAgentWith(models, model, {
@@ -96,11 +98,45 @@ export async function chat(
       replyText = outcome.text;
       engine = 'pi-llm';
       toolTrace = trace;
-    } catch {
-      replyText = chatByRules(input.message, ctx);
+    };
+    try {
+      await attemptLlm(input.model);
+    } catch (err) {
+      llmErr = err instanceof Error ? err.message : String(err);
+      // 所选模型失败时降级到管理页配置的当前模型重试一次
+      const { getLlmSettings } = await import('./settings.js');
+      const cfg = await getLlmSettings();
+      if (input.model && input.model !== cfg.model) {
+        try {
+          await attemptLlm(cfg.model);
+          fallbackReason = `所选模型 ${input.model} 不可用（${llmErr.slice(0, 80)}），已用 ${cfg.model} 回答`;
+          llmErr = '';
+        } catch (err2) {
+          llmErr = err2 instanceof Error ? err2.message : String(err2);
+        }
+      }
+      if (llmErr) {
+        // 瞬时错误（超时/网络/5xx）间隔 2s 再重试一次
+        if (/timed? ?out|timeout|econn|fetch failed|network|50[234]/i.test(llmErr)) {
+          await new Promise((r) => setTimeout(r, 2000));
+          try {
+            await attemptLlm(cfg.model);
+            llmErr = '';
+            fallbackReason = '';
+          } catch (err3) {
+            llmErr = err3 instanceof Error ? err3.message : String(err3);
+          }
+        }
+      }
+      if (llmErr) {
+        console.warn(`[agent-chat] LLM 通道失败，规则引擎回答：${llmErr}`);
+        replyText = chatByRules(input.message, ctx);
+        fallbackReason = `模型调用失败（${llmErr.slice(0, 120)}）`;
+      }
     }
   } else {
     replyText = chatByRules(input.message, ctx);
+    fallbackReason = '未配置模型 API（/admin 页面配置后启用 AI 模型回答）';
   }
 
   const inserted = await db
@@ -113,6 +149,7 @@ export async function chat(
     sessionId: sid,
     engine,
     model: usedModel,
+    fallbackReason: fallbackReason || undefined,
     reply: {
       id: row.id,
       sessionId: row.sessionId,
