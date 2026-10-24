@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
-import { api, setToken, getApiBase, setApiBase } from '../lib/api';
+import { api, setToken, setGuest, getApiBase, setApiBase } from '../lib/api';
 import { C } from '../components/ui';
 
 export default function Login() {
@@ -13,6 +13,11 @@ export default function Login() {
   const [server, setServer] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+
+  async function skip() {
+    await setGuest(true);
+    router.replace('/');
+  }
 
   async function submit() {
     setErr('');
@@ -80,6 +85,11 @@ export default function Login() {
           <TouchableOpacity style={{ backgroundColor: busy ? C.slate2 : C.accent, borderRadius: 10, paddingVertical: 13, alignItems: 'center' }} onPress={submit} disabled={busy}>
             <Text style={{ color: C.white, fontWeight: '700', fontSize: 14 }}>{busy ? '请稍候…' : mode === 'login' ? '登录' : '创建账号'}</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity style={{ marginTop: 12, paddingVertical: 10, alignItems: 'center' }} onPress={skip}>
+            <Text style={{ color: C.slate, fontSize: 13, fontWeight: '600' }}>跳过登录，先逛逛 ›</Text>
+          </TouchableOpacity>
+          <Text style={{ fontSize: 11, color: C.slate2, textAlign: 'center', marginTop: 4 }}>访客模式可浏览界面与配置服务器，任务/规划等操作需登录</Text>
 
           <Text style={{ fontSize: 11, color: C.slate2, textAlign: 'center', marginTop: 14, lineHeight: 16 }}>
             演示账号：demo@pathpilot.ai / demo123456{'\n'}真机使用请将服务器地址改为电脑局域网 IP（可在登录页或「我的」中设置）

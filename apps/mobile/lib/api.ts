@@ -5,6 +5,7 @@ export const DEFAULT_BASE = 'http://10.0.2.2:3000';
 const KEY_TOKEN = 'pp_token';
 const KEY_BASE = 'pp_api_base';
 const KEY_NICKNAME = 'pp_nickname';
+const KEY_GUEST = 'pp_guest';
 
 export class ApiError extends Error {
   constructor(public code: string, message: string) {
@@ -32,15 +33,26 @@ export async function getToken(): Promise<string | null> {
 
 export async function setToken(token: string, nickname: string): Promise<void> {
   await AsyncStorage.multiSet([[KEY_TOKEN, token], [KEY_NICKNAME, nickname]]);
+  await AsyncStorage.removeItem(KEY_GUEST); // 正式登录清除访客标记
 }
 
 export async function getNickname(): Promise<string> {
   return (await AsyncStorage.getItem(KEY_NICKNAME)) ?? '同学';
 }
 
+/** 访客模式（跳过登录）：可浏览界面与配置服务器，业务操作需登录 */
+export async function setGuest(on: boolean): Promise<void> {
+  if (on) await AsyncStorage.setItem(KEY_GUEST, '1');
+  else await AsyncStorage.removeItem(KEY_GUEST);
+}
+
+export async function isGuest(): Promise<boolean> {
+  return (await AsyncStorage.getItem(KEY_GUEST)) === '1';
+}
+
 export async function clearAuth(): Promise<void> {
   // 退出登录：清除敏感本地缓存（PRD 5.3）
-  await AsyncStorage.multiRemove([KEY_TOKEN, KEY_NICKNAME]);
+  await AsyncStorage.multiRemove([KEY_TOKEN, KEY_NICKNAME, KEY_GUEST]);
 }
 
 export async function api<T = unknown>(path: string, init?: { method?: string; json?: unknown }): Promise<T> {
@@ -61,6 +73,9 @@ export async function api<T = unknown>(path: string, init?: { method?: string; j
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       const err = (data as { error?: { code?: string; message?: string } }).error;
+      if (res.status === 401) {
+        throw new ApiError('UNAUTHORIZED', '此功能需要登录：请到「我的」页登录账号');
+      }
       throw new ApiError(err?.code ?? 'HTTP_ERROR', err?.message ?? `请求失败(${res.status})`);
     }
     return data as T;
