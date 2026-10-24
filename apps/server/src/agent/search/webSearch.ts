@@ -2,6 +2,7 @@
 // 尽力而为 + 如实报告：每个来源记录 parse_status，失败不编造；带超时与大小限制（PRD 6.6）
 import type { JobSample, EmploymentType } from '@pathpilot/shared';
 import { config } from '../../config.js';
+import { liepinConfigured, liepinSearchJobs } from './liepin.js';
 
 export interface SearchAttempt {
   title: string;
@@ -176,7 +177,7 @@ export function extractJdFromHtml(html: string): { description: string; educatio
 
 /**
  * 真实联网搜索岗位样本。任何一步失败都如实记录在 attempts 里，绝不填充虚构样本。
- * 通道：Tavily 搜索 API（配置 TAVILY_API_KEY 时）→ 必应 HTML（尽力而为）→ 如实报告失败。
+ * 通道优先级：猎聘官方 MCP（配置 LIEPIN_MCP_TOKEN 时）→ Tavily 搜索 API → 必应 HTML（尽力而为）→ 如实报告失败。
  */
 export async function webSearchJobs(input: {
   targetRole: string;
@@ -190,6 +191,16 @@ export async function webSearchJobs(input: {
   const samples: JobSample[] = [];
   let searchError = '';
   let hits: SearchHit[] = [];
+
+  // 通道 0：猎聘官方 MCP（岗位数据 + 来源链接，最高优先）
+  let liepinNote = '';
+  if (liepinConfigured()) {
+    const liepin = await liepinSearchJobs(input);
+    if (liepin.ok && liepin.samples.length) {
+      return { samples: liepin.samples, attempts: [], failedCount: 0, note: liepin.note };
+    }
+    liepinNote = liepin.note;
+  }
 
   // 通道 1：Tavily 搜索 API（可选）
   if (process.env.TAVILY_API_KEY) {
@@ -226,7 +237,7 @@ export async function webSearchJobs(input: {
       samples: [],
       attempts: [],
       failedCount: 0,
-      note: `联网搜索未取得可用招聘页（${searchError || '无白名单域名结果'}）。已按规则回退到预置样本库/手动输入，来源类型如实标注。`,
+      note: `${liepinNote ? `${liepinNote} ` : ''}联网搜索未取得可用招聘页（${searchError || '无白名单域名结果'}）。已按规则回退到预置样本库/手动输入，来源类型如实标注。`,
     };
   }
   const now = new Date().toISOString();

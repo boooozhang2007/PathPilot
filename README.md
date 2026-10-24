@@ -33,7 +33,8 @@ npm run dev:web             # 启动 Web  :3001
 | `AGENT_BASE_URL` | OpenAI 兼容端点（默认智谱 `https://open.bigmodel.cn/api/paas/v4`） |
 | `AGENT_API_KEY` | **可选**。不配置自动降级规则引擎，全流程照常可演示；配置后启用 Pi Agent LLM 通道 |
 | `AGENT_MODEL` | 如 `glm-4.6` / `deepseek-chat` |
-| `TAVILY_API_KEY` | **可选**。配置后启用实时联网岗位搜索 |
+| `TAVILY_API_KEY` | **可选**。Tavily 搜索通道 |
+| `LIEPIN_USER_TOKEN` | **可选**。猎聘官方岗位搜索通道（[liepin.com/mcp/auth](https://www.liepin.com/mcp/auth) 获取，90 天有效）；需先安装猎聘 CLI（见下） |
 
 ## 架构（摘要）
 
@@ -62,6 +63,17 @@ packages/shared 三端共享 TS 类型 + Zod schema + 枚举
 ```bash
 npm test    # vitest：归一化/时间预算/规划校验/匹配度/数据权限/版本保存/任务乐观锁/跨端读取
 ```
+
+## 猎聘官方岗位搜索通道（可选）
+
+后端通过官方 `liepin-cli`（Python CLI，[github.com/liepin-tech-2026/liepin-cil](https://github.com/liepin-tech-2026/liepin-cil)）接入猎聘实时岗位数据：
+
+```bash
+git clone --depth 1 https://github.com/liepin-tech-2026/liepin-cil.git tools/liepin-cli
+cd tools/liepin-cli && python -m venv .venv && .venv/Scripts/pip install -e .   # Python ≥3.11
+```
+
+然后在 `apps/server/.env` 配置 `LIEPIN_USER_TOKEN`（猎聘授权页扫码获取）。配置后岗位分析优先走猎聘官方渠道（搜索 → 抓取完整 JD → 频次统计，均附原始链接）；未配置则自动走 Tavily/必应/预置样本库，来源类型如实标注。搜索结果缓存 10 分钟。
 
 ## Android APK 构建
 

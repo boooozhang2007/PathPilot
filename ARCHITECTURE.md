@@ -174,6 +174,7 @@ GET /api/dashboard (首页聚合)   GET /api/stats/growth (成长统计)
 
 `JobSearchProvider` 接口，按序尝试、如实报告：
 
+0. **猎聘官方通道**（`LIEPIN_USER_TOKEN` + `tools/liepin-cli`）：官方 CLI 搜索实时岗位 → 抓取完整 JD 正文，最高优先
 1. **WebSearchProvider**：真实招聘网站搜索/页面抓取（实现期实测确定可达源白名单；带超时、UA、大小限制；parse_status 记录成功/失败）
 2. **PresetProvider**：预置真实样本库（开发期从公开招聘页采集，含真实 source_url/fetched_at，source_type=`preset`）
 3. **ManualProvider**：用户粘贴 JD 文本（source_type=`manual`）

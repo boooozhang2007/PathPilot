@@ -8,6 +8,7 @@ process.env.DB_PATH = join(dir, 'test.db');
 process.env.JWT_SECRET = 'test-secret';
 process.env.AGENT_API_KEY = ''; // 规则引擎通道，无网络依赖
 delete process.env.TAVILY_API_KEY;
+delete process.env.LIEPIN_USER_TOKEN; // 测试不依赖外部猎聘通道
 
 // 迁移 + seed
 const { getDb } = await import('../src/db/client.js');

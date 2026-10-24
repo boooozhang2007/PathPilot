@@ -31,3 +31,6 @@ pi/
 apps/web/.playwright-cli/
 apps/web/next-env.d.ts
 *.log
+
+# vendored liepin-cli（tools/liepin-cli 安装见 README，不入库）
+tools/liepin-cli/
