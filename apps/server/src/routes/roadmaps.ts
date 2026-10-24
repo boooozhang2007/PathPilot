@@ -20,10 +20,11 @@ import {
   addTaskEvidence,
 } from '../services/roadmapService.js';
 import { generateRoadmap, reviseRoadmap } from '../agent/planner.js';
-import { chat, chatHistory, latestSession, resumeDraft } from '../agent/advisor.js';
+import { chat, chatHistory, latestSession } from '../agent/advisor.js';
+import { resumeDraft } from '../agent/resume.js';
 import { createRun, executeRun, getRun, agentConfigSummary } from '../agent/core.js';
 import { analyzeGapByRules } from '../agent/rules/chat.js';
-import { buildUserContext } from '../agent/advisor.js';
+import { buildUserContext } from '../agent/context.js';
 import { badRequest } from '../services/errors.js';
 import { currentSemesterOf, semesterLabel } from '../services/semester.js';
 import { getProfile, listExperiences, listProfileSkills } from '../services/profileService.js';

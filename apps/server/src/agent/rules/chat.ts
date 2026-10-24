@@ -11,13 +11,8 @@ import type {
 import { computeMatch, weightFromFrequency, type UserSkillState, type RequirementWeight } from '../../services/match.js';
 import { EVIDENCE_STATUS_LABELS, type EvidenceStatus } from '@pathpilot/shared';
 
-export interface UserContext {
-  profile: ProfileDTO | null;
-  skills: ProfileSkillDTO[];
-  experiences: ExperienceDTO[];
-  analysis: JobAnalysisDTO | null;
-  activeTasks: RoadmapTaskDTO[];
-}
+export type { UserContext } from '../context.js';
+import type { UserContext } from '../context.js';
 
 /** 差距分析（确定性，PRD 4.3）：匹配度/学习顺序/建议项目全部可解释 */
 export function analyzeGapByRules(ctx: UserContext): SkillGapResult {

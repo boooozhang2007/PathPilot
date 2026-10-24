@@ -63,20 +63,20 @@ PathPilot AI 是「Web + Android 共享一个后端」的职业成长规划平�
 **Pi Agent 负责**：理解意图、组织规划内容、解释依据、生成建议（LLM 通道）
 **确定性业务代码负责**：认证、DB 读写、技能归一化、频次/匹配度计算、时间预算校验、版本保存、任务状态、权限校验
 
-### 2.3 工具集（PRD 6.3，全部为 `AgentTool`，TypeBox schema）
+### 2.3 工具集（PRD 6.3，全部为 `AgentTool`，TypeBox schema，见 `agent/pi/tools.ts`）
 
-| 工具 | 实现（调 services 层，绝不直接写库） |
-|---|---|
-| `search_jobs` | JobSearchProvider 链：真实招聘站抓取 → 预置样本；返回样本+来源+采集状态 |
-| `fetch_job_page` | 白名单 URL 抓取（超时/大小限制/HTML→文本），记录 parse_status |
-| `extract_requirements` | LLM 结构化抽取（JD→技能/学历/经验/职责/加分项），Zod 校验 |
-| `normalize_skills` | 词典归一化服务（skills.aliases），保留原始词条映射 |
-| `get_user_profile` | 从 JWT 上下文取 user_id → 读档案（**不接受 Agent 指定用户 ID**） |
-| `get_current_roadmap` | 读当前规划版本+任务状态 |
-| `generate_roadmap` | 组装候选规划（LLM 或规则模板） |
-| `validate_roadmap` | 时间预算+依赖+结构校验（纯函数） |
-| `save_roadmap_version` | 经校验后写新版本（唯一允许落库的入口之一） |
-| `update_task_status` | 调任务服务（状态机+乐观锁） |
+LLM 通道挂载**全模块工具集**（17 个），用户身份由工厂参数（认证上下文 userId）绑定，不接受模型指定用户：
+
+| 模块 | 工具 | 说明 |
+|---|---|---|
+| 档案 | `get_user_profile` / `upsert_skill` / `create_experience` | 读取档案；技能归一化写入（无证据保持「待验证」）；记录真实经历 |
+| 任务 | `get_tasks` / `update_task_status` | 按学期/状态过滤；状态机+乐观锁+归属校验（PRD 6.3） |
+| 规划 | `get_current_roadmap` / `get_roadmap_versions` / `generate_roadmap` / `create_roadmap_revision` | 读当前规划与历史；生成/重规划走 planner（校验通过才落库，已完成任务保留） |
+| 岗位 | `get_job_analysis` / `analyze_jobs` / `analyze_skill_gap` / `search_jobs` / `fetch_job_page` / `extract_requirements` | 异步发起分析（agent_runs）；差距分析；联网搜索/白名单抓取/关键词抽取 |
+| 归一化 | `normalize_skills` | 词典归一化，保留原始词条映射 |
+| 简历 | `generate_resume_draft` | 只用真实经历，不虚构数据 |
+
+工具实现只调 services 层，绝不直接写库；`analyze_jobs` 等长任务经 `createRun/executeRun` 异步执行并返回 run_id。
 
 ### 2.4 运行限制与安全（PRD 6.6）
 

@@ -38,7 +38,7 @@ const ALLOWED_HOSTS = [
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
-async function fetchText(url: string, timeoutMs: number, maxBytes = 800_000): Promise<string> {
+export async function fetchText(url: string, timeoutMs: number, maxBytes = 800_000): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
