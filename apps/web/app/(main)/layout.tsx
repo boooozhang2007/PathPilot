@@ -8,10 +8,10 @@ const NAV = [
   { href: '/dashboard', label: '首页', icon: '◧' },
   { href: '/jobs', label: '岗位洞察', icon: '◎' },
   { href: '/roadmap', label: '成长路线', icon: '◇' },
-  { href: '/planning', label: '动态规划', icon: '↻' },
-  { href: '/profile', label: '能力档案', icon: '☰' },
+  { href: '/advisor', label: 'AI 顾问', icon: '✦', agent: true },
   { href: '/tasks', label: '任务中心', icon: '✓' },
-  { href: '/advisor', label: 'AI 顾问', icon: '✦' },
+  { href: '/profile', label: '能力档案', icon: '☰' },
+  { href: '/planning', label: '动态规划', icon: '↻' },
 ];
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
@@ -52,15 +52,20 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         <nav className="mt-2 flex-1 space-y-1 px-3">
           {NAV.map((item) => {
             const active = pathname.startsWith(item.href);
+            const agent = 'agent' in item && item.agent;
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
-                  active ? 'bg-white text-ink' : 'text-white/70 hover:bg-white/10 hover:text-white'
+                  active
+                    ? 'bg-white text-ink'
+                    : agent
+                      ? 'bg-accent-soft/70 text-accent hover:bg-accent-soft'
+                      : 'text-white/70 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                <span className="text-xs opacity-70">{item.icon}</span>
+                <span className={`text-xs ${agent ? 'opacity-100' : 'opacity-70'}`}>{item.icon}</span>
                 {item.label}
               </Link>
             );
