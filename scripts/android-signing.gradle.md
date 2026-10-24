@@ -1,5 +1,14 @@
 # Android release 签名配置（prebuild 重新生成 android/ 后需要重新应用）
 
+另外 prebuild 后还需在 android/app/build.gradle 的 react{} 块中把 entryFile 替换为：
+
+```gradle
+entryFile = file("../../../../node_modules/expo-router/entry.js")
+```
+
+（monorepo 下 resolveAppEntry 会指向 apps/mobile/node_modules/expo-router/entry，npm reify 剪掉局部树后 Metro/Gradle 找不到入口；直接固定到根安装路径并带 .js 扩展名。）
+
+
 `apps/mobile/android` 目录由 `npx expo prebuild -p android` 生成并被 gitignore。
 重新 prebuild 后，把以下内容应用到 `android/app/build.gradle` 的 `signingConfigs` / `buildTypes` 块，
 并保持 `android/keystore.properties` 与 `android/app/pathpilot.keystore` 存在（见仓库外备份说明）。

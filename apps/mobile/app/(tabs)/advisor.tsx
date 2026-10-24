@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { api } from '../../lib/api';
 import { C, Tag } from '../../components/ui';
+import { Markdown } from '../../components/Markdown';
 import type { ChatMessageDTO } from '@pathpilot/shared';
 
 const SUGGESTIONS = ['我目前最应该学习什么？', '就业还是考研？', '我的项目经历缺哪些证据？', '换 AI 方向要补什么？'];
@@ -83,7 +84,9 @@ export default function AdvisorTab() {
                 borderColor: C.line,
               }}
             >
-              <Text style={{ fontSize: 13, lineHeight: 20, color: m.role === 'user' ? '#fff' : C.ink }}>{m.content}</Text>
+              {m.role === 'assistant'
+                ? <Markdown text={m.content} />
+                : <Text style={{ fontSize: 13, lineHeight: 20, color: '#fff' }}>{m.content}</Text>}
               {m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0 ? (
                 <View style={{ marginTop: 8, gap: 6 }}>
                   {m.toolCalls.map((tc: { name: string; summary: string }, i: number) => (

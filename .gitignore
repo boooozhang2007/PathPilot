@@ -34,3 +34,6 @@ apps/web/next-env.d.ts
 
 # vendored liepin-cli（tools/liepin-cli 安装见 README，不入库）
 tools/liepin-cli/
+
+# apps/mobile/node_modules 局部树由 npm reify 管理，勿提交
+apps/mobile/node_modules/

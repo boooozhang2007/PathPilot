@@ -1,8 +1,9 @@
 'use client';
 // Agent 对话组件（真实 /api/agent/chat）：仪表盘与 AI 顾问页共用
-// 含模型选择（目录来自 /api/agent/models）与工具调用链路展示
+// 含模型选择（目录来自 /api/agent/models）、工具调用链路展示、Markdown 渲染
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
+import { Markdown } from '@/components/Markdown';
 import type { ChatMessageDTO, ModelCatalogItem } from '@pathpilot/shared';
 
 export const DEFAULT_SUGGESTIONS = ['我目前最应该学习什么？', '帮我分析北京的 Java 岗位', '把每周改成 8 小时并重新规划', '在规划里加一个 Redis 学习任务'];
@@ -112,11 +113,11 @@ export function AgentChat({
           <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[85%] ${m.role === 'user' ? '' : 'w-full'}`}>
               <div
-                className={`whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-6 ${
-                  m.role === 'user' ? 'ml-auto max-w-[85%] rounded-br-sm bg-ink text-white' : 'rounded-bl-sm border border-line bg-white'
+                className={`rounded-2xl px-4 py-2.5 text-sm leading-6 ${
+                  m.role === 'user' ? 'ml-auto max-w-[85%] rounded-br-sm bg-ink text-white' : 'w-full rounded-bl-sm border border-line bg-white'
                 }`}
               >
-                {m.content}
+                {m.role === 'user' ? <span className="whitespace-pre-wrap">{m.content}</span> : <Markdown text={m.content} />}
               </div>
               {m.role === 'assistant' && m.toolCalls.length > 0 && (
                 <div className="mt-2 space-y-1.5">
