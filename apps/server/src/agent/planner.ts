@@ -17,7 +17,7 @@ import { validateRoadmap } from '../services/roadmapValidate.js';
 import { remainingSemesters, semesterBudget, semesterLabel } from '../services/semester.js';
 import { generateRoadmapByRules, reviseRoadmapByRules } from './rules/roadmap.js';
 import { currentEngine } from './core.js';
-import { llmConfigured } from '../config.js';
+import { isLlmConfigured } from './settings.js';
 import { runStructuredAgent } from './pi/runtime.js';
 import { budgetExceeded, internal, badRequest } from '../services/errors.js';
 import { userLatestAnalysis } from './jobs.js';
@@ -61,7 +61,7 @@ export async function generateRoadmap(userId: number, input: GenerateRoadmapInpu
   let candidate: unknown;
   let warnings: string[] = [];
 
-  if (llmConfigured()) {
+  if (await isLlmConfigured()) {
     try {
       const llmResult = await llmRoadmap({ ...ctx, weeklyHours, targetRole, careerPath }, false);
       candidate = llmResult.roadmap;
@@ -130,7 +130,7 @@ export async function reviseRoadmap(userId: number, input: ReviseRoadmapInput): 
   let engine: 'pi-llm' | 'rules' = 'rules';
   let candidate: unknown;
   let warnings: string[] = [];
-  if (llmConfigured()) {
+  if (await isLlmConfigured()) {
     try {
       const llmResult = await llmRoadmap({ ...ctx, weeklyHours, targetRole, careerPath }, true);
       candidate = llmResult.roadmap;

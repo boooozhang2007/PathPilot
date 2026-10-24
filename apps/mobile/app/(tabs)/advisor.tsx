@@ -36,7 +36,7 @@ export default function AdvisorTab() {
     setInput('');
     setErr('');
     setBusy(true);
-    setMessages((prev) => [...prev, { id: Date.now(), sessionId: sessionId ?? 0, role: 'user', content: message, engine: null, createdAt: new Date().toISOString() }]);
+    setMessages((prev) => [...prev, { id: Date.now(), sessionId: sessionId ?? 0, role: 'user', content: message, engine: null, toolCalls: [], createdAt: new Date().toISOString() } as never]);
     try {
       const res = await api<{ sessionId: number; reply: ChatMessageDTO }>('/api/agent/chat', { method: 'POST', json: { sessionId, message } });
       setSessionId(res.sessionId);
@@ -51,10 +51,7 @@ export default function AdvisorTab() {
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.paper }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={{ paddingTop: 54, paddingHorizontal: 16 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 20, fontWeight: '800', color: C.ink }}>AI 顾问</Text>
-          <Tag tone="teal">基于你的真实数据</Tag>
-        </View>
+        <Text style={{ fontSize: 20, fontWeight: '800', color: C.ink }}>AI 顾问</Text>
       </View>
 
       <ScrollView ref={listRef} style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}>
@@ -86,7 +83,16 @@ export default function AdvisorTab() {
               }}
             >
               <Text style={{ fontSize: 13, lineHeight: 20, color: m.role === 'user' ? '#fff' : C.ink }}>{m.content}</Text>
-              {m.role === 'assistant' && m.engine ? <Text style={{ fontSize: 10, color: C.slate2, marginTop: 4 }}>{m.engine === 'pi-llm' ? 'AI 模型' : '规则引擎'} · 你的真实数据</Text> : null}
+              {m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0 ? (
+                <View style={{ marginTop: 8, gap: 6 }}>
+                  {m.toolCalls.map((tc: { name: string; summary: string }, i: number) => (
+                    <View key={i} style={{ backgroundColor: '#F5F2EA', borderRadius: 8, padding: 8, borderLeftWidth: 3, borderLeftColor: C.accent }}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: C.ink, fontFamily: undefined }}>{tc.name}</Text>
+                      <Text style={{ fontSize: 10, color: C.slate, marginTop: 2 }} numberOfLines={3}>{tc.summary}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
             </View>
           </View>
         ))}

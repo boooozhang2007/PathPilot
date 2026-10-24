@@ -159,7 +159,16 @@ export interface ChatMessageDTO {
   role: 'user' | 'assistant';
   content: string;
   engine: Engine | null;
+  /** 工具调用链路（LLM 通道）：[{name, summary}] */
+  toolCalls: { name: string; summary: string }[];
   createdAt: string;
+}
+
+/** 前端可选模型目录 */
+export interface ModelCatalogItem {
+  id: string;
+  name: string;
+  price: string;
 }
 
 export interface DashboardData {

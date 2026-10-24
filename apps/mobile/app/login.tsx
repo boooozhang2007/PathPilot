@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
-import { api, setToken, setGuest, getApiBase, setApiBase } from '../lib/api';
+import { api, setToken, setGuest } from '../lib/api';
 import { C } from '../components/ui';
 
 export default function Login() {
@@ -10,7 +10,6 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [nickname, setNickname] = useState('');
-  const [server, setServer] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -23,7 +22,6 @@ export default function Login() {
     setErr('');
     setBusy(true);
     try {
-      if (server.trim()) await setApiBase(server.trim());
       const res = await api<{ token: string; user: { nickname: string } }>(mode === 'login' ? '/api/auth/login' : '/api/auth/register', {
         method: 'POST',
         json: mode === 'login' ? { email, password } : { email, password, nickname },
@@ -47,7 +45,6 @@ export default function Login() {
             </View>
             <Text style={{ fontSize: 22, fontWeight: '900', color: C.ink }}>PathPilot AI</Text>
           </View>
-          <Text style={{ color: C.slate, fontSize: 12, marginTop: 8 }}>岗位证据 · 能力档案 · 可执行的成长计划</Text>
         </View>
 
         <View style={{ backgroundColor: C.white, borderRadius: 14, borderWidth: 1, borderColor: C.line, padding: 20 }}>
@@ -64,14 +61,7 @@ export default function Login() {
           </View>
 
           {mode === 'register' && (
-            <TextInput
-              style={s.input}
-              placeholder="昵称"
-              placeholderTextColor={C.slate2}
-              value={nickname}
-              onChangeText={setNickname}
-              maxLength={30}
-            />
+            <TextInput style={s.input} placeholder="昵称" placeholderTextColor={C.slate2} value={nickname} onChangeText={setNickname} maxLength={30} />
           )}
           <TextInput style={s.input} placeholder="邮箱" placeholderTextColor={C.slate2} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
           <TextInput style={s.input} placeholder={mode === 'register' ? '密码（至少 8 位）' : '密码'} placeholderTextColor={C.slate2} value={password} onChangeText={setPassword} secureTextEntry />
@@ -89,24 +79,6 @@ export default function Login() {
           <TouchableOpacity style={{ marginTop: 12, paddingVertical: 10, alignItems: 'center' }} onPress={skip}>
             <Text style={{ color: C.slate, fontSize: 13, fontWeight: '600' }}>跳过登录，先逛逛 ›</Text>
           </TouchableOpacity>
-          <Text style={{ fontSize: 11, color: C.slate2, textAlign: 'center', marginTop: 4 }}>访客模式可浏览界面与配置服务器，任务/规划等操作需登录</Text>
-
-          <Text style={{ fontSize: 11, color: C.slate2, textAlign: 'center', marginTop: 14, lineHeight: 16 }}>
-            演示账号：demo@pathpilot.ai / demo123456{'\n'}真机使用请将服务器地址改为电脑局域网 IP（可在登录页或「我的」中设置）
-          </Text>
-        </View>
-
-        <View style={{ marginTop: 16, backgroundColor: C.white, borderRadius: 14, borderWidth: 1, borderColor: C.line, padding: 16 }}>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: C.slate, marginBottom: 6 }}>服务器地址（默认 {server ? '' : 'http://10.0.2.2:3000（模拟器）'}）</Text>
-          <TextInput
-            style={s.input}
-            placeholder={server || 'http://192.168.x.x:3000'}
-            placeholderTextColor={C.slate2}
-            value={server}
-            onChangeText={setServer}
-            autoCapitalize="none"
-            onSubmitEditing={() => getApiBase()}
-          />
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

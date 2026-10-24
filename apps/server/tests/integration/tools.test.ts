@@ -31,11 +31,12 @@ beforeAll(async () => {
 describe('全模块 Agent 工具集', () => {
   const names = () => buildAgentTools(demoUserId).map((t) => t.name);
 
-  it('覆盖全部业务模块（17 个工具）', () => {
+  it('覆盖全部业务模块（20 个工具）', () => {
     const expected = [
       'get_user_profile', 'upsert_skill', 'create_experience', // 档案
       'get_tasks', 'update_task_status', // 任务
-      'get_current_roadmap', 'get_roadmap_versions', 'generate_roadmap', 'create_roadmap_revision', // 规划
+      'get_current_roadmap', 'get_roadmap_versions', 'generate_roadmap', 'create_roadmap_revision',
+      'roadmap_add_task', 'roadmap_update_task', 'roadmap_remove_task', // 规划（含编辑）
       'get_job_analysis', 'analyze_jobs', 'analyze_skill_gap', 'search_jobs', 'fetch_job_page', 'extract_requirements', // 岗位
       'normalize_skills', 'generate_resume_draft', // 归一化/简历
     ];

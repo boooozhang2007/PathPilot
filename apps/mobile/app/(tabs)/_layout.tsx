@@ -1,4 +1,4 @@
-// 底部导航 5 Tab（PRD 5.2）：首页 / 成长路线 / 任务 / AI 顾问 / 我的
+// 底部导航（任务8）：AI 顾问处于最核心位置（中央）
 import { Tabs } from 'expo-router';
 import { Text } from 'react-native';
 import { C } from '../../components/ui';
@@ -6,8 +6,8 @@ import { C } from '../../components/ui';
 const ICONS: Record<string, string> = {
   index: '◧',
   roadmap: '◇',
-  tasks: '✓',
   advisor: '✦',
+  tasks: '✓',
   mine: '☰',
 };
 
@@ -29,8 +29,8 @@ export default function TabLayout() {
     >
       <Tabs.Screen name="index" options={{ title: '首页', tabBarIcon: ({ color }) => <Icon name="index" color={color} /> }} />
       <Tabs.Screen name="roadmap" options={{ title: '成长路线', tabBarIcon: ({ color }) => <Icon name="roadmap" color={color} /> }} />
-      <Tabs.Screen name="tasks" options={{ title: '任务', tabBarIcon: ({ color }) => <Icon name="tasks" color={color} /> }} />
       <Tabs.Screen name="advisor" options={{ title: 'AI 顾问', tabBarIcon: ({ color }) => <Icon name="advisor" color={color} /> }} />
+      <Tabs.Screen name="tasks" options={{ title: '任务', tabBarIcon: ({ color }) => <Icon name="tasks" color={color} /> }} />
       <Tabs.Screen name="mine" options={{ title: '我的', tabBarIcon: ({ color }) => <Icon name="mine" color={color} /> }} />
     </Tabs>
   );

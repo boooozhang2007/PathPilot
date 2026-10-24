@@ -48,14 +48,6 @@ export default function RoadmapTab() {
         {roadmap.content.goal}
       </Text>
 
-      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        <Tag tone="ink">v{roadmap.version}</Tag>
-        <Tag tone="slate">{roadmap.content.semesters.length} 学期</Tag>
-        <Tag tone="slate">{roadmap.content.total_estimated_hours}h</Tag>
-        <Tag tone="teal">已完成 {tasks.filter((t) => t.status === 'done').length}</Tag>
-        <Tag tone="amber">{roadmap.engine === 'pi-llm' ? 'AI 生成' : '规则引擎'}</Tag>
-      </View>
-
       {roadmap.content.semesters.map((sem, i) => {
         const semTasks = tasks.filter((t) => t.semester === sem.index);
         const done = semTasks.filter((t) => t.status === 'done').length;
@@ -95,16 +87,6 @@ export default function RoadmapTab() {
         );
       })}
 
-      {roadmap.content.assumptions.length ? (
-        <Card>
-          <Text style={{ fontSize: 13, fontWeight: '700', color: C.ink, marginBottom: 6 }}>规划依据</Text>
-          {roadmap.content.assumptions.map((a, i) => (
-            <Text key={i} style={{ fontSize: 12, color: C.slate, lineHeight: 18 }}>
-              · {a}
-            </Text>
-          ))}
-        </Card>
-      ) : null}
     </ScrollView>
   );
 }

@@ -2,7 +2,7 @@
 import { resumeDraftResult, type ResumeDraftResult } from '@pathpilot/shared';
 import { listExperiences } from '../services/profileService.js';
 import { runStructuredAgent } from './pi/runtime.js';
-import { llmConfigured } from '../config.js';
+import { isLlmConfigured } from './settings.js';
 import { badRequest } from '../services/errors.js';
 import { resumeDraftByRules } from './rules/chat.js';
 
@@ -11,7 +11,7 @@ export async function resumeDraft(userId: number, input: { targetRole: string; e
   if (!all.length) throw badRequest('能力档案中暂无经历，请先添加真实经历');
   const selected = input.experienceIds?.length ? all.filter((e) => input.experienceIds!.includes(e.id)) : all;
   if (!selected.length) throw badRequest('所选经历不存在');
-  if (llmConfigured()) {
+  if (await isLlmConfigured()) {
     try {
       const { data } = await runStructuredAgent(
         {

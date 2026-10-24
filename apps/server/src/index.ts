@@ -4,7 +4,7 @@ import { getDb } from './db/client.js';
 import { migrate, MIGRATIONS_DIR } from './db/migrate.js';
 import { config } from './config.js';
 import { seedIfNeeded } from './db/seed.js';
-import { llmConfigured } from './config.js';
+
 
 async function main(): Promise<void> {
   const { sqlite } = getDb();
@@ -15,7 +15,8 @@ async function main(): Promise<void> {
   const app = await buildApp();
   await app.listen({ port: config.port, host: '0.0.0.0' });
   console.log(`[server] PathPilot API 已启动: http://localhost:${config.port}`);
-  console.log(`[server] Agent 引擎: ${llmConfigured() ? `Pi LLM（${config.agent.provider}/${config.agent.model}）` : '规则引擎（未配置 AGENT_API_KEY）'}`);
+  const llm = await import('./agent/settings.js').then((m) => m.getLlmSettings());
+  console.log(`[server] Agent 引擎: ${llm.apiKey ? `Pi LLM（${llm.baseUrl} / ${llm.model}）` : '规则引擎（未配置 API Key，管理页 /admin 可配置）'}`);
 }
 
 main().catch((err) => {

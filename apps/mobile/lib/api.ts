@@ -1,7 +1,7 @@
 // 统一 API 客户端（移动端）：服务器地址可配置（默认模拟器 10.0.2.2），token 存 AsyncStorage
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const DEFAULT_BASE = 'http://10.0.2.2:3000';
+export const DEFAULT_BASE = 'http://192.168.123.74:3000'; // 最终版硬编码服务器地址
 const KEY_TOKEN = 'pp_token';
 const KEY_BASE = 'pp_api_base';
 const KEY_NICKNAME = 'pp_nickname';

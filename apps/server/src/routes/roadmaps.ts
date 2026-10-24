@@ -110,7 +110,7 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/agent/chat', { preHandler: [auth] }, async (req) => {
     const userId = getUserId(req);
     const input = agentChatInput.parse(req.body);
-    return chat(userId, input);
+    return chat(userId, input); // input.model 由前端传入（模型选择器）
   });
 
   app.get('/api/agent/session', { preHandler: [auth] }, async (req) => latestSession(getUserId(req)));

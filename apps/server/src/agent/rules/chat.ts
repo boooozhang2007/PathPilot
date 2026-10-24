@@ -77,8 +77,7 @@ export function chatByRules(message: string, ctx: UserContext): string {
     .sort((a, b) => (a.priority === 'high' ? -1 : 1) - (b.priority === 'high' ? -1 : 1))[0];
   const q = message.toLowerCase();
 
-  const dataLine = (extra = '') =>
-    `\n\n（本回答由规则引擎基于你的真实档案数据生成${extra ? `，${extra}` : ''}；配置 AI 模型 Key 后可获得更深入的个性化分析。）`;
+  const dataLine = (extra = '') => (extra ? `\n\n数据来源：${extra}` : '');
 
   if (/学什么|应该学|推荐学|学哪些/.test(q)) {
     if (!gap.learning_order.length) {

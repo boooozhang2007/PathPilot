@@ -68,7 +68,6 @@ export default function LoginPage() {
           <button className="pp-btn pp-btn-primary w-full py-2.5 text-sm" disabled={busy}>
             {busy ? '请稍候…' : mode === 'login' ? '登录' : '创建账号'}
           </button>
-          <p className="mt-4 text-center text-[11px] leading-5 text-slate-2">演示账号：demo@pathpilot.ai / demo123456</p>
         </form>
       </div>
     </main>

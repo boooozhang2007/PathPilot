@@ -145,17 +145,6 @@ export default function JobsPage() {
             <span>{new Date(analysis.createdAt).toLocaleString('zh-CN')}</span>
           </div>
 
-          {r && r.limitations.length > 0 && (
-            <div className="mb-5 rounded-card border border-amber/30 bg-amber-soft p-4 text-xs leading-5 text-amber">
-              <div className="mb-1 font-bold">数据说明（重要）</div>
-              <ul className="list-disc space-y-0.5 pl-4">
-                {r.limitations.map((l, i) => (
-                  <li key={i}>{l}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
           <div className="grid grid-cols-12 gap-5">
             <div className="pp-card col-span-7 p-5">
               <div className="mb-2 text-sm font-bold">技能需求排行 <span className="ml-1 text-xs font-normal text-slate-1">出现率 ≥50% 记为「必备」</span></div>

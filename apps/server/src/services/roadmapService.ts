@@ -270,3 +270,91 @@ export async function roadmapTitlesExist(userId: number, titles: string[]): Prom
     .limit(1);
   return rows.length > 0;
 }
+
+// ---------- Agent 直接编辑成长路线（用户授权的操作，作用于当前生效规划；content JSON 与任务行保持同步） ----------
+export async function addRoadmapTask(
+  userId: number,
+  input: { title: string; semester: number; description: string; estimatedHours: number; priority: Priority; deliverable?: string; acceptanceCriteria?: string; relatedSkills?: string[]; prerequisites?: string[] }
+): Promise<RoadmapTaskDTO> {
+  const roadmap = await getActiveRoadmap(userId);
+  if (!roadmap) throw badRequest('当前没有生效规划，请先让 AI 生成规划');
+  const now = new Date().toISOString();
+  const inserted = await db
+    .insert(roadmapTasks)
+    .values({
+      roadmapId: roadmap.id,
+      userId,
+      semester: input.semester,
+      title: input.title,
+      description: input.description,
+      estimatedHours: Math.round(input.estimatedHours),
+      priority: input.priority,
+      status: 'not_started',
+      prerequisites: input.prerequisites ?? [],
+      deliverable: input.deliverable ?? null,
+      acceptanceCriteria: input.acceptanceCriteria ?? null,
+      relatedSkills: input.relatedSkills ?? [],
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+  await syncContentTasks(userId, roadmap.id);
+  return toTaskDTO(inserted[0]);
+}
+
+export async function updateRoadmapTaskFields(
+  userId: number,
+  taskId: number,
+  patch: Partial<{ title: string; semester: number; description: string; estimatedHours: number; priority: Priority; deliverable: string; acceptanceCriteria: string; relatedSkills: string[]; prerequisites: string[] }>
+): Promise<RoadmapTaskDTO> {
+  const rows = await db.select().from(roadmapTasks).where(and(eq(roadmapTasks.id, taskId), eq(roadmapTasks.userId, userId))).limit(1);
+  if (!rows[0]) throw notFound('任务不存在');
+  const updated = await db
+    .update(roadmapTasks)
+    .set({
+      ...(patch.title !== undefined ? { title: patch.title } : {}),
+      ...(patch.semester !== undefined ? { semester: patch.semester } : {}),
+      ...(patch.description !== undefined ? { description: patch.description } : {}),
+      ...(patch.estimatedHours !== undefined ? { estimatedHours: Math.round(patch.estimatedHours) } : {}),
+      ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+      ...(patch.deliverable !== undefined ? { deliverable: patch.deliverable } : {}),
+      ...(patch.acceptanceCriteria !== undefined ? { acceptanceCriteria: patch.acceptanceCriteria } : {}),
+      ...(patch.relatedSkills !== undefined ? { relatedSkills: patch.relatedSkills } : {}),
+      ...(patch.prerequisites !== undefined ? { prerequisites: patch.prerequisites } : {}),
+      updatedAt: new Date().toISOString(),
+    })
+    .where(and(eq(roadmapTasks.id, taskId), eq(roadmapTasks.userId, userId)))
+    .returning();
+  await syncContentTasks(userId, updated[0].roadmapId);
+  return toTaskDTO(updated[0]);
+}
+
+export async function removeRoadmapTask(userId: number, taskId: number): Promise<void> {
+  const rows = await db.select().from(roadmapTasks).where(and(eq(roadmapTasks.id, taskId), eq(roadmapTasks.userId, userId))).limit(1);
+  if (!rows[0]) throw notFound('任务不存在');
+  if (rows[0].status === 'done') throw badRequest('已完成任务保留成果记录，不可删除');
+  await db.delete(roadmapTasks).where(and(eq(roadmapTasks.id, taskId), eq(roadmapTasks.userId, userId)));
+  await syncContentTasks(userId, rows[0].roadmapId);
+}
+
+/** 将任务行同步进规划 content.tasks（保持 roadmap 页面与任务一致） */
+async function syncContentTasks(userId: number, roadmapId: number): Promise<void> {
+  const rows = await db.select().from(roadmapTasks).where(eq(roadmapTasks.roadmapId, roadmapId)).orderBy(roadmapTasks.semester, roadmapTasks.id);
+  const roadmapRow = (await db.select().from(roadmaps).where(and(eq(roadmaps.id, roadmapId), eq(roadmaps.userId, userId))).limit(1))[0];
+  if (!roadmapRow) return;
+  const content = roadmapRow.content as unknown as RoadmapResult;
+  content.tasks = rows.map((r) => ({
+    title: r.title,
+    semester: r.semester,
+    description: r.description,
+    estimated_hours: r.estimatedHours,
+    priority: r.priority as Priority,
+    prerequisites: r.prerequisites ?? [],
+    deliverable: r.deliverable ?? '',
+    acceptance_criteria: r.acceptanceCriteria ?? '',
+    related_skills: r.relatedSkills ?? [],
+    status: r.status as 'not_started',
+  }));
+  content.total_estimated_hours = rows.filter((r) => r.status !== 'done').reduce((s, r) => s + r.estimatedHours, 0);
+  await db.update(roadmaps).set({ content: content as never }).where(eq(roadmaps.id, roadmapId));
+}

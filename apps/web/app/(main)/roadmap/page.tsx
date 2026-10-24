@@ -47,7 +47,7 @@ export default function RoadmapPage() {
       <PageHeader
         title="成长路线"
         desc={`${roadmap.content.goal}`}
-        right={<div className="text-right text-xs text-slate-1">版本 v{roadmap.version} · {roadmap.engine === 'pi-llm' ? 'AI 模型生成' : '规则引擎生成'}</div>}
+        right={<div className="text-right text-xs text-slate-1">{roadmap.content.semesters.length} 个学期 · {tasks.length} 项任务</div>}
       />
 
       <div className="mb-6 grid grid-cols-4 gap-4">
@@ -118,19 +118,6 @@ export default function RoadmapPage() {
         })}
       </div>
 
-      {roadmap.content.assumptions.length > 0 && (
-        <div className="pp-card p-5 text-xs leading-5 text-slate-1">
-          <div className="mb-1 font-bold text-ink">规划依据</div>
-          <ul className="list-disc space-y-0.5 pl-4">
-            {roadmap.content.assumptions.map((a, i) => (
-              <li key={i}>{a}</li>
-            ))}
-          </ul>
-          {roadmap.content.risks.length > 0 && (
-            <div className="mt-2 text-amber">风险提示：{roadmap.content.risks.join('；')}</div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

@@ -8,7 +8,7 @@ import { saveSamples, attachAnalysisToSamples, saveRequirements, saveAnalysis, p
 import { webSearchJobs } from './search/webSearch.js';
 import { extractRequirementsByKeywords, extractRequirementsByLlm, type ExtractedJob } from './search/extract.js';
 import { currentEngine } from './core.js';
-import { llmConfigured } from '../config.js';
+import { isLlmConfigured } from './settings.js';
 import { sampleInsufficient } from '../services/errors.js';
 
 export interface AnalyzeJobsInput {
@@ -52,7 +52,7 @@ export async function analyzeJobs(userId: number, input: AnalyzeJobsInput): Prom
   const normalize = buildNormalizer(catalog);
   const catalogTerms = catalog.flatMap((c) => [c.name, ...(c.aliases ?? [])]);
   let extracted: Map<number, ExtractedJob>;
-  if (llmConfigured()) {
+  if (await isLlmConfigured()) {
     try {
       extracted = await extractRequirementsByLlm(samples);
       limitations.push('技能抽取由 AI 模型完成（仅从真实岗位文本抽取，未推断）。');
@@ -134,7 +134,7 @@ export async function analyzeManualJob(
   const normalize = buildNormalizer(catalog);
   const catalogTerms = catalog.flatMap((c) => [c.name, ...(c.aliases ?? [])]);
   let extracted: ExtractedJob;
-  if (llmConfigured()) {
+  if (await isLlmConfigured()) {
     try {
       extracted = (await extractRequirementsByLlm([sample])).get(0) ?? keywordForOne(sample, normalize, catalogTerms);
     } catch {

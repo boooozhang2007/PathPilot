@@ -220,7 +220,16 @@ export const agentChatMessages = sqliteTable(
     role: text('role').notNull(), // user|assistant
     content: text('content').notNull(),
     engine: text('engine'),
+    /** 工具调用链路 [{name, summary}]（LLM 通道） */
+    toolCalls: text('tool_calls', { mode: 'json' }).$type<{ name: string; summary: string }[] | null>(),
     createdAt: text('created_at').notNull().$defaultFn(isoNow),
   },
   (t) => [index('agent_chat_messages_session_idx').on(t.sessionId)]
 );
+
+/** 运行时应用设置（key-value；LLM baseUrl/key/model 由管理页写入，覆盖 .env） */
+export const appSettings = sqliteTable('app_settings', {
+  key: text('key').primaryKey(),
+  value: text('value', { mode: 'json' }).notNull(),
+  updatedAt: text('updated_at').notNull().$defaultFn(isoNow),
+});
