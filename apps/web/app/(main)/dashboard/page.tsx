@@ -53,15 +53,32 @@ export default function DashboardPage() {
 
         {/* 右列：关键数据 */}
         <div className="col-span-4 space-y-5">
-          <div className="pp-card p-5 text-center">
-            <div className="mb-1 text-xs font-semibold text-slate-1">能力匹配度</div>
+          <div className="pp-card p-5">
+            <div className="mb-3 text-sm font-bold">能力匹配度</div>
             {d?.matchScore !== null && d ? (
-              <>
-                <Ring value={d.matchScore} size={104} label={`${d.matchSampleCount} 条真实样本`} />
-                <p className="mt-1 text-[11px] text-slate-2">辅助指标 · 非就业概率</p>
-              </>
+              <div className="flex items-center gap-5">
+                <Ring value={d.matchScore} size={96} />
+                <div className="min-w-0 flex-1">
+                  <div className="mb-2 text-xs font-semibold text-slate-1">岗位需求能力</div>
+                  {d.jobSkills.length > 0 ? (
+                    <ul className="space-y-1.5">
+                      {d.jobSkills.map((s) => (
+                        <li key={s.name} className="flex items-center gap-2 text-xs">
+                          <span className="w-14 shrink-0 truncate font-semibold text-ink">{s.name}</span>
+                          <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-paper-2">
+                            <span className="block h-full rounded-full bg-accent/70" style={{ width: `${Math.round(s.frequency * 100)}%` }} />
+                          </span>
+                          {s.required && <span className="shrink-0 rounded bg-accent-soft px-1 py-0.5 text-[10px] font-semibold text-accent">必需</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="py-3 text-xs text-slate-2">分析样本不足</div>
+                  )}
+                </div>
+              </div>
             ) : (
-              <div className="py-6 text-xs text-slate-1">
+              <div className="py-6 text-center text-xs text-slate-1">
                 暂无岗位样本
                 <Link href="/jobs" className="mt-2 block text-accent underline">去发起岗位分析 →</Link>
               </div>

@@ -1,13 +1,21 @@
 'use client';
 // 页面 5：能力档案（PRD 5.1）：个人资料 + 技能/课程/项目/竞赛 + 证据 + 雷达图 + 缺口建议
-import { useEffect, useState } from 'react';
+// 技能按「专业能力 / 通用能力」分组展示；资料支持头像上传与 MBTI 记录
+import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { Loading, ErrorState, Tag, PageHeader } from '@/components/ui';
 import { SkillRadar } from '@/components/charts';
 import type { ProfileDTO, ProfileSkillDTO, ExperienceDTO, SkillGapResult } from '@pathpilot/shared';
-import { GRADES, GRADE_LABELS, CAREER_PATHS, CAREER_PATH_LABELS, EXPERIENCE_TYPES, EXPERIENCE_TYPE_LABELS, EVIDENCE_STATUSES, EVIDENCE_STATUS_LABELS } from '@pathpilot/shared';
+import {
+  GRADES, GRADE_LABELS, CAREER_PATHS, CAREER_PATH_LABELS, EXPERIENCE_TYPES, EXPERIENCE_TYPE_LABELS,
+  EVIDENCE_STATUSES, EVIDENCE_STATUS_LABELS, MBTI_DIMENSIONS, skillGroupOf, SKILL_GROUP_LABELS,
+} from '@pathpilot/shared';
 
 type Tab = 'skills' | 'courses' | 'projects' | 'contests';
+
+/** 16 型 MBTI 选项（四维度组合） */
+const MBTI_OPTIONS = [''] as string[];
+for (const d of MBTI_DIMENSIONS[0].options) for (const n of MBTI_DIMENSIONS[1].options) for (const t of MBTI_DIMENSIONS[2].options) for (const j of MBTI_DIMENSIONS[3].options) MBTI_OPTIONS.push(d + n + t + j);
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileDTO | null>(null);
@@ -24,6 +32,25 @@ export default function ProfilePage() {
   });
   const [expOpen, setExpOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  /** 头像上传：压缩为 ≤256px JPEG data URL（存 profile.avatar） */
+  function onAvatarPicked(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const scale = Math.min(1, 256 / Math.max(img.width, img.height));
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        saveProfile({ avatar: canvas.toDataURL('image/jpeg', 0.85) });
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  }
 
   async function load() {
     setLoading(true);
@@ -59,6 +86,8 @@ export default function ProfilePage() {
         targetRole: profile?.targetRole ?? '',
         careerPath: profile?.careerPath ?? 'undecided',
         weeklyHours: profile?.weeklyHours ?? 8,
+        mbti: profile?.mbti ?? null,
+        avatar: profile?.avatar ?? null,
         ...p,
       };
       const updated = await api<ProfileDTO>('/api/profile', { method: 'PUT', json: merged });
@@ -145,6 +174,34 @@ export default function ProfilePage() {
         {/* 基础资料 */}
         <div className="pp-card col-span-5 p-6">
           <div className="mb-4 text-sm font-bold">个人资料</div>
+          {/* 头像 */}
+          <div className="mb-4 flex items-center gap-4">
+            <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full bg-paper-2">
+              {profile?.avatar ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={profile.avatar} alt="头像" className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xl font-bold text-slate-2">{(profile?.nickname ?? '同')[0]}</div>
+              )}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <button className="pp-btn pp-btn-ghost px-3 py-1.5 text-xs" onClick={() => avatarInputRef.current?.click()} disabled={saving}>上传头像</button>
+              {profile?.avatar && (
+                <button className="text-left text-[11px] text-slate-2 hover:text-accent" onClick={() => saveProfile({ avatar: null })}>移除头像</button>
+              )}
+            </div>
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) onAvatarPicked(f);
+                e.target.value = '';
+              }}
+            />
+          </div>
           <div className="space-y-3 text-sm">
             <div>
               <label className="pp-label">昵称</label>
@@ -168,8 +225,13 @@ export default function ProfilePage() {
                 </select>
               </div>
               <div>
-                <label className="pp-label">预计毕业</label>
-                <input className="pp-input" type="date" value={profile?.graduationDate ?? ''} onChange={(e) => setProfile(profile ? { ...profile, graduationDate: e.target.value } : profile)} />
+                <label className="pp-label">预计毕业（年月）</label>
+                <input
+                  className="pp-input"
+                  type="month"
+                  value={(profile?.graduationDate ?? '').slice(0, 7)}
+                  onChange={(e) => setProfile(profile ? { ...profile, graduationDate: e.target.value ? `${e.target.value}-01` : profile.graduationDate } : profile)}
+                />
               </div>
             </div>
             <div>
@@ -184,9 +246,16 @@ export default function ProfilePage() {
                 </select>
               </div>
               <div>
-                <label className="pp-label">每周可投入（小时）</label>
-                <input className="pp-input" type="number" min={1} max={80} value={profile?.weeklyHours ?? 8} onChange={(e) => setProfile(profile ? { ...profile, weeklyHours: Number(e.target.value) } : profile)} />
+                <label className="pp-label">MBTI（供 AI 针对性建议）</label>
+                <select className="pp-input" value={profile?.mbti ?? ''} onChange={(e) => setProfile(profile ? { ...profile, mbti: e.target.value || null } : profile)}>
+                  <option value="">未测 / 不填写</option>
+                  {MBTI_OPTIONS.filter(Boolean).map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
               </div>
+            </div>
+            <div>
+              <label className="pp-label">每周可投入（小时）</label>
+              <input className="pp-input" type="number" min={1} max={80} value={profile?.weeklyHours ?? 8} onChange={(e) => setProfile(profile ? { ...profile, weeklyHours: Number(e.target.value) } : profile)} />
             </div>
             <button className="pp-btn pp-btn-primary w-full py-2.5 text-xs" onClick={() => saveProfile({})} disabled={saving}>保存资料</button>
           </div>
@@ -227,19 +296,31 @@ export default function ProfilePage() {
                 {skills.length === 0 ? (
                   <div className="py-8 text-center text-xs text-slate-1">还没有技能记录</div>
                 ) : (
-                  <ul className="divide-y divide-line">
-                    {skills.map((s) => (
-                      <li key={s.id} className="flex items-center justify-between py-2.5 text-sm">
-                        <span className="flex items-center gap-2">
-                          <span className="font-semibold">{s.name}</span>
-                          <span className="font-mono text-xs text-slate-2">Lv{s.level}</span>
-                          <Tag tone={s.evidenceStatus === 'evidenced' ? 'teal' : s.evidenceStatus === 'to_verify' ? 'amber' : 'slate'}>{EVIDENCE_STATUS_LABELS[s.evidenceStatus]}</Tag>
-                          {s.evidenceUrl && <a className="text-xs text-accent underline" href={s.evidenceUrl} target="_blank" rel="noreferrer">证据</a>}
-                        </span>
-                        <button className="text-xs text-slate-2 hover:text-accent" onClick={() => removeSkill(s.id)}>删除</button>
-                      </li>
-                    ))}
-                  </ul>
+                  (['professional', 'general'] as const).map((group) => {
+                    const groupSkills = skills.filter((s) => skillGroupOf(s.category) === group);
+                    if (!groupSkills.length) return null;
+                    return (
+                      <div key={group} className="mb-3">
+                        <div className="mb-1 flex items-center gap-2 text-[11px] font-bold text-slate-1">
+                          <span className={`rounded-full px-2 py-0.5 ${group === 'professional' ? 'bg-accent-soft text-accent' : 'bg-teal-soft text-teal'}`}>{SKILL_GROUP_LABELS[group]}</span>
+                          <span className="text-slate-2">{groupSkills.length} 项</span>
+                        </div>
+                        <ul className="divide-y divide-line">
+                          {groupSkills.map((s) => (
+                            <li key={s.id} className="flex items-center justify-between py-2.5 text-sm">
+                              <span className="flex items-center gap-2">
+                                <span className="font-semibold">{s.name}</span>
+                                <span className="font-mono text-xs text-slate-2">Lv{s.level}</span>
+                                <Tag tone={s.evidenceStatus === 'evidenced' ? 'teal' : s.evidenceStatus === 'to_verify' ? 'amber' : 'slate'}>{EVIDENCE_STATUS_LABELS[s.evidenceStatus]}</Tag>
+                                {s.evidenceUrl && <a className="text-xs text-accent underline" href={s.evidenceUrl} target="_blank" rel="noreferrer">证据</a>}
+                              </span>
+                              <button className="text-xs text-slate-2 hover:text-accent" onClick={() => removeSkill(s.id)}>删除</button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             )}
