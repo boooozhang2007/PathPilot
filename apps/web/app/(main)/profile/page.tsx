@@ -200,7 +200,7 @@ export default function ProfilePage() {
   return (
     <div>
       <PageHeader
-        eyebrow="06 · PROFILE"
+        eyebrow="07 · PROFILE"
         title="能力档案"
         desc="目标、技能与真实经历,AI 每次规划都以这里为起点"
         right={

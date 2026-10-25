@@ -12,9 +12,11 @@ const NAV = [
   { href: '/jobs', label: '岗位洞察', icon: 'globe', num: '02' },
   { href: '/roadmap', label: '成长路线', icon: 'roadmap', num: '03' },
   { href: '/tasks', label: '任务中心', icon: 'checkCircle', num: '04' },
-  { href: '/advisor', label: 'AI 顾问', icon: 'chat', num: '05' },
-  { href: '/profile', label: '能力档案', icon: 'layers', num: '06' },
-  { href: '/planning', label: '动态规划', icon: 'refresh', num: '07' },
+  { href: '/growth', label: '成长统计', icon: 'rocket', num: '05' },
+  { href: '/advisor', label: 'AI 顾问', icon: 'chat', num: '06' },
+  { href: '/profile', label: '能力档案', icon: 'layers', num: '07' },
+  { href: '/resume', label: '简历工作台', icon: 'pen', num: '08' },
+  { href: '/planning', label: '动态规划', icon: 'refresh', num: '09' },
 ];
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {

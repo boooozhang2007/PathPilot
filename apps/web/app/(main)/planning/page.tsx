@@ -116,7 +116,7 @@ export default function PlanningPage() {
 
   return (
     <div>
-      <PageHeader eyebrow="07 · REPLAN" title="动态规划" desc="调整条件,AI 重新拆解路线;每个版本都可回看对比" />
+      <PageHeader eyebrow="09 · REPLAN" title="动态规划" desc="调整条件,AI 重新拆解路线;每个版本都可回看对比" />
 
       {err && (
         <div className="mb-5">

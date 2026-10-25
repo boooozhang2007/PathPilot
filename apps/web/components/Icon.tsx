@@ -51,7 +51,9 @@ const PATHS: Record<string, string[]> = {
   party: ['M4 19 11 6.5', 'M11 6.5c2.5.5 4 2 4.5 4.5', 'M4 19l3.4-1.2 1.2-3.4', 'M16 5v.1', 'M19.5 8l.1.1', 'M18.5 12.5l.1.1', 'M14.5 3.5l.1.1'],
 };
 
-export function Ic({ name, size = 16, className = '', strokeWidth = 1.8 }: { name: keyof typeof PATHS | string; size?: number; className?: string; strokeWidth?: number }) {
+export type IconName = keyof typeof PATHS;
+
+export function Ic({ name, size = 16, className = '', strokeWidth = 1.8 }: { name: IconName | string; size?: number; className?: string; strokeWidth?: number }) {
   const d = PATHS[name] ?? PATHS.spark;
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden className={className} style={{ flexShrink: 0 }}>

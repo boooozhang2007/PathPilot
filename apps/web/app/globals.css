@@ -271,3 +271,36 @@ body {
 .u-link:hover::after {
   transform: scaleX(1);
 }
+
+/* ---------- 打印(简历导出 PDF):只保留简历纸面 ---------- */
+@media print {
+  @page {
+    margin: 14mm;
+  }
+  body {
+    background: #fff;
+  }
+  aside,
+  .no-print {
+    display: none !important;
+  }
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: none !important;
+  }
+  .bp-grid {
+    background-image: none !important;
+  }
+  .print-area {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .print-area textarea,
+  .print-area input {
+    color: var(--color-ink) !important;
+  }
+}
