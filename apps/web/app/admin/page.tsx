@@ -1,7 +1,8 @@
 'use client';
-// 模型管理页（任务1）：填写 baseUrl + API Key → 拉取模型列表 → 设置当前模型
+// 模型管理页:Base URL + API Key → 拉取模型列表 → 设置当前模型
 import { useEffect, useState } from 'react';
 import { API_BASE } from '@/lib/api';
+import { Ic, Logo } from '@/components/Icon';
 
 interface CatalogItem {
   id: string;
@@ -64,7 +65,7 @@ export default function AdminPage() {
         body: JSON.stringify({ baseUrl, apiKey: apiKey.includes('…') ? undefined : apiKey, model }),
       });
       if (!res.ok) throw new Error((await res.json())?.error?.message ?? '保存失败');
-      setMsg('已保存，即刻生效');
+      setMsg('已保存,即刻生效');
       await load(adminKey);
     } catch (e) {
       setErr(e instanceof Error ? e.message : '保存失败');
@@ -95,14 +96,19 @@ export default function AdminPage() {
 
   if (!authed) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-paper px-4">
-        <div className="pp-card w-full max-w-sm p-6">
-          <div className="mb-4 text-center">
-            <div className="text-lg font-black">PathPilot 模型管理</div>
-            <div className="mt-1 text-xs text-slate-1">输入管理密钥进入</div>
+      <main className="bp-grid flex min-h-screen items-center justify-center bg-paper px-4">
+        <div className="pp-anim pp-card w-full max-w-sm p-6">
+          <div className="mb-5 flex flex-col items-center gap-2.5">
+            <Logo size={38} />
+            <div className="font-display text-lg font-bold">PathPilot 模型管理</div>
+            <div className="num text-[10px] tracking-[0.2em] text-slate-2">ADMIN CONSOLE</div>
           </div>
-          <input className="pp-input mb-3" type="password" placeholder="ADMIN_KEY" value={adminKey} onChange={(e) => setAdminKey(e.target.value)} />
-          {err && <div className="mb-3 rounded-lg bg-accent-soft px-3 py-2 text-xs text-accent">{err}</div>}
+          <input className="pp-input mb-3" type="password" placeholder="ADMIN_KEY" value={adminKey} onChange={(e) => setAdminKey(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && adminKey && load(adminKey)} />
+          {err && (
+            <div className="mb-3 flex items-center gap-1.5 rounded-lg bg-[#fdf1ef] px-3 py-2 text-xs text-[#b3271d]">
+              <Ic name="warn" size={12} /> {err}
+            </div>
+          )}
           <button className="pp-btn pp-btn-primary w-full py-2.5 text-sm" onClick={() => load(adminKey)} disabled={!adminKey || !!busy}>
             {busy || '进入'}
           </button>
@@ -112,57 +118,74 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl px-6 py-10">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">模型管理</h1>
-        <div className="text-xs text-slate-1">Agent LLM 配置 · 即时生效</div>
-      </div>
-      {err && <div className="mb-4 rounded-card bg-accent-soft px-4 py-3 text-sm text-accent">{err}</div>}
-      {msg && <div className="mb-4 rounded-card bg-teal-soft px-4 py-3 text-sm text-teal">{msg}</div>}
-      {busy && <div className="mb-4 rounded-card bg-paper-2 px-4 py-3 text-sm text-slate-1">{busy}</div>}
+    <main className="bp-grid min-h-screen bg-paper px-6 py-10">
+      <div className="mx-auto max-w-2xl">
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <div className="eyebrow mb-1.5">ADMIN</div>
+            <h1 className="font-display text-2xl font-bold">模型管理</h1>
+          </div>
+          <div className="num text-[10px] tracking-widest text-slate-2">LLM CONFIG</div>
+        </div>
+        {err && <div className="mb-4 flex items-center gap-2 rounded-card border border-[#e8b4ae] bg-[#fdf1ef] px-4 py-3 text-sm text-[#b3271d]"><Ic name="warn" size={14} />{err}</div>}
+        {msg && <div className="mb-4 flex items-center gap-2 rounded-card bg-teal-soft px-4 py-3 text-sm text-teal"><Ic name="checkCircle" size={14} />{msg}</div>}
+        {busy && <div className="mb-4 rounded-card bg-paper-2 px-4 py-3 text-sm text-slate-1">{busy}</div>}
 
-      <div className="pp-card mb-5 space-y-4 p-6">
-        <div>
-          <label className="pp-label">Base URL（OpenAI 兼容端点）</label>
-          <input className="pp-input" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.deepseek.com" />
+        <div className="pp-card mb-5 space-y-4 p-6">
+          <div>
+            <label className="pp-label">Base URL(OpenAI 兼容端点)</label>
+            <input className="pp-input" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.deepseek.com" />
+          </div>
+          <div>
+            <label className="pp-label">
+              API Key
+              {apiKeySet && <span className="ml-2 font-normal text-teal">已配置(留掩码不变则保留原值)</span>}
+            </label>
+            <input className="pp-input" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" type="password" />
+          </div>
+          <div className="flex gap-2">
+            <button className="pp-btn pp-btn-ghost flex-1 py-2.5 text-sm" onClick={fetchModels} disabled={!!busy}>
+              <Ic name="download" size={14} /> 获取模型
+            </button>
+            <button className="pp-btn pp-btn-primary flex-1 py-2.5 text-sm" onClick={save} disabled={!!busy}>
+              <Ic name="check" size={14} /> 保存配置
+            </button>
+          </div>
+          {remoteModels.length > 0 && (
+            <div className="max-h-44 overflow-y-auto rounded-xl border border-line bg-paper/60 p-2">
+              {remoteModels.map((m) => (
+                <button
+                  key={m}
+                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs transition hover:bg-white ${model === m ? 'bg-white font-bold text-accent-deep' : 'text-slate-1'}`}
+                  onClick={() => setModel(m)}
+                >
+                  <span className="num min-w-0 flex-1 truncate">{m}</span>
+                  {model === m && <Ic name="check" size={13} strokeWidth={2.6} className="text-accent" />}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-        <div>
-          <label className="pp-label">API Key{apiKeySet && <span className="ml-2 text-teal">已配置（留掩码不变则保留原值）</span>}</label>
-          <input className="pp-input" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" type="password" />
-        </div>
-        <div className="flex gap-2">
-          <button className="pp-btn pp-btn-ghost flex-1 py-2.5 text-sm" onClick={fetchModels} disabled={!!busy}>获取模型</button>
-          <button className="pp-btn pp-btn-primary flex-1 py-2.5 text-sm" onClick={save} disabled={!!busy}>保存配置</button>
-        </div>
-        {remoteModels.length > 0 && (
-          <div className="max-h-44 overflow-y-auto rounded-xl border border-line bg-paper-2/50 p-2">
-            {remoteModels.map((m) => (
+
+        <div className="pp-card p-6">
+          <div className="mb-3 text-sm font-bold">
+            当前模型:<span className="num text-accent-deep">{model || '未设置'}</span>
+          </div>
+          <div className="num mb-2 text-[10px] tracking-[0.2em] text-slate-2">CATALOG</div>
+          <div className="space-y-2">
+            {catalog.map((c) => (
               <button
-                key={m}
-                className={`block w-full rounded-lg px-3 py-1.5 text-left text-xs transition hover:bg-white ${model === m ? 'bg-white font-bold text-accent' : 'text-slate-1'}`}
-                onClick={() => setModel(m)}
+                key={c.id}
+                className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition ${model === c.id ? 'border-accent bg-accent-soft' : 'border-line hover:border-ink'}`}
+                onClick={() => setModel(c.id)}
               >
-                {m} {model === m && '✓'}
+                <span className="font-semibold">{c.name}</span>
+                <span className="num text-xs text-slate-1">
+                  {c.id} · {c.price}
+                </span>
               </button>
             ))}
           </div>
-        )}
-      </div>
-
-      <div className="pp-card p-6">
-        <div className="mb-3 text-sm font-bold">当前模型：<span className="font-mono text-accent">{model || '未设置'}</span></div>
-        <div className="mb-2 text-xs font-semibold text-slate-1">可选模型目录（前端选择器同步展示）</div>
-        <div className="space-y-2">
-          {catalog.map((c) => (
-            <button
-              key={c.id}
-              className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition ${model === c.id ? 'border-accent bg-accent-soft' : 'border-line hover:border-ink'}`}
-              onClick={() => setModel(c.id)}
-            >
-              <span className="font-semibold">{c.name}</span>
-              <span className="font-mono text-xs text-slate-1">{c.id} · {c.price}</span>
-            </button>
-          ))}
         </div>
       </div>
     </main>

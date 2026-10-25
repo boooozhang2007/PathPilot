@@ -1,9 +1,10 @@
 'use client';
-// 页面 3：成长路线（PRD 5.1）：时间轴 + 学期目标 + 里程碑 + 任务状态
+// 成长路线:蓝图式时间轴,每学期一个节点站,任务挂在站点下
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { Loading, Empty, ErrorState, Tag, PageHeader } from '@/components/ui';
+import { Loading, Empty, ErrorState, Tag, PageHeader, Stat } from '@/components/ui';
+import { Ic } from '@/components/Icon';
 import type { RoadmapDTO, RoadmapTaskDTO } from '@pathpilot/shared';
 import { TASK_STATUS_LABELS } from '@pathpilot/shared';
 
@@ -15,7 +16,10 @@ export default function RoadmapPage() {
   function load() {
     setLoading(true);
     api<{ roadmap: RoadmapDTO; tasks: RoadmapTaskDTO[] } | null>('/api/roadmaps/current')
-      .then((d) => setData(d))
+      .then((d) => {
+        setData(d);
+        setErr('');
+      })
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false));
   }
@@ -27,15 +31,19 @@ export default function RoadmapPage() {
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data)
     return (
-      <Empty
-        title="还没有成长规划"
-        hint="基于岗位分析与你的能力档案，生成分学期的可执行成长路线"
-        action={
-          <Link href="/planning" className="pp-btn pp-btn-primary mt-2 px-4 py-2 text-xs">
-            去生成规划
-          </Link>
-        }
-      />
+      <>
+        <PageHeader eyebrow="03 · ROADMAP" title="成长路线" />
+        <Empty
+          icon="roadmap"
+          title="还没有成长规划"
+          hint="岗位数据 + 你的档案,AI 将生成按学期拆解的路线:每项任务都有时长、产出与验收标准"
+          action={
+            <Link href="/planning" className="pp-btn pp-btn-primary mt-2 px-5 py-2.5 text-sm">
+              <Ic name="roadmap" size={15} /> 生成规划
+            </Link>
+          }
+        />
+      </>
     );
 
   const { roadmap, tasks } = data;
@@ -43,52 +51,54 @@ export default function RoadmapPage() {
   const doneCount = tasks.filter((t) => t.status === 'done').length;
 
   return (
-    <div className="pp-anim">
+    <div>
       <PageHeader
+        eyebrow="03 · ROADMAP"
         title="成长路线"
-        desc={`${roadmap.content.goal}`}
-        right={<div className="text-right text-xs text-slate-1">{roadmap.content.semesters.length} 个学期 · {tasks.length} 项任务</div>}
+        desc={roadmap.content.goal}
+        right={<Tag tone="ink">v{roadmap.version} · {roadmap.content.semesters.length} 学期 · {tasks.length} 任务</Tag>}
       />
 
-      <div className="mb-6 grid grid-cols-4 gap-4">
-        {[
-          { label: '覆盖学期', value: `${roadmap.content.semesters.length} 个` },
-          { label: '任务总数', value: `${tasks.length} 项` },
-          { label: '预计投入', value: `${totalHours} h` },
-          { label: '已完成', value: `${doneCount} 项` },
-        ].map((s) => (
-          <div key={s.label} className="pp-card px-5 py-4">
-            <div className="text-xs text-slate-1">{s.label}</div>
-            <div className="mt-1 text-xl font-bold">{s.value}</div>
-          </div>
-        ))}
+      {/* 概览数字带 */}
+      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div className="reveal" style={{ '--d': '60ms' } as never}><Stat label="覆盖学期" value={roadmap.content.semesters.length} unit="个" /></div>
+        <div className="reveal" style={{ '--d': '110ms' } as never}><Stat label="任务总数" value={tasks.length} unit="项" /></div>
+        <div className="reveal" style={{ '--d': '160ms' } as never}><Stat label="预计投入" value={totalHours} unit="h" tone="accent" /></div>
+        <div className="reveal" style={{ '--d': '210ms' } as never}><Stat label="已完成" value={doneCount} unit="项" tone="teal" /></div>
       </div>
 
-      <div className="relative pl-8">
-        <div className="absolute bottom-4 left-3 top-2 w-0.5 bg-line" />
+      {/* 蓝图时间轴 */}
+      <div className="relative pl-9">
         {roadmap.content.semesters.map((sem, idx) => {
           const semTasks = tasks.filter((t) => t.semester === sem.index);
           const done = semTasks.filter((t) => t.status === 'done').length;
+          const complete = semTasks.length > 0 && done === semTasks.length;
           return (
-            <div key={sem.index} className="relative mb-6">
-              <span
-                className={`absolute -left-[26px] top-1.5 flex h-4 w-4 items-center justify-center rounded-full border-2 ${
-                  done === semTasks.length && semTasks.length ? 'border-teal bg-teal' : 'border-line bg-white'
-                }`}
-              />
+            <section key={sem.index} className="reveal relative mb-7" style={{ '--d': `${140 + idx * 70}ms` } as never}>
+              <span className={`node ${complete ? 'node-done' : idx === 0 ? 'node-active' : ''}`} />
+              {idx < roadmap.content.semesters.length - 1 && <span className="pathline" />}
               <div className="pp-card p-5">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold">{sem.label}</span>
+                <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <span className="num text-[11px] font-bold tracking-widest text-slate-2">S{sem.index}</span>
+                    <span className="font-display text-[15px] font-bold">{sem.label}</span>
                     <Tag tone="slate">{sem.estimated_hours}h</Tag>
-                    {done > 0 && <Tag tone="teal">{done}/{semTasks.length} 完成</Tag>}
+                    {idx === 0 && <Tag tone="accent">本学期</Tag>}
+                    {complete && (
+                      <span className="flex items-center gap-1 text-xs font-bold text-teal">
+                        <Ic name="check" size={12} strokeWidth={2.6} /> 已完成
+                      </span>
+                    )}
                   </div>
-                  {idx === 0 && <Tag tone="accent">本学期</Tag>}
+                  {done > 0 && !complete && (
+                    <span className="num text-xs text-slate-2">
+                      {done}/{semTasks.length}
+                    </span>
+                  )}
                 </div>
-                <div className="mb-3 text-xs leading-5 text-slate-1">学期目标：{sem.goal}</div>
-                <div className="mb-3 rounded-lg bg-paper-2 px-3 py-2 text-xs">
-                  <span className="font-semibold text-ink">里程碑：</span>
-                  {sem.milestone}
+                <div className="mb-3 rounded-lg border border-line bg-paper/50 px-3.5 py-2.5 text-xs leading-5">
+                  <span className="font-bold text-ink">里程碑 · </span>
+                  <span className="text-slate-1">{sem.milestone}</span>
                 </div>
                 {sem.focus_skills.length > 0 && (
                   <div className="mb-3 flex flex-wrap gap-1.5">
@@ -100,10 +110,10 @@ export default function RoadmapPage() {
                 {semTasks.length > 0 && (
                   <ul className="divide-y divide-line/70">
                     {semTasks.map((t) => (
-                      <li key={t.id} className="flex items-center justify-between py-2 text-xs">
-                        <span className="min-w-0 truncate pr-3 font-semibold">{t.title}</span>
-                        <span className="flex shrink-0 items-center gap-2">
-                          <span className="text-slate-2">{t.estimatedHours}h</span>
+                      <li key={t.id} className="flex items-center justify-between gap-3 py-2 text-xs">
+                        <span className="min-w-0 truncate font-semibold">{t.title}</span>
+                        <span className="flex shrink-0 items-center gap-2.5">
+                          <span className="num text-slate-2">{t.estimatedHours}h</span>
                           <Tag tone={t.status === 'done' ? 'teal' : t.status === 'in_progress' ? 'accent' : t.status === 'deferred' ? 'amber' : 'slate'}>
                             {TASK_STATUS_LABELS[t.status]}
                           </Tag>
@@ -113,11 +123,16 @@ export default function RoadmapPage() {
                   </ul>
                 )}
               </div>
-            </div>
+            </section>
           );
         })}
       </div>
 
+      <div className="reveal mt-2 flex justify-center">
+        <Link href="/planning" className="pp-btn pp-btn-ghost px-5 py-2.5 text-sm">
+          <Ic name="refresh" size={14} /> 条件变化?重新规划
+        </Link>
+      </div>
     </div>
   );
 }

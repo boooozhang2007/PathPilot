@@ -1,10 +1,10 @@
 'use client';
-// 页面 5：能力档案（PRD 5.1）：个人资料 + 技能/课程/项目/竞赛 + 证据 + 雷达图 + 缺口建议
-// 技能按「专业能力 / 通用能力」分组展示；资料支持头像上传与 MBTI 记录
+// 能力档案:个人资料(头像/MBTI/年月) + 技能分组(专业/通用) + 经历 + 雷达 + 缺口学习顺序
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
-import { Loading, ErrorState, Tag, PageHeader } from '@/components/ui';
+import { Loading, ErrorState, Tag, PageHeader, SectionTitle } from '@/components/ui';
 import { SkillRadar } from '@/components/charts';
+import { Ic } from '@/components/Icon';
 import type { ProfileDTO, ProfileSkillDTO, ExperienceDTO, SkillGapResult } from '@pathpilot/shared';
 import {
   GRADES, GRADE_LABELS, CAREER_PATHS, CAREER_PATH_LABELS, EXPERIENCE_TYPES, EXPERIENCE_TYPE_LABELS,
@@ -13,7 +13,7 @@ import {
 
 type Tab = 'skills' | 'courses' | 'projects' | 'contests';
 
-/** 16 型 MBTI 选项（四维度组合） */
+/** 16 型 MBTI 选项(四维度组合) */
 const MBTI_OPTIONS = [''] as string[];
 for (const d of MBTI_DIMENSIONS[0].options) for (const n of MBTI_DIMENSIONS[1].options) for (const t of MBTI_DIMENSIONS[2].options) for (const j of MBTI_DIMENSIONS[3].options) MBTI_OPTIONS.push(d + n + t + j);
 
@@ -33,24 +33,6 @@ export default function ProfilePage() {
   const [expOpen, setExpOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
-
-  /** 头像上传：压缩为 ≤256px JPEG data URL（存 profile.avatar） */
-  function onAvatarPicked(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const scale = Math.min(1, 256 / Math.max(img.width, img.height));
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
-        saveProfile({ avatar: canvas.toDataURL('image/jpeg', 0.85) });
-      };
-      img.src = reader.result as string;
-    };
-    reader.readAsDataURL(file);
-  }
 
   async function load() {
     setLoading(true);
@@ -75,6 +57,24 @@ export default function ProfilePage() {
     load();
   }, []);
 
+  /** 头像上传:压缩为 ≤256px JPEG data URL */
+  function onAvatarPicked(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const scale = Math.min(1, 256 / Math.max(img.width, img.height));
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        saveProfile({ avatar: canvas.toDataURL('image/jpeg', 0.85) });
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  }
+
   async function saveProfile(p: Partial<ProfileDTO>) {
     setSaving(true);
     setMsg('');
@@ -92,7 +92,7 @@ export default function ProfilePage() {
       };
       const updated = await api<ProfileDTO>('/api/profile', { method: 'PUT', json: merged });
       setProfile(updated);
-      setMsg('资料已保存（Web 与手机端即刻同步）');
+      setMsg('资料已保存');
     } catch (e) {
       setErr(e instanceof Error ? e.message : '保存失败');
     } finally {
@@ -109,7 +109,7 @@ export default function ProfilePage() {
     a.download = `pathpilot-profile-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    setMsg('资料已导出为 JSON 文件');
+    setMsg('资料已导出为 JSON');
   }
 
   async function addSkill() {
@@ -162,32 +162,84 @@ export default function ProfilePage() {
   }
 
   if (loading) return <Loading />;
+  const gradYM = (profile?.graduationDate ?? '').slice(0, 7);
+
+  const SkillGroup = ({ group }: { group: 'professional' | 'general' }) => {
+    const list = skills.filter((s) => skillGroupOf(s.category) === group);
+    if (!list.length) return null;
+    return (
+      <div className="mb-4">
+        <div className="mb-2 flex items-center gap-2">
+          <Ic name={group === 'professional' ? 'layers' : 'chat'} size={13} className={group === 'professional' ? 'text-accent' : 'text-teal'} />
+          <span className={`text-xs font-bold ${group === 'professional' ? 'text-accent-deep' : 'text-teal'}`}>{SKILL_GROUP_LABELS[group]}</span>
+          <span className="num text-[10px] text-slate-2">{list.length}</span>
+        </div>
+        <ul className="divide-y divide-line/70">
+          {list.map((s) => (
+            <li key={s.id} className="group flex items-center justify-between py-2.5 text-sm">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="font-semibold">{s.name}</span>
+                <span className="num text-xs text-slate-2">Lv{s.level}</span>
+                <Tag tone={s.evidenceStatus === 'evidenced' ? 'teal' : s.evidenceStatus === 'to_verify' ? 'amber' : 'slate'}>{EVIDENCE_STATUS_LABELS[s.evidenceStatus]}</Tag>
+                {s.evidenceUrl && (
+                  <a className="u-link text-xs" href={s.evidenceUrl} target="_blank" rel="noreferrer">
+                    证据
+                  </a>
+                )}
+              </span>
+              <button className="rounded-lg p-1 text-slate-2 opacity-0 transition hover:text-[#d5392f] group-hover:opacity-100" onClick={() => removeSkill(s.id)} title="删除">
+                <Ic name="trash" size={13} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
+
   return (
-    <div className="pp-anim">
-      <PageHeader title="能力档案" desc="个人资料与真实经历 · 未填信息标记为未知，不擅自补全" right={
-        <button className="pp-btn pp-btn-ghost px-3 py-2 text-xs" onClick={exportProfile}>导出资料 JSON</button>
-      } />
-      {err && <div className="mb-4"><ErrorState message={err} onRetry={load} /></div>}
-      {msg && <div className="mb-4 rounded-card bg-teal-soft px-4 py-3 text-sm text-teal">{msg}</div>}
+    <div>
+      <PageHeader
+        eyebrow="06 · PROFILE"
+        title="能力档案"
+        desc="目标、技能与真实经历,AI 每次规划都以这里为起点"
+        right={
+          <button className="pp-btn pp-btn-ghost px-3 py-2 text-xs" onClick={exportProfile}>
+            <Ic name="download" size={14} /> 导出 JSON
+          </button>
+        }
+      />
+
+      {err && (
+        <div className="mb-5">
+          <ErrorState message={err} onRetry={load} />
+        </div>
+      )}
+      {msg && <div className="mb-5 flex items-center gap-2 rounded-card bg-teal-soft px-4 py-3 text-sm text-teal"><Ic name="checkCircle" size={15} />{msg}</div>}
 
       <div className="grid grid-cols-12 gap-5">
         {/* 基础资料 */}
-        <div className="pp-card col-span-5 p-6">
-          <div className="mb-4 text-sm font-bold">个人资料</div>
+        <div className="pp-card reveal col-span-12 p-6 lg:col-span-5">
+          <SectionTitle>个人资料</SectionTitle>
+
           {/* 头像 */}
-          <div className="mb-4 flex items-center gap-4">
-            <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full bg-paper-2">
+          <div className="mb-5 flex items-center gap-4">
+            <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl border border-line">
               {profile?.avatar ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={profile.avatar} alt="头像" className="h-full w-full object-cover" />
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-xl font-bold text-slate-2">{(profile?.nickname ?? '同')[0]}</div>
+                <div className="flex h-full w-full items-center justify-center bg-paper-2 font-display text-xl font-bold text-slate-2">{(profile?.nickname ?? '同')[0]}</div>
               )}
             </div>
             <div className="flex flex-col gap-1.5">
-              <button className="pp-btn pp-btn-ghost px-3 py-1.5 text-xs" onClick={() => avatarInputRef.current?.click()} disabled={saving}>上传头像</button>
+              <button className="pp-btn pp-btn-ghost px-3 py-1.5 text-xs" onClick={() => avatarInputRef.current?.click()} disabled={saving}>
+                <Ic name="pen" size={12} /> 上传头像
+              </button>
               {profile?.avatar && (
-                <button className="text-left text-[11px] text-slate-2 hover:text-accent" onClick={() => saveProfile({ avatar: null })}>移除头像</button>
+                <button className="text-left text-[11px] text-slate-2 transition hover:text-[#d5392f]" onClick={() => saveProfile({ avatar: null })}>
+                  移除头像
+                </button>
               )}
             </div>
             <input
@@ -202,6 +254,7 @@ export default function ProfilePage() {
               }}
             />
           </div>
+
           <div className="space-y-3 text-sm">
             <div>
               <label className="pp-label">昵称</label>
@@ -221,48 +274,57 @@ export default function ProfilePage() {
               <div>
                 <label className="pp-label">当前年级</label>
                 <select className="pp-input" value={profile?.grade ?? 'sophomore'} onChange={(e) => setProfile(profile ? { ...profile, grade: e.target.value as never } : profile)}>
-                  {GRADES.map((g) => <option key={g} value={g}>{GRADE_LABELS[g]}</option>)}
+                  {GRADES.map((g) => (
+                    <option key={g} value={g}>
+                      {GRADE_LABELS[g]}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
-                <label className="pp-label">预计毕业（年月）</label>
-                <input
-                  className="pp-input"
-                  type="month"
-                  value={(profile?.graduationDate ?? '').slice(0, 7)}
-                  onChange={(e) => setProfile(profile ? { ...profile, graduationDate: e.target.value ? `${e.target.value}-01` : profile.graduationDate } : profile)}
-                />
+                <label className="pp-label">预计毕业(年月)</label>
+                <input className="pp-input" type="month" value={gradYM} onChange={(e) => setProfile(profile ? { ...profile, graduationDate: e.target.value ? `${e.target.value}-01` : profile.graduationDate } : profile)} />
               </div>
             </div>
             <div>
               <label className="pp-label">目标岗位</label>
               <input className="pp-input" value={profile?.targetRole ?? ''} onChange={(e) => setProfile(profile ? { ...profile, targetRole: e.target.value } : profile)} placeholder="Java 后端开发" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="pp-label">发展路径</label>
                 <select className="pp-input" value={profile?.careerPath ?? 'undecided'} onChange={(e) => setProfile(profile ? { ...profile, careerPath: e.target.value as never } : profile)}>
-                  {CAREER_PATHS.map((p) => <option key={p} value={p}>{CAREER_PATH_LABELS[p]}</option>)}
+                  {CAREER_PATHS.map((p) => (
+                    <option key={p} value={p}>
+                      {CAREER_PATH_LABELS[p]}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
-                <label className="pp-label">MBTI（供 AI 针对性建议）</label>
+                <label className="pp-label">MBTI</label>
                 <select className="pp-input" value={profile?.mbti ?? ''} onChange={(e) => setProfile(profile ? { ...profile, mbti: e.target.value || null } : profile)}>
-                  <option value="">未测 / 不填写</option>
-                  {MBTI_OPTIONS.filter(Boolean).map((m) => <option key={m} value={m}>{m}</option>)}
+                  <option value="">未测</option>
+                  {MBTI_OPTIONS.filter(Boolean).map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
                 </select>
               </div>
+              <div>
+                <label className="pp-label">每周(小时)</label>
+                <input className="pp-input" type="number" min={1} max={80} value={profile?.weeklyHours ?? 8} onChange={(e) => setProfile(profile ? { ...profile, weeklyHours: Number(e.target.value) } : profile)} />
+              </div>
             </div>
-            <div>
-              <label className="pp-label">每周可投入（小时）</label>
-              <input className="pp-input" type="number" min={1} max={80} value={profile?.weeklyHours ?? 8} onChange={(e) => setProfile(profile ? { ...profile, weeklyHours: Number(e.target.value) } : profile)} />
-            </div>
-            <button className="pp-btn pp-btn-primary w-full py-2.5 text-xs" onClick={() => saveProfile({})} disabled={saving}>保存资料</button>
+            <button className="pp-btn pp-btn-primary w-full py-2.5 text-xs" onClick={() => saveProfile({})} disabled={saving}>
+              {saving ? '保存中…' : '保存资料'}
+            </button>
           </div>
 
           {gap && gap.sample_count > 0 && gap.core_skills.length > 0 && (
             <div className="mt-6 border-t border-line pt-4">
-              <div className="mb-2 text-sm font-bold">能力雷达 <span className="text-xs font-normal text-slate-1">（证据状态，非虚构熟练度）</span></div>
+              <SectionTitle>能力雷达</SectionTitle>
               <SkillRadar
                 indicators={gap.core_skills.slice(0, 6).map((s) => ({ name: s.skill, max: 3 }))}
                 values={gap.core_skills.slice(0, 6).map((s) => (s.user_status === 'evidenced' ? 3 : s.user_status === 'to_verify' ? 2 : s.user_status === 'needs_improvement' ? 1 : 0))}
@@ -272,55 +334,46 @@ export default function ProfilePage() {
         </div>
 
         {/* 技能与经历 */}
-        <div className="col-span-7">
-          <div className="pp-card p-6">
+        <div className="col-span-12 lg:col-span-7">
+          <div className="pp-card reveal p-6" style={{ '--d': '80ms' } as never}>
             <div className="mb-4 flex gap-1 rounded-xl bg-paper-2 p-1 text-xs font-semibold">
               {([['skills', '技能'], ['courses', '课程'], ['projects', '项目'], ['contests', '竞赛/实践']] as [Tab, string][]).map(([k, label]) => (
-                <button key={k} className={`flex-1 rounded-lg py-2 transition ${tab === k ? 'bg-white shadow-sm' : 'text-slate-1'}`} onClick={() => setTab(k)}>{label}</button>
+                <button key={k} className={`flex-1 rounded-lg py-2 transition ${tab === k ? 'bg-white font-bold text-accent-deep shadow-sm' : 'text-slate-1'}`} onClick={() => setTab(k)}>
+                  {label}
+                </button>
               ))}
             </div>
 
             {tab === 'skills' && (
               <div>
                 <div className="mb-3 flex gap-2">
-                  <input className="pp-input flex-1" placeholder="技能名（如 Spring Boot）" value={skillForm.skillName} onChange={(e) => setSkillForm({ ...skillForm, skillName: e.target.value })} />
-                  <select className="pp-input w-24" value={skillForm.level} onChange={(e) => setSkillForm({ ...skillForm, level: Number(e.target.value) })}>
-                    {[0, 1, 2, 3, 4, 5].map((l) => <option key={l} value={l}>Lv{l}</option>)}
+                  <input className="pp-input flex-1" placeholder="技能名(如 Spring Boot)" value={skillForm.skillName} onChange={(e) => setSkillForm({ ...skillForm, skillName: e.target.value })} />
+                  <select className="pp-input w-20" value={skillForm.level} onChange={(e) => setSkillForm({ ...skillForm, level: Number(e.target.value) })}>
+                    {[0, 1, 2, 3, 4, 5].map((l) => (
+                      <option key={l} value={l}>
+                        Lv{l}
+                      </option>
+                    ))}
                   </select>
                   <select className="pp-input w-28" value={skillForm.evidenceStatus} onChange={(e) => setSkillForm({ ...skillForm, evidenceStatus: e.target.value })}>
-                    {EVIDENCE_STATUSES.map((s) => <option key={s} value={s}>{EVIDENCE_STATUS_LABELS[s]}</option>)}
+                    {EVIDENCE_STATUSES.map((s) => (
+                      <option key={s} value={s}>
+                        {EVIDENCE_STATUS_LABELS[s]}
+                      </option>
+                    ))}
                   </select>
-                  <button className="pp-btn pp-btn-primary px-4 text-xs" onClick={addSkill} disabled={saving}>添加</button>
+                  <button className="pp-btn pp-btn-primary px-4 text-xs" onClick={addSkill} disabled={saving}>
+                    <Ic name="plus" size={13} /> 添加
+                  </button>
                 </div>
-                <input className="pp-input mb-3 text-xs" placeholder="证据链接（可选，如 GitHub/证书地址）——有证据才标记「已有证据」" value={skillForm.evidenceUrl} onChange={(e) => setSkillForm({ ...skillForm, evidenceUrl: e.target.value })} />
+                <input className="pp-input mb-4 text-xs" placeholder="证据链接(GitHub / 证书地址,可选)" value={skillForm.evidenceUrl} onChange={(e) => setSkillForm({ ...skillForm, evidenceUrl: e.target.value })} />
                 {skills.length === 0 ? (
-                  <div className="py-8 text-center text-xs text-slate-1">还没有技能记录</div>
+                  <div className="py-8 text-center text-xs text-slate-1">还没有技能记录,添加第一项</div>
                 ) : (
-                  (['professional', 'general'] as const).map((group) => {
-                    const groupSkills = skills.filter((s) => skillGroupOf(s.category) === group);
-                    if (!groupSkills.length) return null;
-                    return (
-                      <div key={group} className="mb-3">
-                        <div className="mb-1 flex items-center gap-2 text-[11px] font-bold text-slate-1">
-                          <span className={`rounded-full px-2 py-0.5 ${group === 'professional' ? 'bg-accent-soft text-accent' : 'bg-teal-soft text-teal'}`}>{SKILL_GROUP_LABELS[group]}</span>
-                          <span className="text-slate-2">{groupSkills.length} 项</span>
-                        </div>
-                        <ul className="divide-y divide-line">
-                          {groupSkills.map((s) => (
-                            <li key={s.id} className="flex items-center justify-between py-2.5 text-sm">
-                              <span className="flex items-center gap-2">
-                                <span className="font-semibold">{s.name}</span>
-                                <span className="font-mono text-xs text-slate-2">Lv{s.level}</span>
-                                <Tag tone={s.evidenceStatus === 'evidenced' ? 'teal' : s.evidenceStatus === 'to_verify' ? 'amber' : 'slate'}>{EVIDENCE_STATUS_LABELS[s.evidenceStatus]}</Tag>
-                                {s.evidenceUrl && <a className="text-xs text-accent underline" href={s.evidenceUrl} target="_blank" rel="noreferrer">证据</a>}
-                              </span>
-                              <button className="text-xs text-slate-2 hover:text-accent" onClick={() => removeSkill(s.id)}>删除</button>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    );
-                  })
+                  <>
+                    <SkillGroup group="professional" />
+                    <SkillGroup group="general" />
+                  </>
                 )}
               </div>
             )}
@@ -328,25 +381,31 @@ export default function ProfilePage() {
             {tab !== 'skills' && (
               <div>
                 <div className="mb-3 flex justify-end">
-                  <button className="pp-btn pp-btn-ghost px-3 py-1.5 text-xs" onClick={() => setExpOpen(!expOpen)}>{expOpen ? '收起' : '+ 添加经历'}</button>
+                  <button className="pp-btn pp-btn-ghost px-3 py-1.5 text-xs" onClick={() => setExpOpen(!expOpen)}>
+                    <Ic name={expOpen ? 'chevronDown' : 'plus'} size={13} /> {expOpen ? '收起' : '添加经历'}
+                  </button>
                 </div>
                 {expOpen && (
-                  <div className="mb-4 space-y-2 rounded-xl bg-paper-2/60 p-4">
+                  <div className="bp-grid mb-4 space-y-2 rounded-xl border border-line bg-paper/40 p-4">
                     <div className="flex gap-2">
                       <select className="pp-input w-36" value={expForm.type} onChange={(e) => setExpForm({ ...expForm, type: e.target.value as never })}>
                         {EXPERIENCE_TYPES.filter((t) => (tab === 'courses' ? t === 'course' : tab === 'projects' ? t === 'project' : t === 'contest' || t === 'internship' || t === 'practice')).map((t) => (
-                          <option key={t} value={t}>{EXPERIENCE_TYPE_LABELS[t]}</option>
+                          <option key={t} value={t}>
+                            {EXPERIENCE_TYPE_LABELS[t]}
+                          </option>
                         ))}
                       </select>
                       <input className="pp-input flex-1" placeholder="名称" value={expForm.title} onChange={(e) => setExpForm({ ...expForm, title: e.target.value })} />
                     </div>
-                    <textarea className="pp-input text-xs" placeholder="描述（你做了什么，只写真实内容）" value={expForm.description} onChange={(e) => setExpForm({ ...expForm, description: e.target.value })} />
+                    <textarea className="pp-input text-xs" placeholder="描述(你做了什么)" value={expForm.description} onChange={(e) => setExpForm({ ...expForm, description: e.target.value })} />
                     <div className="flex gap-2">
-                      <input className="pp-input flex-1 text-xs" placeholder="技术栈（逗号分隔）" value={expForm.technologies} onChange={(e) => setExpForm({ ...expForm, technologies: e.target.value })} />
-                      <input className="pp-input flex-1 text-xs" placeholder="成果（真实结果，不虚构数字）" value={expForm.result} onChange={(e) => setExpForm({ ...expForm, result: e.target.value })} />
+                      <input className="pp-input flex-1 text-xs" placeholder="技术栈(逗号分隔)" value={expForm.technologies} onChange={(e) => setExpForm({ ...expForm, technologies: e.target.value })} />
+                      <input className="pp-input flex-1 text-xs" placeholder="成果" value={expForm.result} onChange={(e) => setExpForm({ ...expForm, result: e.target.value })} />
                     </div>
-                    <input className="pp-input text-xs" placeholder="证明链接（GitHub/文档，可选）" value={expForm.evidenceUrl} onChange={(e) => setExpForm({ ...expForm, evidenceUrl: e.target.value })} />
-                    <button className="pp-btn pp-btn-primary px-4 py-1.5 text-xs" onClick={addExperience} disabled={saving || !expForm.title}>保存经历</button>
+                    <input className="pp-input text-xs" placeholder="证明链接(可选)" value={expForm.evidenceUrl} onChange={(e) => setExpForm({ ...expForm, evidenceUrl: e.target.value })} />
+                    <button className="pp-btn pp-btn-primary px-4 py-1.5 text-xs" onClick={addExperience} disabled={saving || !expForm.title}>
+                      保存经历
+                    </button>
                   </div>
                 )}
                 {experiences.filter((e) => (tab === 'courses' ? e.type === 'course' : tab === 'projects' ? e.type === 'project' : ['contest', 'internship', 'practice'].includes(e.type))).length === 0 ? (
@@ -356,17 +415,27 @@ export default function ProfilePage() {
                     {experiences
                       .filter((e) => (tab === 'courses' ? e.type === 'course' : tab === 'projects' ? e.type === 'project' : ['contest', 'internship', 'practice'].includes(e.type)))
                       .map((e) => (
-                        <li key={e.id} className="rounded-xl border border-line p-4 text-sm">
+                        <li key={e.id} className="group rounded-xl border border-line p-4 text-sm transition hover:border-line-2">
                           <div className="flex items-center justify-between">
                             <span className="font-bold">{e.title}</span>
-                            <button className="text-xs text-slate-2 hover:text-accent" onClick={() => removeExperience(e.id)}>删除</button>
+                            <button className="rounded-lg p-1 text-slate-2 opacity-0 transition hover:text-[#d5392f] group-hover:opacity-100" onClick={() => removeExperience(e.id)} title="删除">
+                              <Ic name="trash" size={13} />
+                            </button>
                           </div>
                           {e.description && <p className="mt-1 text-xs leading-5 text-slate-1">{e.description}</p>}
                           <div className="mt-2 flex flex-wrap items-center gap-1.5">
                             <Tag tone="slate">{EXPERIENCE_TYPE_LABELS[e.type]}</Tag>
-                            {e.technologies.map((t) => <Tag key={t} tone="amber">{t}</Tag>)}
-                            {e.result && <span className="text-xs text-slate-1">成果：{e.result}</span>}
-                            {e.evidenceUrl && <a className="text-xs text-accent underline" href={e.evidenceUrl} target="_blank" rel="noreferrer">证明链接</a>}
+                            {e.technologies.map((t) => (
+                              <Tag key={t} tone="amber">
+                                {t}
+                              </Tag>
+                            ))}
+                            {e.result && <span className="text-xs text-slate-1">成果:{e.result}</span>}
+                            {e.evidenceUrl && (
+                              <a className="u-link text-xs" href={e.evidenceUrl} target="_blank" rel="noreferrer">
+                                证明链接
+                              </a>
+                            )}
                           </div>
                         </li>
                       ))}
@@ -376,14 +445,14 @@ export default function ProfilePage() {
             )}
           </div>
 
-          {/* 缺口建议 */}
+          {/* 缺口与学习顺序 */}
           {gap && gap.learning_order.length > 0 && (
-            <div className="pp-card mt-5 p-6">
-              <div className="mb-2 text-sm font-bold">缺口与建议学习顺序 <span className="text-xs font-normal text-slate-1">基于 {gap.sample_count} 条真实岗位样本</span></div>
+            <div className="pp-card reveal mt-5 p-6" style={{ '--d': '140ms' } as never}>
+              <SectionTitle right={<span className="num text-[10px] tracking-widest text-slate-2">{gap.sample_count} SAMPLES</span>}>建议学习顺序</SectionTitle>
               <div className="mb-3 flex flex-wrap gap-2">
                 {gap.learning_order.map((s, i) => (
-                  <span key={s} className="flex items-center gap-1 rounded-full bg-paper-2 px-3 py-1 text-xs">
-                    <span className="font-mono font-bold text-accent">{i + 1}</span> {s}
+                  <span key={s} className="flex items-center gap-1.5 rounded-lg border border-line bg-paper/60 px-3 py-1.5 text-xs">
+                    <span className="num font-bold text-accent">{String(i + 1).padStart(2, '0')}</span> {s}
                   </span>
                 ))}
               </div>

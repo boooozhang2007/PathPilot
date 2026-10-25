@@ -1,22 +1,32 @@
 @import 'tailwindcss';
 
+/*
+  PathPilot 「墨线蓝图 / Ink & Blueprint」设计系统
+  母题:工程蓝图。暖纸底 + 制图网格,深墨蓝重色块,App 同源蓝 #426EFE 精准点缀。
+  排版:衬线中文大标题(编辑感) + 等宽数据字体(工程感) + 无衬线正文。
+  与移动端共享调色板(paper/ink/accent/teal/amber),保证双端品牌一致。
+*/
 @theme {
   --color-ink: #0b2239;
   --color-ink-2: #1c3a57;
-  --color-paper: #f5f2ea;
-  --color-paper-2: #ede8db;
-  --color-accent: #e8512a;
-  --color-accent-soft: #fbe9e2;
+  --color-ink-3: #33506e;
+  --color-paper: #f6f4ec;
+  --color-paper-2: #ece9dd;
+  --color-accent: #426efe;
+  --color-accent-deep: #3157d6;
+  --color-accent-soft: #e9efff;
   --color-teal: #0e7c6b;
-  --color-teal-soft: #e3f0ed;
+  --color-teal-soft: #e2f1ed;
   --color-amber: #b97a0b;
   --color-amber-soft: #f7eed9;
-  --color-slate-1: #5b6b7c;
-  --color-slate-2: #8d99a8;
-  --color-line: #e2ddd0;
+  --color-slate-1: #52627a;
+  --color-slate-2: #8b96a8;
+  --color-line: #e1dccd;
+  --color-line-2: #cfc9b6;
   --radius-card: 14px;
   --font-sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', ui-monospace, monospace;
+  --font-display: Georgia, 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
 }
 
 html {
@@ -27,13 +37,76 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* 通用组件样式（与设计稿一致的设计令牌） */
+::selection {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+/* 滚动条:细线制图风 */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-line-2);
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-slate-2);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- 蓝图网格(浅底/深底) ---------- */
+.bp-grid {
+  background-image:
+    linear-gradient(to right, rgba(11, 34, 57, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(11, 34, 57, 0.05) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+.bp-grid-dark {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+/* 墨色重块:侧栏/主视觉 */
+.ink-panel {
+  background:
+    radial-gradient(1200px 500px at -10% -20%, rgba(66, 110, 254, 0.28), transparent 55%),
+    linear-gradient(160deg, #0e2a47 0%, var(--color-ink) 58%, #081726 100%);
+}
+
+/* ---------- 排版 ---------- */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: 0.01em;
+}
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+/* 眉标:编号 + 大写小字距(工程图纸标注风) */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+/* ---------- 通用组件 ---------- */
 .pp-card {
   background: #fff;
   border: 1px solid var(--color-line);
   border-radius: var(--radius-card);
+  box-shadow: 0 1px 0 rgba(11, 34, 57, 0.03), 0 8px 24px -18px rgba(11, 34, 57, 0.25);
 }
 .pp-btn {
   display: inline-flex;
@@ -42,41 +115,57 @@ body {
   gap: 6px;
   border-radius: 10px;
   font-weight: 600;
-  transition: all 0.15s ease;
+  transition: all 0.16s ease;
   cursor: pointer;
   white-space: nowrap;
 }
 .pp-btn-primary {
   background: var(--color-accent);
   color: #fff;
+  box-shadow: 0 6px 16px -8px rgba(66, 110, 254, 0.65);
 }
 .pp-btn-primary:hover {
-  background: #d14420;
+  background: var(--color-accent-deep);
+}
+.pp-btn-primary:active {
+  transform: translateY(1px);
 }
 .pp-btn-primary:disabled {
   background: var(--color-slate-2);
+  box-shadow: none;
   cursor: not-allowed;
 }
 .pp-btn-ghost {
   background: transparent;
   color: var(--color-ink);
-  border: 1px solid var(--color-line);
+  border: 1px solid var(--color-line-2);
 }
 .pp-btn-ghost:hover {
   border-color: var(--color-ink);
+  background: rgba(11, 34, 57, 0.03);
+}
+.pp-btn-danger {
+  background: transparent;
+  color: #d5392f;
+  border: 1px solid #e8b4ae;
+}
+.pp-btn-danger:hover {
+  border-color: #d5392f;
+  background: #fdf1ef;
 }
 .pp-input {
   width: 100%;
-  border: 1px solid var(--color-line);
+  border: 1px solid var(--color-line-2);
   border-radius: 10px;
   padding: 9px 12px;
   background: #fff;
   font-size: 14px;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 .pp-input:focus {
   border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(66, 110, 254, 0.14);
 }
 .pp-label {
   display: block;
@@ -88,16 +177,49 @@ body {
 .pp-tag {
   display: inline-flex;
   align-items: center;
-  border-radius: 999px;
-  padding: 2px 10px;
+  gap: 4px;
+  border-radius: 5px;
+  padding: 2px 8px;
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.5;
 }
 
+/* ---------- 路线节点(贯穿组件) ---------- */
+.node {
+  position: absolute;
+  left: -31px;
+  top: 6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid var(--color-line-2);
+  background: #fff;
+  transition: all 0.2s;
+}
+.node-active {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 4px rgba(66, 110, 254, 0.18);
+}
+.node-done {
+  border-color: var(--color-teal);
+  background: var(--color-teal);
+}
+.pathline {
+  position: absolute;
+  left: -25px;
+  top: 14px;
+  bottom: -22px;
+  width: 2px;
+  background-image: linear-gradient(to bottom, var(--color-line-2) 55%, transparent 45%);
+  background-size: 2px 8px;
+}
+
+/* ---------- 动效:一次编排好的入场 ---------- */
 @keyframes pp-fade-up {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -105,5 +227,47 @@ body {
   }
 }
 .pp-anim {
-  animation: pp-fade-up 0.35s ease both;
+  animation: pp-fade-up 0.4s cubic-bezier(0.22, 0.8, 0.32, 1) both;
+}
+.reveal {
+  opacity: 0;
+  animation: pp-fade-up 0.5s cubic-bezier(0.22, 0.8, 0.32, 1) forwards;
+  animation-delay: var(--d, 0ms);
+}
+
+/* 教学引导:高亮目标呼吸 */
+@keyframes coach-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(66, 110, 254, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(66, 110, 254, 0);
+  }
+}
+.coach-target {
+  position: relative;
+  z-index: 60;
+  animation: coach-pulse 1.6s ease-in-out infinite;
+  border-radius: 12px;
+}
+
+/* 链接下划线动效 */
+.u-link {
+  position: relative;
+  color: var(--color-accent);
+}
+.u-link::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 1.5px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.18s ease;
+}
+.u-link:hover::after {
+  transform: scaleX(1);
 }

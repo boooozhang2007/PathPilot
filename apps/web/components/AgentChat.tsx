@@ -1,10 +1,11 @@
 'use client';
-// Agent 对话组件（Open WebUI 风格）：
-// full 模式 = 会话侧栏 + 模型选择器 + 全高消息流；紧凑模式供仪表盘嵌入
-// 流式：thinking（可折叠）/ 工具调用链 / 增量文本 / 停止生成 / 重新生成
+// Agent 对话组件:
+// full 模式 = 会话侧栏 + 模型选择器 + 全高消息流;紧凑模式供仪表盘嵌入
+// 流式:thinking(可折叠)/ 工具调用链 / 增量文本 / 停止生成 / 逐条复制与重新生成
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, API_BASE, getToken } from '@/lib/api';
 import { Markdown } from '@/components/Markdown';
+import { Ic } from '@/components/Icon';
 import type { ChatMessageDTO, ChatSessionSummaryDTO, ModelCatalogItem } from '@pathpilot/shared';
 
 export const DEFAULT_SUGGESTIONS = ['我目前最应该学习什么？', '帮我分析北京的 Java 岗位', '把每周改成 8 小时并重新规划', '在规划里加一个 Redis 学习任务'];
@@ -12,7 +13,7 @@ export const DEFAULT_SUGGESTIONS = ['我目前最应该学习什么？', '帮我
 type ToolState = { name: string; status: 'running' | 'done'; summary?: string };
 type Streaming = { text: string; thinking: string; tools: ToolState[]; startedAt: number; engine?: 'pi-llm' | 'rules' };
 
-const SUGGEST_ICONS = ['🧭', '📊', '🗓️', '✏️'];
+const SUGGEST_ICONS = ['compass', 'globe', 'calendar', 'pen'];
 
 function timeAgo(iso: string): string {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -29,6 +30,15 @@ function greeting(): string {
   if (h < 12) return '早上好';
   if (h < 18) return '下午好';
   return '晚上好';
+}
+
+/** 消息流顶部的 PathPilot 徽标 */
+function AgentMark({ size = 24 }: { size?: number }) {
+  return (
+    <span className="flex items-center justify-center rounded-lg bg-accent text-white" style={{ width: size, height: size }}>
+      <Ic name="spark" size={size * 0.55} strokeWidth={2} />
+    </span>
+  );
 }
 
 export function AgentChat({
@@ -93,7 +103,7 @@ export function AgentChat({
     }
   }, [full, loadSessions]);
 
-  // 滚动：贴底时自动跟随
+  // 滚动:贴底时自动跟随
   const scrollToEnd = useCallback((smooth = true) => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
   }, []);
@@ -170,7 +180,7 @@ export function AgentChat({
     }
   }
 
-  /** 流式发送；regenerate=true 时去掉末尾的 assistant 消息重答 */
+  /** 流式发送;regenerate=true 时去掉末尾的 assistant 消息重答 */
   async function send(text?: string, opts?: { regenerate?: boolean }) {
     const message = (text ?? input).trim();
     if (!message || busy) return;
@@ -240,11 +250,11 @@ export function AgentChat({
                 return cur;
             }
           });
+          if (ev.type === 'error') setErr(ev.delta ?? '生成出错');
           if (ev.type === 'done') {
             doneEngine = ev.engine;
             if (ev.fallbackReason) fallback = ev.fallbackReason;
           }
-          if (ev.type === 'error') fallback = ev.delta ?? '生成出错';
         }
       }
       setStreaming((st) => {
@@ -264,10 +274,10 @@ export function AgentChat({
         }
         return null;
       });
-      if (fallback) setNotice(fallback);
+      if (fallback && !fallback.startsWith('已停止')) setNotice(fallback);
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') {
-        // 用户停止：保留已生成的部分
+        // 用户停止:保留已生成的部分
         setStreaming((st) => {
           if (st && st.text.trim()) {
             setMessages((prev) => [
@@ -285,7 +295,6 @@ export function AgentChat({
           }
           return null;
         });
-        setNotice('已停止生成');
       } else {
         setErr(e instanceof Error ? e.message : '发送失败');
         setStreaming(null);
@@ -307,12 +316,12 @@ export function AgentChat({
     }
   }
 
-  /** 任意一条 assistant 消息的重新生成：回退到它前面的用户消息重答 */
+  /** 任意一条 assistant 消息的重新生成:回退到它前面的用户消息重答 */
   function regenerateAt(index: number) {
     for (let i = index - 1; i >= 0; i--) {
       if (messages[i].role === 'user') {
         setMessages((prev) => prev.slice(0, i));
-        send(messages[i].content, { regenerate: false });
+        send(messages[i].content);
         return;
       }
     }
@@ -322,35 +331,26 @@ export function AgentChat({
 
   return (
     <div className="relative flex h-full min-h-0 w-full">
-      {/* ------- 会话侧栏（full 模式，Open WebUI 式） ------- */}
+      {/* ------- 会话侧栏(full 模式) ------- */}
       {full && (
-        <aside
-          className={`absolute inset-y-0 left-0 z-30 flex w-72 flex-col border-r border-line bg-white transition-transform duration-200 lg:static lg:translate-x-0 ${
-            sidebarOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full'
-          }`}
-        >
+        <aside className={`absolute inset-y-0 left-0 z-30 flex w-72 flex-col border-r border-line bg-white transition-transform duration-200 lg:static lg:translate-x-0 ${sidebarOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full'}`}>
           <div className="p-3">
-            <button
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-ink px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-2"
-              onClick={newChat}
-            >
-              <span className="text-base leading-none">＋</span> 新对话
+            <button className="flex w-full items-center justify-center gap-2 rounded-xl bg-ink px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-2" onClick={newChat}>
+              <Ic name="plus" size={15} strokeWidth={2.2} /> 新对话
             </button>
           </div>
-          <div className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-2">历史会话</div>
+          <div className="num px-5 pb-1 pt-2 text-[10px] font-semibold tracking-[0.2em] text-slate-2">HISTORY</div>
           <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
             {sessions.length === 0 && <div className="px-3 py-6 text-center text-xs text-slate-2">还没有对话记录</div>}
             {sessions.map((s) => (
               <div
                 key={s.id}
-                className={`group flex cursor-pointer items-center gap-1 rounded-lg px-3 py-2 text-sm transition ${
-                  s.id === sessionId ? 'bg-accent-soft text-ink' : 'text-slate-1 hover:bg-paper-2'
-                }`}
+                className={`group flex cursor-pointer items-center gap-1 rounded-lg px-3 py-2 text-sm transition ${s.id === sessionId ? 'bg-accent-soft text-ink' : 'text-slate-1 hover:bg-paper'}`}
                 onClick={() => openSession(s.id)}
               >
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px] font-medium">{s.title}</div>
-                  <div className="text-[11px] text-slate-2">
+                  <div className="num text-[11px] text-slate-2">
                     {timeAgo(s.updatedAt)} · {s.messageCount} 条
                   </div>
                 </div>
@@ -362,29 +362,25 @@ export function AgentChat({
                     removeSession(s.id);
                   }}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                  </svg>
+                  <Ic name="trash" size={13} />
                 </button>
               </div>
             ))}
           </div>
         </aside>
       )}
-      {full && sidebarOpen && <div className="absolute inset-0 z-20 bg-black/20 lg:hidden" onClick={() => setSidebarOpen(false)} />}
+      {full && sidebarOpen && <div className="absolute inset-0 z-20 bg-ink/20 lg:hidden" onClick={() => setSidebarOpen(false)} />}
 
-      {/* ------- 主区：顶栏 + 消息流 + 输入区 ------- */}
+      {/* ------- 主区:顶栏 + 消息流 + 输入区 ------- */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* 顶栏：移动端菜单钮 / 模型选择 / 简历草稿 */}
-        <div className="flex items-center gap-2 border-b border-line bg-white/80 px-4 py-2.5 backdrop-blur">
+        {/* 顶栏:菜单 / 模型选择 / 简历草稿 */}
+        <div className="flex items-center gap-2 border-b border-line bg-paper/60 px-4 py-2.5 backdrop-blur">
           {full && (
-            <button className="rounded-lg p-2 text-slate-1 transition hover:bg-paper-2 lg:hidden" onClick={() => setSidebarOpen(true)} title="会话列表">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M3 6h18M3 12h18M3 18h18" />
-              </svg>
+            <button className="rounded-lg p-2 text-slate-1 transition hover:bg-white lg:hidden" onClick={() => setSidebarOpen(true)} title="会话列表">
+              <Ic name="menu" size={17} />
             </button>
           )}
-          {/* 模型选择器（自定义下拉，含可用性/价格） */}
+          {/* 模型选择器(含可用性/价格) */}
           <div className="relative">
             <button
               className="flex items-center gap-2 rounded-full border border-line bg-white px-3.5 py-1.5 text-[13px] font-semibold text-ink transition hover:border-slate-2"
@@ -394,17 +390,13 @@ export function AgentChat({
             >
               <span className={`inline-block h-2 w-2 rounded-full ${availability?.[currentModel]?.available === false ? 'bg-amber' : 'bg-teal'}`} />
               {activeModelName}
-              {full && (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition ${modelOpen ? 'rotate-180' : ''}`}>
-                  <path d="m6 9 6 6 6-6" />
-                </svg>
-              )}
+              {full && <Ic name={modelOpen ? 'chevronUp' : 'chevronDown'} size={12} strokeWidth={2.4} className="text-slate-2" />}
             </button>
             {modelOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setModelOpen(false)} />
-                <div className="absolute left-0 top-full z-50 mt-1.5 w-72 overflow-hidden rounded-xl border border-line bg-white shadow-lg">
-                  <div className="border-b border-line px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-2">选择模型</div>
+                <div className="absolute left-0 top-full z-50 mt-1.5 w-72 overflow-hidden rounded-xl border border-line bg-white shadow-xl">
+                  <div className="num border-b border-line px-3 py-2 text-[10px] font-semibold tracking-[0.2em] text-slate-2">MODEL</div>
                   <div className="max-h-72 overflow-y-auto py-1">
                     {catalog.map((c) => {
                       const avail = availability?.[c.id];
@@ -412,18 +404,18 @@ export function AgentChat({
                       return (
                         <button
                           key={c.id}
-                          className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition hover:bg-paper-2 ${avail && !avail.available ? 'opacity-55' : ''}`}
+                          className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition hover:bg-paper ${avail && !avail.available ? 'opacity-55' : ''}`}
                           onClick={() => pickModel(c.id)}
                         >
                           <span className={`mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ${avail ? (avail.available ? 'bg-teal' : 'bg-amber') : 'bg-slate-2'}`} />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[13px] font-semibold text-ink">{c.name}</span>
-                            <span className="block text-[11px] text-slate-2">
+                            <span className="num block text-[11px] text-slate-2">
                               {c.price}
                               {avail && !avail.available ? ' · 不可用' : ''}
                             </span>
                           </span>
-                          {selected && <span className="shrink-0 text-accent">✓</span>}
+                          {selected && <Ic name="check" size={14} strokeWidth={2.6} className="shrink-0 text-accent" />}
                         </button>
                       );
                     })}
@@ -435,7 +427,7 @@ export function AgentChat({
           <div className="flex-1" />
           {full && (
             <button className="pp-btn pp-btn-ghost px-3 py-1.5 text-xs" onClick={draftResume} disabled={resumeBusy}>
-              {resumeBusy ? '生成中…' : '📄 简历草稿'}
+              <Ic name="download" size={13} /> {resumeBusy ? '生成中…' : '简历草稿'}
             </button>
           )}
         </div>
@@ -444,22 +436,25 @@ export function AgentChat({
         <div className="relative min-h-0 flex-1">
           <div ref={listRef} onScroll={onListScroll} className={`h-full overflow-y-auto ${full ? '' : heightClass}`}>
             <div className={`mx-auto w-full px-4 ${full ? 'max-w-3xl py-6' : 'max-w-2xl py-4'}`}>
-              {/* 空状态：问候 + 建议卡片 */}
+              {/* 空状态:问候 + 建议卡片 */}
               {messages.length === 0 && !streaming && (
-                <div className="flex flex-col items-center px-2 pt-[8vh] text-center">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent text-2xl text-white shadow-lg shadow-accent/25">✦</div>
-                  <div className="mt-4 text-2xl font-bold text-ink">{greeting()}，同学</div>
-                  <div className="mt-2 text-sm text-slate-1">我是 PathPilot AI 顾问，可以查数据、改规划、管任务。有什么可以帮你？</div>
+                <div className="reveal flex flex-col items-center px-2 pt-[8vh] text-center">
+                  <AgentMark size={52} />
+                  <div className="font-display mt-4 text-2xl font-bold text-ink">{greeting()},同学</div>
+                  <div className="mt-2 text-sm text-slate-1">查数据、改规划、管任务,一句话搞定</div>
                   <div className={`mt-8 grid w-full max-w-xl gap-2.5 ${full ? 'grid-cols-2' : 'grid-cols-1'}`}>
                     {suggestions.map((s, i) => (
                       <button
                         key={s}
-                        className="flex items-center gap-3 rounded-xl border border-line bg-white px-4 py-3.5 text-left text-[13px] text-slate-1 transition hover:border-accent hover:text-ink hover:shadow-md"
+                        className="group flex items-center gap-3 rounded-xl border border-line bg-white px-4 py-3.5 text-left text-[13px] text-slate-1 transition hover:-translate-y-0.5 hover:border-accent hover:text-ink hover:shadow-md"
+                        style={{ animationDelay: `${i * 60 + 100}ms` }}
                         onClick={() => send(s)}
                       >
-                        <span className="text-base">{SUGGEST_ICONS[i % SUGGEST_ICONS.length]}</span>
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-paper-2 text-slate-1 transition group-hover:bg-accent-soft group-hover:text-accent">
+                          <Ic name={SUGGEST_ICONS[i % SUGGEST_ICONS.length]} size={14} />
+                        </span>
                         <span className="min-w-0 flex-1">{s}</span>
-                        <span className="text-slate-2">→</span>
+                        <Ic name="chevronRight" size={13} className="text-slate-2 transition group-hover:translate-x-0.5 group-hover:text-accent" />
                       </button>
                     ))}
                   </div>
@@ -473,34 +468,21 @@ export function AgentChat({
                   ) : (
                     <div className="w-full">
                       <div className="mb-1.5 flex items-center gap-2">
-                        <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-accent text-[11px] text-white">✦</span>
+                        <AgentMark size={22} />
                         <span className="text-xs font-bold text-ink">PathPilot</span>
-                        {m.engine === 'rules' && <span className="rounded-full bg-amber-soft px-2 py-0.5 text-[10px] font-semibold text-amber">规则引擎</span>}
                       </div>
                       <div className="rounded-2xl rounded-tl-md border border-line bg-white px-4 py-3">
                         <Markdown text={m.content} />
                       </div>
                       {m.toolCalls.length > 0 && <ToolChain tools={m.toolCalls.map((t) => ({ ...t, status: 'done' as const }))} />}
-                      {/* 操作条：复制 / 重新生成（最后一条 assistant） */}
+                      {/* 操作条:复制 / 重新生成(每条回复) */}
                       <div className="mt-1.5 flex items-center gap-1">
                         <ActionBtn onClick={() => copyMessage(m)} label={copiedId === m.id ? '已复制' : '复制'}>
-                          {copiedId === m.id ? (
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M20 6 9 17l-5-5" />
-                            </svg>
-                          ) : (
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <rect x="9" y="9" width="13" height="13" rx="2" />
-                              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                            </svg>
-                          )}
+                          <Ic name={copiedId === m.id ? 'check' : 'copy'} size={13} />
                         </ActionBtn>
                         {full && !busy && (
                           <ActionBtn onClick={() => regenerateAt(i)} label="重新生成">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M21 12a9 9 0 1 1-2.64-6.36L21 8" />
-                              <path d="M21 3v5h-5" />
-                            </svg>
+                            <Ic name="refresh" size={13} />
                           </ActionBtn>
                         )}
                       </div>
@@ -513,7 +495,7 @@ export function AgentChat({
               {streaming && <StreamingMessage s={streaming} />}
               {busy && !streaming && (
                 <div className="mb-6 flex items-start gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-accent text-[11px] text-white">✦</span>
+                  <AgentMark size={22} />
                   <div className="flex gap-1 rounded-2xl border border-line bg-white px-4 py-3">
                     <span className="h-2 w-2 animate-bounce rounded-full bg-slate-2 [animation-delay:0ms]" />
                     <span className="h-2 w-2 animate-bounce rounded-full bg-slate-2 [animation-delay:150ms]" />
@@ -533,9 +515,7 @@ export function AgentChat({
               }}
               title="回到底部"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M12 5v14m7-7-7 7-7-7" />
-              </svg>
+              <Ic name="chevronDown" size={15} />
             </button>
           )}
         </div>
@@ -543,19 +523,23 @@ export function AgentChat({
         {/* 通知 / 错误 */}
         {notice && (
           <div className="mx-auto w-full max-w-3xl px-4 pb-1">
-            <div className="rounded-lg bg-amber-soft px-3 py-1.5 text-xs text-amber">⚠ {notice}</div>
+            <div className="flex items-center gap-1.5 rounded-lg bg-amber-soft px-3 py-1.5 text-xs text-amber">
+              <Ic name="info" size={12} /> {notice}
+            </div>
           </div>
         )}
         {err && (
           <div className="mx-auto w-full max-w-3xl px-4 pb-1">
-            <div className="rounded-lg bg-accent-soft px-3 py-1.5 text-xs text-accent">⚠ {err}</div>
+            <div className="flex items-center gap-1.5 rounded-lg bg-[#fdf1ef] px-3 py-1.5 text-xs text-[#b3271d]">
+              <Ic name="warn" size={12} /> {err}
+            </div>
           </div>
         )}
 
-        {/* 输入区（Open WebUI 式：圆角大容器 + 内嵌发送/停止按钮） */}
+        {/* 输入区 */}
         <div className={`mx-auto w-full px-4 pb-4 pt-1 ${full ? 'max-w-3xl' : 'max-w-2xl'}`}>
           <form
-            className="relative flex items-end gap-2 rounded-2xl border border-line bg-white px-3 py-2.5 shadow-sm transition focus-within:border-slate-2"
+            className="relative flex items-end gap-2 rounded-2xl border border-line bg-white px-3 py-2.5 shadow-sm transition focus-within:border-accent focus-within:shadow-[0_0_0_3px_rgba(66,110,254,0.14)]"
             onSubmit={(e) => {
               e.preventDefault();
               send();
@@ -590,17 +574,14 @@ export function AgentChat({
             ) : (
               <button
                 type="submit"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-white transition hover:bg-[#d14420] disabled:bg-slate-2"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-white transition hover:bg-accent-deep disabled:bg-slate-2"
                 disabled={!input.trim()}
                 title="发送"
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 19V5m-7 7 7-7 7 7" />
-                </svg>
+                <Ic name="arrowUp" size={16} strokeWidth={2.2} />
               </button>
             )}
           </form>
-          <div className="mt-1.5 text-center text-[11px] text-slate-2">Enter 发送 · Shift+Enter 换行 · 回复由 AI 生成，请核实关键信息</div>
         </div>
       </div>
     </div>
@@ -617,25 +598,23 @@ function ActionBtn({ children, label, onClick }: { children: React.ReactNode; la
   );
 }
 
-/** 工具调用链（可折叠）——历史消息与流式共用 */
+/** 工具调用链(可折叠)——历史消息与流式共用 */
 function ToolChain({ tools }: { tools: ToolState[] }) {
   if (!tools.length) return null;
   const running = tools.some((t) => t.status === 'running');
   return (
-    <details className="group mt-2 rounded-xl border border-line bg-paper-2/50">
+    <details className="group mt-2 rounded-xl border border-line bg-paper-2/40">
       <summary className="flex cursor-pointer select-none list-none items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-1">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className={`transition ${running ? 'animate-spin' : ''}`}>
-          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-        </svg>
-        {running ? `正在调用工具（${tools.filter((t) => t.status === 'running').length} 个）` : `使用了 ${tools.length} 个工具`}
-        <span className="ml-auto text-slate-2 transition group-open:rotate-180">⌄</span>
+        <Ic name="wrench" size={13} className={running ? 'animate-spin' : ''} />
+        {running ? `正在调用工具(${tools.filter((t) => t.status === 'running').length} 个)` : `使用了 ${tools.length} 个工具`}
+        <Ic name="chevronDown" size={12} className="ml-auto text-slate-2 transition group-open:rotate-180" />
       </summary>
       <div className="space-y-1.5 border-t border-line/70 px-3 py-2">
         {tools.map((t, i) => (
           <details key={i} className="rounded-lg bg-white/80">
             <summary className="flex cursor-pointer select-none list-none items-center gap-2 px-2.5 py-1.5 text-[11px]">
-              {t.status === 'running' ? <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" /> : <span className="shrink-0 text-teal">✓</span>}
-              <span className="font-mono text-ink">{t.name}</span>
+              {t.status === 'running' ? <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" /> : <Ic name="checkCircle" size={12} className="shrink-0 text-teal" />}
+              <span className="num text-ink">{t.name}</span>
               {t.summary && <span className="min-w-0 flex-1 truncate text-slate-2">{t.summary.slice(0, 60)}</span>}
             </summary>
             {t.summary && <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all px-3 pb-2 text-[11px] leading-4 text-slate-1">{t.summary}</pre>}
@@ -646,7 +625,7 @@ function ToolChain({ tools }: { tools: ToolState[] }) {
   );
 }
 
-/** 流式中的 assistant 消息：思考（可折叠+计时）→ 工具 → 增量文本 + 光标 */
+/** 流式中的 assistant 消息:思考(可折叠+计时)→ 工具 → 增量文本 + 光标 */
 function StreamingMessage({ s }: { s: Streaming }) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -657,15 +636,15 @@ function StreamingMessage({ s }: { s: Streaming }) {
 
   return (
     <div className="mb-6 flex items-start gap-2">
-      <span className="mt-0 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-accent text-[11px] text-white">✦</span>
+      <AgentMark size={22} />
       <div className="min-w-0 flex-1">
         {/* 思考过程 */}
         {s.thinking && (
-          <details className="mb-2 rounded-xl border border-line bg-paper-2/50" open={thinkingActive}>
+          <details className="mb-2 rounded-xl border border-line bg-paper-2/40" open={thinkingActive}>
             <summary className="flex cursor-pointer select-none list-none items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-1">
-              <span className={`inline-block h-3 w-3 rounded-full bg-accent ${thinkingActive ? 'animate-pulse' : ''}`} />
-              {thinkingActive ? `思考中… ${elapsed}s` : `已思考 ${elapsed}s`}
-              <span className="ml-auto text-slate-2">展开</span>
+              <Ic name="brain" size={13} className={thinkingActive ? 'text-accent' : ''} />
+              <span className={thinkingActive ? 'text-accent' : ''}>{thinkingActive ? `思考中… ${elapsed}s` : `已思考 ${elapsed}s`}</span>
+              <span className="num ml-auto text-[10px] text-slate-2">REASONING</span>
             </summary>
             <pre className="max-h-48 overflow-auto whitespace-pre-wrap border-t border-line/70 px-3 py-2 text-[11px] leading-4 text-slate-2">{s.thinking}</pre>
           </details>
