@@ -1,26 +1,50 @@
 'use client';
-// ECharts 封装（技能频次/分类/雷达/对比/完成统计，PRD 11.2 图表数值全部来自真实业务数据）
-import { useEffect, useRef } from 'react';
+// ECharts 封装(技能频次/分类/雷达/对比/完成统计)——感知深浅主题,数值全部来自真实业务数据
+import { useEffect, useRef, useState } from 'react';
 import * as echarts from 'echarts';
 
 const PALETTE = ['#426EFE', '#0E7C6B', '#B97A0B', '#0B2239', '#8B96A8', '#3157D6', '#14A08A', '#B39422'];
 
+/** 跟随 <html class="dark"> 的主题状态 */
+export function useDark(): boolean {
+  const [dark, setDark] = useState(false);
+  useEffect(() => {
+    const el = document.documentElement;
+    const update = () => setDark(el.classList.contains('dark'));
+    update();
+    const mo = new MutationObserver(update);
+    mo.observe(el, { attributes: true, attributeFilter: ['class'] });
+    return () => mo.disconnect();
+  }, []);
+  return dark;
+}
+
+/** 主题相关的坐标/文字色 */
+function axisTheme(dark: boolean) {
+  return dark
+    ? { label: '#a7aeba', split: 'rgba(255,255,255,0.09)', area: ['#1b1e23', '#17191d'], pieBorder: '#1b1e23' }
+    : { label: '#52627A', split: '#e7e3d5', area: ['#fff', '#f6f4ec'], pieBorder: '#fff' };
+}
+
 export function Chart({ option, height = 300 }: { option: echarts.EChartsOption; height?: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
+  const dark = useDark();
   useEffect(() => {
     if (!ref.current) return;
     if (!chartRef.current) chartRef.current = echarts.init(ref.current);
-    chartRef.current.setOption({ color: PALETTE, textStyle: { fontFamily: 'inherit' }, ...option });
+    chartRef.current.setOption({ color: PALETTE, textStyle: { fontFamily: 'inherit', color: axisTheme(dark).label }, ...option });
     const onResize = () => chartRef.current?.resize();
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [option]);
+  }, [option, dark]);
   useEffect(() => () => chartRef.current?.dispose(), []);
   return <div ref={ref} style={{ height, width: '100%' }} />;
 }
 
 export function SkillFreqBar({ skills, sampleCount }: { skills: { name: string; frequency: number; count: number }[]; sampleCount: number }) {
+  const dark = useDark();
+  const t = axisTheme(dark);
   const top = skills.slice(0, 12).reverse();
   return (
     <Chart
@@ -36,15 +60,15 @@ export function SkillFreqBar({ skills, sampleCount }: { skills: { name: string; 
             return `${d?.name}<br/>出现 ${d?.data?.count ?? d?.value ?? 0} / ${sampleCount} 条（${d?.value ?? 0}%）`;
           },
         },
-        xAxis: { type: 'value', axisLabel: { formatter: '{value}%' }, splitLine: { lineStyle: { color: '#e7e3d5' } } },
-        yAxis: { type: 'category', data: top.map((s) => s.name), axisTick: { show: false }, axisLine: { show: false } },
+        xAxis: { type: 'value', axisLabel: { formatter: '{value}%', color: t.label }, splitLine: { lineStyle: { color: t.split } } },
+        yAxis: { type: 'category', data: top.map((s) => s.name), axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: t.label } },
         series: [
           {
             type: 'bar',
             data: top.map((s) => ({ value: Math.round(s.frequency * 100), count: s.count })),
             itemStyle: { borderRadius: [0, 6, 6, 0] },
             barMaxWidth: 18,
-            label: { show: true, position: 'right', formatter: '{c}%', fontSize: 11, color: '#52627A' },
+            label: { show: true, position: 'right', formatter: '{c}%', fontSize: 11, color: t.label },
           },
         ],
       }}
@@ -53,18 +77,22 @@ export function SkillFreqBar({ skills, sampleCount }: { skills: { name: string; 
 }
 
 export function CategoryPie({ items }: { items: { name: string; value: number }[] }) {
+  const dark = useDark();
+  const t = axisTheme(dark);
   return (
     <Chart
       option={{
         tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-        legend: { bottom: 0, icon: 'circle', itemWidth: 8, itemHeight: 8, textStyle: { fontSize: 11, color: '#52627A' } },
-        series: [{ type: 'pie', radius: ['45%', '72%'], center: ['50%', '44%'], itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 }, label: { show: false }, data: items }],
+        legend: { bottom: 0, icon: 'circle', itemWidth: 8, itemHeight: 8, textStyle: { fontSize: 11, color: t.label } },
+        series: [{ type: 'pie', radius: ['45%', '72%'], center: ['50%', '44%'], itemStyle: { borderRadius: 6, borderColor: t.pieBorder, borderWidth: 2 }, label: { show: false }, data: items }],
       }}
     />
   );
 }
 
 export function DistBars({ items, total }: { items: { label: string; count: number; ratio: number }[]; total: number }) {
+  const dark = useDark();
+  const t = axisTheme(dark);
   return (
     <Chart
       height={160}
@@ -74,8 +102,8 @@ export function DistBars({ items, total }: { items: { label: string; count: numb
           const d = (p as { name: string; value: number }[])[0];
           return `${d.name}: ${d.value} / ${total}（${Math.round((d.value / Math.max(total, 1)) * 100)}%）`;
         } },
-        xAxis: { type: 'category', data: items.map((i) => i.label), axisTick: { show: false } },
-        yAxis: { type: 'value', splitLine: { lineStyle: { color: '#e7e3d5' } } },
+        xAxis: { type: 'category', data: items.map((i) => i.label), axisTick: { show: false }, axisLabel: { color: t.label } },
+        yAxis: { type: 'value', splitLine: { lineStyle: { color: t.split } }, axisLabel: { color: t.label } },
         series: [{ type: 'bar', data: items.map((i) => i.count), itemStyle: { borderRadius: [6, 6, 0, 0], color: '#0E7C6B' }, barMaxWidth: 36 }],
       }}
     />
@@ -83,11 +111,13 @@ export function DistBars({ items, total }: { items: { label: string; count: numb
 }
 
 export function SkillRadar({ indicators, values }: { indicators: { name: string; max: number }[]; values: number[] }) {
+  const dark = useDark();
+  const t = axisTheme(dark);
   return (
     <Chart
       option={{
         tooltip: {},
-        radar: { indicator: indicators, radius: '68%', splitArea: { areaStyle: { color: ['#fff', '#f6f4ec'] } }, axisName: { color: '#52627A', fontSize: 11 } },
+        radar: { indicator: indicators, radius: '68%', splitArea: { areaStyle: { color: t.area } }, axisName: { color: t.label, fontSize: 11 }, splitLine: { lineStyle: { color: t.split } }, axisLine: { lineStyle: { color: t.split } } },
         series: [{ type: 'radar', data: [{ value: values, areaStyle: { opacity: 0.25 } }], symbolSize: 4 }],
       }}
     />
@@ -95,15 +125,17 @@ export function SkillRadar({ indicators, values }: { indicators: { name: string;
 }
 
 export function VersionCompare({ oldHours, newHours, oldCount, newCount }: { oldHours: number; newHours: number; oldCount: number; newCount: number }) {
+  const dark = useDark();
+  const t = axisTheme(dark);
   return (
     <Chart
       height={220}
       option={{
         tooltip: {},
-        legend: { bottom: 0, textStyle: { fontSize: 11, color: '#52627A' } },
+        legend: { bottom: 0, textStyle: { fontSize: 11, color: t.label } },
         grid: { left: 8, right: 20, top: 20, bottom: 40, containLabel: true },
-        xAxis: { type: 'category', data: ['任务数', '预计小时'], axisTick: { show: false } },
-        yAxis: { type: 'value', splitLine: { lineStyle: { color: '#e7e3d5' } } },
+        xAxis: { type: 'category', data: ['任务数', '预计小时'], axisTick: { show: false }, axisLabel: { color: t.label } },
+        yAxis: { type: 'value', splitLine: { lineStyle: { color: t.split } }, axisLabel: { color: t.label } },
         series: [
           { name: '调整前', type: 'bar', data: [oldCount, oldHours], itemStyle: { borderRadius: [6, 6, 0, 0], color: '#8B96A8' }, barMaxWidth: 28 },
           { name: '调整后', type: 'bar', data: [newCount, newHours], itemStyle: { borderRadius: [6, 6, 0, 0], color: '#426EFE' }, barMaxWidth: 28 },

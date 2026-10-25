@@ -40,6 +40,66 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* ---------- 深色模式(与 App 深色调色板同源;ink 面板两种模式都保持墨色) ---------- */
+.dark {
+  --color-paper: #131417;
+  --color-paper-2: #1b1e23;
+  --color-line: #2b2f36;
+  --color-line-2: #3a3f47;
+  --color-slate-1: #a7aeba;
+  --color-slate-2: #757c87;
+  --color-accent-deep: #8ba7ff;
+  --color-accent-soft: #232f52;
+  --color-teal-soft: #16302a;
+  --color-amber-soft: #32280e;
+}
+.dark body {
+  color: #e8e9ea;
+  background: var(--color-paper);
+}
+/* ink 在浅色场景里是"正文深字",深色模式下翻转为浅字;bg-ink 的深色块不受影响 */
+.dark .text-ink {
+  color: #e8e9ea;
+}
+.dark .pp-card {
+  background: #1b1e23;
+}
+.dark .pp-input {
+  background: #1b1e23;
+  border-color: #3a3f47;
+  color: #e8e9ea;
+}
+.dark .bg-white {
+  background-color: #1b1e23;
+}
+.dark .bg-white\/95 {
+  background-color: rgba(27, 30, 35, 0.95);
+}
+.dark .bg-white\/50,
+.dark .bg-white\/60,
+.dark .bg-white\/80 {
+  background-color: rgba(27, 30, 35, 0.6);
+}
+.dark .bg-white\/40 {
+  background-color: rgba(27, 30, 35, 0.4);
+}
+.dark .bg-paper\/40 {
+  background-color: rgba(19, 20, 23, 0.4);
+}
+.dark .bg-paper\/50,
+.dark .bg-paper\/60 {
+  background-color: rgba(27, 30, 35, 0.5);
+}
+.dark .bp-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+.dark .pp-btn-primary {
+  box-shadow: 0 6px 16px -8px rgba(66, 110, 254, 0.4);
+}
+
 ::selection {
   background: var(--color-accent);
   color: #fff;
