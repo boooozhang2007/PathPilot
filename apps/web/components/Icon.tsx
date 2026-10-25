@@ -68,7 +68,7 @@ export function Ic({ name, size = 16, className = '', strokeWidth = 1.8 }: { nam
 export function Logo({ size = 34 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-hidden>
-      <rect width="40" height="40" rx="11" fill="#0B2239" />
+      <rect width="40" height="40" rx="8" fill="#0B2239" />
       <path d="M2 8h36M2 20h36M2 32h36M10 2v36M22 2v36M34 2v36" stroke="rgba(255,255,255,0.07)" strokeWidth="1" />
       <path d="M12 30V10" stroke="#426EFE" strokeWidth="2.4" strokeLinecap="round" />
       <path d="M12 11h13.5l-3.4 3.6 3.4 3.6H12" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" fill="none" />

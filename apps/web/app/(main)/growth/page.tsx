@@ -122,7 +122,7 @@ export default function GrowthPage() {
   return (
     <div className="space-y-6">
       {/* 主视觉:一句话看清投入产出 */}
-      <section className="ink-panel noise corner-ticks reveal flex flex-wrap items-center justify-between gap-6 rounded-2xl px-8 py-7 text-white">
+      <section className="ink-panel noise corner-ticks reveal flex flex-wrap items-center justify-between gap-6 rounded-[10px] px-8 py-7 text-white">
         <div className="min-w-0">
           <div className="eyebrow mb-2" style={{ color: '#8ba7ff' }}>
             05 · GROWTH
@@ -182,7 +182,7 @@ export default function GrowthPage() {
                 { icon: 'checkCircle' as IconName, label: '新增证据技能', value: `${newEvidence.length}`, tone: 'text-teal' },
                 { icon: 'calendar' as IconName, label: '近 30 天完成', value: `${monthDone.length}`, tone: 'text-ink' },
               ].map((s) => (
-                <div key={s.label} className="flex items-center gap-3 rounded-xl border border-line bg-paper/40 px-4 py-3">
+                <div key={s.label} className="flex items-center gap-3 rounded-lg border border-line bg-paper/40 px-4 py-3">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-accent ring-1 ring-line">
                     <Ic name={s.icon} size={15} />
                   </span>
@@ -282,10 +282,10 @@ export default function GrowthPage() {
           {badges.map((b, i) => (
             <div
               key={b.title}
-              className={`reveal flex items-center gap-3 rounded-xl border p-3.5 transition ${b.on ? 'border-accent/40 bg-accent-soft/60' : 'border-line bg-paper/50 opacity-60'}`}
+              className={`reveal flex items-center gap-3 rounded-lg border p-3.5 transition ${b.on ? 'border-accent/40 bg-accent-soft/60' : 'border-line bg-paper/50 opacity-60'}`}
               style={{ '--d': `${300 + i * 50}ms` } as never}
             >
-              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${b.on ? 'bg-accent text-white shadow-lg shadow-accent/30' : 'bg-paper-2 text-slate-2'}`}>
+              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md ${b.on ? 'bg-accent text-white shadow-lg shadow-accent/30' : 'bg-paper-2 text-slate-2'}`}>
                 <Ic name={b.icon} size={18} />
               </span>
               <div className="min-w-0">

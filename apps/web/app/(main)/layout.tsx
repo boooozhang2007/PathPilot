@@ -92,7 +92,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                 key={item.href}
                 href={item.href}
                 data-tour-anchor={`nav-${item.href}`}
-                className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all ${active ? 'bg-white text-ink shadow-[0_8px_20px_-8px_rgba(0,0,0,.5)]' : 'text-white/65 hover:bg-white/[.08] hover:text-white'}`}
+                className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all ${active ? 'bg-white text-ink shadow-[0_8px_20px_-8px_rgba(0,0,0,.5)]' : 'text-white/65 hover:bg-white/[.08] hover:text-white'}`}
               >
                 {/* 活跃节点:蓝图路线上的当前站点 */}
                 {active && <span className="absolute -left-3 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-accent shadow-[0_0_10px_rgba(66,110,254,.9)] ring-4 ring-accent/25" />}
@@ -108,18 +108,18 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
           <div className="flex items-center gap-2">
             <button
               onClick={() => window.dispatchEvent(new Event('pp:cmdk'))}
-              className="flex flex-1 items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs font-semibold text-white/75 transition hover:border-accent hover:text-white"
+              className="flex flex-1 items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-white/75 transition hover:border-accent hover:text-white"
               title="命令面板"
             >
               <Ic name="menu" size={13} />
               快速跳转
               <span className="num ml-auto rounded border border-white/20 px-1 py-0.5 text-[9px] text-white/45">⌘K</span>
             </button>
-            <button onClick={toggleTheme} title={dark ? '切到浅色' : '切到深色'} className="rounded-xl border border-white/15 p-2 text-white/70 transition hover:border-accent hover:text-white">
+            <button onClick={toggleTheme} title={dark ? '切到浅色' : '切到深色'} className="rounded-lg border border-white/15 p-2 text-white/70 transition hover:border-accent hover:text-white">
               <Ic name={dark ? 'spark' : 'moon'} size={14} />
             </button>
           </div>
-          <button onClick={() => setTourOpen(true)} className="flex w-full items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs font-semibold text-white/75 transition hover:border-accent hover:text-white" data-tour="tour-entry">
+          <button onClick={() => setTourOpen(true)} className="flex w-full items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-white/75 transition hover:border-accent hover:text-white" data-tour="tour-entry">
             <Ic name="compass" size={14} />
             新手引导 · 五步上手
           </button>

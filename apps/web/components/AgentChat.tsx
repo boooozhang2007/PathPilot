@@ -364,7 +364,7 @@ export function AgentChat({
       {full && (
         <aside className={`absolute inset-y-0 left-0 z-30 flex w-72 flex-col border-r border-line bg-white transition-transform duration-200 lg:static lg:translate-x-0 ${sidebarOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full'}`}>
           <div className="p-3">
-            <button className="flex w-full items-center justify-center gap-2 rounded-xl bg-ink px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-2" onClick={newChat}>
+            <button className="flex w-full items-center justify-center gap-2 rounded-lg bg-ink px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-2" onClick={newChat}>
               <Ic name="plus" size={15} strokeWidth={2.2} /> 新对话
             </button>
           </div>
@@ -412,7 +412,7 @@ export function AgentChat({
           {/* 模型选择器(含可用性/价格) */}
           <div className="relative">
             <button
-              className="flex items-center gap-2 rounded-full border border-line bg-white px-3.5 py-1.5 text-[13px] font-semibold text-ink transition hover:border-slate-2"
+              className="flex items-center gap-2 rounded-lg border border-line bg-white px-3.5 py-1.5 text-[13px] font-semibold text-ink transition hover:border-slate-2"
               onClick={() => (configured ? setModelOpen((v) => !v) : setModelOpen(false))}
               disabled={!full}
               title={full ? undefined : '模型选择请前往 AI 顾问页'}
@@ -475,7 +475,7 @@ export function AgentChat({
                     {suggestions.map((s, i) => (
                       <button
                         key={s}
-                        className="group flex items-center gap-3 rounded-xl border border-line bg-white px-4 py-3.5 text-left text-[13px] text-slate-1 transition hover:-translate-y-0.5 hover:border-accent hover:text-ink hover:shadow-md"
+                        className="group flex items-center gap-3 rounded-lg border border-line bg-white px-4 py-3.5 text-left text-[13px] text-slate-1 transition hover:-translate-y-0.5 hover:border-accent hover:text-ink hover:shadow-md"
                         style={{ animationDelay: `${i * 60 + 100}ms` }}
                         onClick={() => send(s)}
                       >
@@ -493,14 +493,14 @@ export function AgentChat({
               {messages.map((m, i) => (
                 <div key={m.id} className={`mb-6 flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
                   {m.role === 'user' ? (
-                    <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-ink px-4 py-2.5 text-sm leading-6 text-white">{m.content}</div>
+                    <div className="max-w-[80%] whitespace-pre-wrap rounded-lg rounded-br-sm bg-ink px-4 py-2.5 text-sm leading-6 text-white">{m.content}</div>
                   ) : (
                     <div className="w-full">
                       <div className="mb-1.5 flex items-center gap-2">
                         <AgentMark size={22} />
                         <span className="text-xs font-bold text-ink">PathPilot</span>
                       </div>
-                      <div className="pp-card rounded-2xl rounded-tl-md px-4 py-3">
+                      <div className="pp-card rounded-lg rounded-tl-sm px-4 py-3">
                         <Markdown text={m.content} />
                       </div>
                       {m.toolCalls.length > 0 && <ToolChain tools={m.toolCalls.map((t) => ({ ...t, status: 'done' as const }))} />}
@@ -525,7 +525,7 @@ export function AgentChat({
               {busy && !streaming && (
                 <div className="mb-6 flex items-start gap-2">
                   <AgentMark size={22} />
-                  <div className="flex gap-1 rounded-2xl border border-line bg-white px-4 py-3">
+                  <div className="flex gap-1 rounded-lg border border-line bg-white px-4 py-3">
                     <span className="h-2 w-2 animate-bounce rounded-full bg-slate-2 [animation-delay:0ms]" />
                     <span className="h-2 w-2 animate-bounce rounded-full bg-slate-2 [animation-delay:150ms]" />
                     <span className="h-2 w-2 animate-bounce rounded-full bg-slate-2 [animation-delay:300ms]" />
@@ -573,7 +573,7 @@ export function AgentChat({
               {SCENARIOS.map((s) => (
                 <button
                   key={s.label}
-                  className="flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1.5 text-[11.5px] font-semibold text-slate-1 transition hover:border-accent hover:text-accent-deep"
+                  className="flex items-center gap-1.5 rounded-md border border-line bg-white px-3 py-1.5 text-[11.5px] font-semibold text-slate-1 transition hover:border-accent hover:text-accent-deep"
                   onClick={() => send(s.prompt)}
                   disabled={busy}
                   title={s.prompt.slice(0, 40) + '…'}
@@ -585,7 +585,7 @@ export function AgentChat({
             </div>
           )}
           <form
-            className="relative flex items-end gap-2 rounded-2xl border border-line bg-white px-3 py-2.5 shadow-sm transition focus-within:border-accent focus-within:shadow-[0_0_0_3px_rgba(66,110,254,0.14)]"
+            className="relative flex items-end gap-2 rounded-lg border border-line bg-white px-3 py-2.5 shadow-sm transition focus-within:border-accent focus-within:shadow-[0_0_0_3px_rgba(66,110,254,0.14)]"
             onSubmit={(e) => {
               e.preventDefault();
               send();
@@ -611,7 +611,7 @@ export function AgentChat({
             {busy ? (
               <button
                 type="button"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-ink text-white transition hover:bg-ink-2"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ink text-white transition hover:bg-ink-2"
                 onClick={() => abortRef.current?.abort()}
                 title="停止生成"
               >
@@ -620,7 +620,7 @@ export function AgentChat({
             ) : (
               <button
                 type="submit"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-white transition hover:bg-accent-deep disabled:bg-slate-2"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-white transition hover:bg-accent-deep disabled:bg-slate-2"
                 disabled={!input.trim()}
                 title="发送"
               >
@@ -649,7 +649,7 @@ function ToolChain({ tools }: { tools: ToolState[] }) {
   if (!tools.length) return null;
   const running = tools.some((t) => t.status === 'running');
   return (
-    <details className="group mt-2 rounded-xl border border-line bg-paper-2/40">
+    <details className="group mt-2 rounded-lg border border-line bg-paper-2/40">
       <summary className="flex cursor-pointer select-none list-none items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-1">
         <Ic name="wrench" size={13} className={running ? 'animate-spin' : ''} />
         {running ? `正在调用工具(${tools.filter((t) => t.status === 'running').length} 个)` : `使用了 ${tools.length} 个工具`}
@@ -657,7 +657,7 @@ function ToolChain({ tools }: { tools: ToolState[] }) {
       </summary>
       <div className="space-y-1.5 border-t border-line/70 px-3 py-2">
         {tools.map((t, i) => (
-          <details key={i} className="rounded-lg bg-white/80">
+          <details key={i} className="rounded-md bg-white/80">
             <summary className="flex cursor-pointer select-none list-none items-center gap-2 px-2.5 py-1.5 text-[11px]">
               {t.status === 'running' ? <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" /> : <Ic name="checkCircle" size={12} className="shrink-0 text-teal" />}
               <span className="num text-ink">{t.name}</span>
@@ -686,7 +686,7 @@ function StreamingMessage({ s }: { s: Streaming }) {
       <div className="min-w-0 flex-1">
         {/* 思考过程 */}
         {s.thinking && (
-          <details className="mb-2 rounded-xl border border-line bg-paper-2/40" open={thinkingActive}>
+          <details className="mb-2 rounded-lg border border-line bg-paper-2/40" open={thinkingActive}>
             <summary className="flex cursor-pointer select-none list-none items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-1">
               <Ic name="brain" size={13} className={thinkingActive ? 'text-accent' : ''} />
               <span className={thinkingActive ? 'text-accent' : ''}>{thinkingActive ? `思考中… ${elapsed}s` : `已思考 ${elapsed}s`}</span>
@@ -696,7 +696,7 @@ function StreamingMessage({ s }: { s: Streaming }) {
           </details>
         )}
         <ToolChain tools={s.tools} />
-        <div className="pp-card rounded-2xl rounded-tl-md px-4 py-3">
+        <div className="pp-card rounded-lg rounded-tl-sm px-4 py-3">
           {s.text ? (
             <>
               <Markdown text={s.text} />

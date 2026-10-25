@@ -14,7 +14,7 @@ export function Loading({ text = '加载中…' }: { text?: string }) {
 export function Empty({ title, hint, action, icon = 'compass' }: { title: string; hint?: string; action?: ReactNode; icon?: string }) {
   return (
     <div className="bp-grid flex flex-col items-center justify-center gap-3 rounded-card border border-dashed border-line-2 bg-white/50 py-16 text-center">
-      <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-line bg-white text-slate-2">
+      <span className="flex h-11 w-11 items-center justify-center rounded-lg border border-line bg-white text-slate-2">
         <Ic name={icon} size={20} />
       </span>
       <div className="font-display text-base font-bold text-ink">{title}</div>

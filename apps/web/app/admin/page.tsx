@@ -152,7 +152,7 @@ export default function AdminPage() {
             </button>
           </div>
           {remoteModels.length > 0 && (
-            <div className="max-h-44 overflow-y-auto rounded-xl border border-line bg-paper/60 p-2">
+            <div className="max-h-44 overflow-y-auto rounded-lg border border-line bg-paper/60 p-2">
               {remoteModels.map((m) => (
                 <button
                   key={m}
@@ -176,7 +176,7 @@ export default function AdminPage() {
             {catalog.map((c) => (
               <button
                 key={c.id}
-                className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition ${model === c.id ? 'border-accent bg-accent-soft' : 'border-line hover:border-ink'}`}
+                className={`flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left text-sm transition ${model === c.id ? 'border-accent bg-accent-soft' : 'border-line hover:border-ink'}`}
                 onClick={() => setModel(c.id)}
               >
                 <span className="font-semibold">{c.name}</span>

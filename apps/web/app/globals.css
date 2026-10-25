@@ -24,7 +24,7 @@
   --color-slate-2: #8b96a8;
   --color-line: #e1dccd;
   --color-line-2: #cfc9b6;
-  --radius-card: 14px;
+  --radius-card: 6px;
   --font-sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', ui-monospace, monospace;
   --font-display: Georgia, 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
@@ -200,7 +200,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border-radius: 10px;
+  border-radius: 7px;
   font-weight: 600;
   transition: all 0.16s ease;
   cursor: pointer;
@@ -264,7 +264,7 @@ body {
 .pp-input {
   width: 100%;
   border: 1px solid rgba(11, 34, 57, 0.15);
-  border-radius: 10px;
+  border-radius: 7px;
   padding: 9px 12px;
   background: #fff;
   font-size: 14px;
@@ -291,7 +291,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border-radius: 5px;
+  border-radius: 4px;
   padding: 2px 8px;
   font-size: 12px;
   font-weight: 600;
@@ -306,7 +306,7 @@ body {
   backdrop-filter: blur(18px) saturate(1.5);
   -webkit-backdrop-filter: blur(18px) saturate(1.5);
   border: 1px solid rgba(255, 255, 255, 0.7);
-  border-radius: 14px;
+  border-radius: 10px;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.9),
     0 24px 60px -18px rgba(7, 19, 32, 0.4);
@@ -384,7 +384,7 @@ body {
   position: relative;
   z-index: 60;
   animation: coach-pulse 1.6s ease-in-out infinite;
-  border-radius: 12px;
+  border-radius: 8px;
 }
 
 /* 链接下划线动效 */

@@ -224,7 +224,7 @@ export default function ProfilePage() {
 
           {/* 头像 */}
           <div className="mb-5 flex items-center gap-4">
-            <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl border border-line">
+            <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-line">
               {profile?.avatar ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={profile.avatar} alt="头像" className="h-full w-full object-cover" />
@@ -336,9 +336,9 @@ export default function ProfilePage() {
         {/* 技能与经历 */}
         <div className="col-span-12 lg:col-span-7">
           <div className="pp-card reveal p-6" style={{ '--d': '80ms' } as never}>
-            <div className="mb-4 flex gap-1 rounded-xl bg-paper-2 p-1 text-xs font-semibold">
+            <div className="mb-4 flex gap-1 rounded-lg bg-paper-2 p-1 text-xs font-semibold">
               {([['skills', '技能'], ['courses', '课程'], ['projects', '项目'], ['contests', '竞赛/实践']] as [Tab, string][]).map(([k, label]) => (
-                <button key={k} className={`flex-1 rounded-lg py-2 transition ${tab === k ? 'bg-white font-bold text-accent-deep shadow-sm' : 'text-slate-1'}`} onClick={() => setTab(k)}>
+                <button key={k} className={`flex-1 rounded-md py-2 transition ${tab === k ? 'bg-white font-bold text-accent-deep shadow-sm' : 'text-slate-1'}`} onClick={() => setTab(k)}>
                   {label}
                 </button>
               ))}
@@ -386,7 +386,7 @@ export default function ProfilePage() {
                   </button>
                 </div>
                 {expOpen && (
-                  <div className="bp-grid mb-4 space-y-2 rounded-xl border border-line bg-paper/40 p-4">
+                  <div className="bp-grid mb-4 space-y-2 rounded-lg border border-line bg-paper/40 p-4">
                     <div className="flex gap-2">
                       <select className="pp-input w-36" value={expForm.type} onChange={(e) => setExpForm({ ...expForm, type: e.target.value as never })}>
                         {EXPERIENCE_TYPES.filter((t) => (tab === 'courses' ? t === 'course' : tab === 'projects' ? t === 'project' : t === 'contest' || t === 'internship' || t === 'practice')).map((t) => (
@@ -415,7 +415,7 @@ export default function ProfilePage() {
                     {experiences
                       .filter((e) => (tab === 'courses' ? e.type === 'course' : tab === 'projects' ? e.type === 'project' : ['contest', 'internship', 'practice'].includes(e.type)))
                       .map((e) => (
-                        <li key={e.id} className="group rounded-xl border border-line p-4 text-sm transition hover:border-line-2">
+                        <li key={e.id} className="group rounded-lg border border-line p-4 text-sm transition hover:border-line-2">
                           <div className="flex items-center justify-between">
                             <span className="font-bold">{e.title}</span>
                             <button className="rounded-lg p-1 text-slate-2 opacity-0 transition hover:text-[#d5392f] group-hover:opacity-100" onClick={() => removeExperience(e.id)} title="删除">

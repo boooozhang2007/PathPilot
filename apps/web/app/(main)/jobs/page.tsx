@@ -135,8 +135,8 @@ export default function JobsPage() {
       <PageHeader eyebrow="02 · INSIGHT" title="岗位洞察" desc="输入目标岗位,AI 联网采集真实招聘样本,统计技能需求与分布" />
 
       {/* 指令台:一行完成一次分析 */}
-      <section className="ink-panel noise reveal mb-5 rounded-2xl p-1.5">
-        <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white/95 p-4 backdrop-blur">
+      <section className="ink-panel noise reveal mb-5 rounded-[10px] p-1.5">
+        <div className="flex flex-wrap items-end gap-3 rounded-lg bg-white/95 p-4 backdrop-blur">
           <div className="min-w-44 flex-1">
             <label className="pp-label">目标岗位</label>
             <input className="pp-input" value={role} onChange={(e) => setRole(e.target.value)} placeholder="如:Java 后端开发" />
@@ -203,7 +203,7 @@ export default function JobsPage() {
                 </option>
               ))}
             </select>
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-ink text-white">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-ink text-white">
               <Ic name="refresh" size={14} />
             </span>
             <select className="pp-input w-auto min-w-44 flex-1 text-sm" value={cmpB ?? ''} onChange={(e) => pickCompare('b', Number(e.target.value))}>
@@ -237,7 +237,7 @@ export default function JobsPage() {
                 );
                 return (
                   <>
-                    <div className="rounded-xl bg-paper/50 p-3.5">
+                    <div className="rounded-lg bg-paper/50 p-3.5">
                       <div className="mb-1.5 flex items-center gap-2 text-xs font-bold text-teal">
                         <Ic name="checkCircle" size={13} /> 共同要求({overlap.length})
                       </div>
@@ -247,13 +247,13 @@ export default function JobsPage() {
                         ))}
                       </ul>
                     </div>
-                    <div className="rounded-xl bg-accent-soft/50 p-3.5">
+                    <div className="rounded-lg bg-accent-soft/50 p-3.5">
                       <div className="mb-1.5 truncate text-xs font-bold text-accent-deep">{cmpData.a.targetRole} 独有</div>
                       <ul className="divide-y divide-line/50">
                         {onlyA.length ? onlyA.map((n) => <SkillRow key={n} name={n} left={pct(mapA.get(n)!.frequency)} />) : <li className="py-2 text-[11px] text-slate-2">无</li>}
                       </ul>
                     </div>
-                    <div className="rounded-xl bg-amber-soft/60 p-3.5">
+                    <div className="rounded-lg bg-amber-soft/60 p-3.5">
                       <div className="mb-1.5 truncate text-xs font-bold text-amber">{cmpData.b.targetRole} 独有</div>
                       <ul className="divide-y divide-line/50">
                         {onlyB.length ? onlyB.map((n) => <SkillRow key={n} name={n} right={pct(mapB.get(n)!.frequency)} />) : <li className="py-2 text-[11px] text-slate-2">无</li>}

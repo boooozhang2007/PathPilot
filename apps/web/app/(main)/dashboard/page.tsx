@@ -43,7 +43,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* ---------- 主视觉:墨色蓝图,一屏回答两件事(距离 & 下一步) ---------- */}
-      <section className="ink-panel noise corner-ticks reveal relative overflow-hidden rounded-2xl px-8 py-7 text-white">
+      <section className="ink-panel noise corner-ticks reveal relative overflow-hidden rounded-[10px] px-8 py-7 text-white">
         <div className="flex flex-wrap items-start justify-between gap-6">
           <div className="min-w-0 max-w-xl">
             <div className="eyebrow mb-2 text-accent" style={{ color: '#8ba7ff' }}>
@@ -119,8 +119,8 @@ export default function DashboardPage() {
           <section className="pp-card reveal p-5" style={{ '--d': '140ms' } as never}>
             <SectionTitle right={<Link href="/tasks" className="u-link text-xs">任务中心</Link>}>下一步行动</SectionTitle>
             {nextTask ? (
-              <Link href="/tasks" className="group flex items-center gap-3 rounded-xl border border-line bg-paper/60 px-4 py-3.5 transition hover:border-accent">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent">
+              <Link href="/tasks" className="group flex items-center gap-3 rounded-lg border border-line bg-paper/60 px-4 py-3.5 transition hover:border-accent">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent">
                   <Ic name="play" size={15} />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -132,7 +132,7 @@ export default function DashboardPage() {
                 <Ic name="chevronRight" size={15} className="text-slate-2 transition group-hover:translate-x-0.5 group-hover:text-accent" />
               </Link>
             ) : (
-              <div className="rounded-xl border border-dashed border-line px-4 py-6 text-center text-xs text-slate-1">
+              <div className="rounded-lg border border-dashed border-line px-4 py-6 text-center text-xs text-slate-1">
                 {hasRoadmap ? '当前学期任务全部完成' : '生成规划后,下一步行动会出现在这里'}
               </div>
             )}

@@ -58,7 +58,7 @@ export default function LoginPage() {
             ].map((s, i) => (
               <div key={s.label} className="flex items-center gap-3">
                 <div className="flex flex-col items-center gap-1.5">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/15 bg-white/5">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-md border border-white/15 bg-white/5">
                     <Ic name={s.icon} size={15} className="text-white/85" />
                   </span>
                   <span className="text-[10px] text-white/55">{s.label}</span>
@@ -86,11 +86,11 @@ export default function LoginPage() {
             <p className="mt-1.5 text-sm text-slate-1">岗位证据 · 能力档案 · 可执行的成长计划</p>
           </div>
           <form onSubmit={submit} className="pp-card p-6">
-            <div className="mb-5 flex rounded-xl bg-paper-2 p-1 text-sm font-semibold">
-              <button type="button" className={`flex-1 rounded-lg py-2 transition ${mode === 'login' ? 'bg-white font-bold text-accent-deep shadow-sm' : 'text-slate-1'}`} onClick={() => setMode('login')}>
+            <div className="mb-5 flex rounded-lg bg-paper-2 p-1 text-sm font-semibold">
+              <button type="button" className={`flex-1 rounded-md py-2 transition ${mode === 'login' ? 'bg-white font-bold text-accent-deep shadow-sm' : 'text-slate-1'}`} onClick={() => setMode('login')}>
                 登录
               </button>
-              <button type="button" className={`flex-1 rounded-lg py-2 transition ${mode === 'register' ? 'bg-white font-bold text-accent-deep shadow-sm' : 'text-slate-1'}`} onClick={() => setMode('register')}>
+              <button type="button" className={`flex-1 rounded-md py-2 transition ${mode === 'register' ? 'bg-white font-bold text-accent-deep shadow-sm' : 'text-slate-1'}`} onClick={() => setMode('register')}>
                 注册
               </button>
             </div>

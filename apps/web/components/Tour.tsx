@@ -119,7 +119,7 @@ export function Tour({ onClose }: { onClose: () => void }) {
             </button>
           </div>
           <div className="mt-4 flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-white shadow-lg shadow-accent/40">
+            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-accent text-white shadow-lg shadow-accent/40">
               <Ic name={step.icon} size={17} />
             </span>
             <div className="font-display text-lg font-bold">{step.title}</div>

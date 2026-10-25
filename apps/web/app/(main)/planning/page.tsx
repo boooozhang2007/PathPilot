@@ -158,9 +158,9 @@ export default function PlanningPage() {
           </div>
           <div className="mb-5">
             <label className="pp-label">发展路径</label>
-            <div className="flex rounded-xl bg-paper-2 p-1 text-xs font-semibold">
+            <div className="flex rounded-lg bg-paper-2 p-1 text-xs font-semibold">
               {CAREER_PATHS.map((p) => (
-                <button key={p} className={`flex-1 rounded-lg py-2 transition ${path === p ? 'bg-white font-bold text-accent-deep shadow-sm' : 'text-slate-1'}`} onClick={() => setPath(p)}>
+                <button key={p} className={`flex-1 rounded-md py-2 transition ${path === p ? 'bg-white font-bold text-accent-deep shadow-sm' : 'text-slate-1'}`} onClick={() => setPath(p)}>
                   {CAREER_PATH_LABELS[p]}
                 </button>
               ))}

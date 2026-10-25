@@ -112,7 +112,7 @@ export default function TasksPage() {
         desc="按状态推进,完成的每一步都会沉淀为能力证据"
         right={
           <div className="flex items-center gap-2">
-            <div className="flex rounded-xl bg-paper-2 p-1 text-xs font-semibold">
+            <div className="flex rounded-lg bg-paper-2 p-1 text-xs font-semibold">
               {([['today', '今日'], ['week', '本学期'], ['all', '全部']] as const).map(([k, label]) => (
                 <button key={k} className={`rounded-lg px-4 py-2 transition ${view === k ? 'bg-white font-bold text-accent-deep shadow-sm' : 'text-slate-1'}`} onClick={() => setView(k)}>
                   {label}
@@ -121,7 +121,7 @@ export default function TasksPage() {
             </div>
             {tasks.length > 0 && (
               <button
-                className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${manage ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line-2 text-slate-1 hover:border-ink'}`}
+                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${manage ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line-2 text-slate-1 hover:border-ink'}`}
                 onClick={() => {
                   setManage((v) => !v);
                   setSelected(new Set());
@@ -180,7 +180,7 @@ export default function TasksPage() {
             {COLS.map(({ key, tone }, ci) => {
               const col = visible.filter((t) => t.status === key);
               return (
-                <div key={key} className="reveal rounded-2xl border border-line bg-paper/40 p-2.5" style={{ '--d': `${ci * 70}ms` } as never}>
+                <div key={key} className="reveal rounded-lg border border-line bg-paper/40 p-2.5" style={{ '--d': `${ci * 70}ms` } as never}>
                   <div className="mb-2.5 flex items-center justify-between px-1.5 pt-1">
                     <span className="flex items-center gap-2 text-xs font-bold text-ink">
                       <span className={`h-2 w-2 rounded-full ${key === 'done' ? 'bg-teal' : key === 'in_progress' ? 'bg-accent' : key === 'deferred' ? 'bg-amber' : 'bg-slate-2'}`} />
@@ -257,8 +257,8 @@ export default function TasksPage() {
       {/* 任务详情弹层 */}
       {detail && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/45 p-4 backdrop-blur-sm" onClick={() => setDetail(null)}>
-          <div className="pp-anim max-h-[85vh] w-full max-w-lg overflow-y-auto p-0" onClick={(e) => e.stopPropagation()} style={{ boxShadow: '0 32px 80px -24px rgba(7,19,32,.55)' }}>
-            <div className="ink-panel noise flex items-start justify-between gap-3 px-6 py-5 text-white">
+          <div className="pp-card pp-anim max-h-[85vh] w-full max-w-lg overflow-y-auto p-0" onClick={(e) => e.stopPropagation()}>
+            <div className="ink-panel noise flex items-start justify-between gap-3 rounded-t-[5px] px-6 py-5 text-white">
               <div className="min-w-0">
                 <div className="num mb-1 text-[10px] tracking-[0.2em] text-white/50">TASK S{detail.semester}</div>
                 <div className="font-display text-lg font-bold leading-snug">{detail.title}</div>
@@ -277,7 +277,7 @@ export default function TasksPage() {
 
               {/* 任务说明(可编辑) */}
               {descDraft === null ? (
-                <button className="group mb-4 block w-full rounded-xl bg-paper/60 p-4 text-left transition hover:bg-paper-2/70" onClick={() => setDescDraft(detail.description)}>
+                <button className="group mb-4 block w-full rounded-lg bg-paper/60 p-4 text-left transition hover:bg-paper-2/70" onClick={() => setDescDraft(detail.description)}>
                   <div className="text-xs leading-6 text-ink">{detail.description}</div>
                   <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-slate-2 transition group-hover:text-accent">
                     <Ic name="pen" size={11} /> 编辑说明
