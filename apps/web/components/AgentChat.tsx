@@ -15,6 +15,35 @@ type Streaming = { text: string; thinking: string; tools: ToolState[]; startedAt
 
 const SUGGEST_ICONS = ['compass', 'globe', 'calendar', 'pen'];
 
+/** 场景指令:一键进入面试模拟 / 简历优化等专门对话模式 */
+const SCENARIOS: { icon: string; label: string; prompt: string }[] = [
+  {
+    icon: 'chat',
+    label: '面试模拟',
+    prompt: '我们来模拟一场针对我目标岗位的校招面试:你扮演面试官,一次只问一个问题,根据我的回答适度追问,从项目经历和技术基础开始,面试结束后给我逐题点评。现在请简短开场并抛出第一个问题。',
+  },
+  {
+    icon: 'pen',
+    label: '简历优化',
+    prompt: '基于我档案里的真实经历,指出我简历最薄弱的三点,并给出具体的修改建议和可以补充的量化点;需要我补充信息时直接问我。',
+  },
+  {
+    icon: 'roadmap',
+    label: '定制学习计划',
+    prompt: '结合我的能力档案、目标岗位与每周可投入时间,给出未来 4 周的学习重点与顺序,说明理由,并把关键项加入我的规划任务。',
+  },
+  {
+    icon: 'target',
+    label: '岗位怎么选',
+    prompt: '结合我的技能档案与岗位市场情况,分析最适合我的 2-3 个岗位方向,从技能匹配度、准备成本、发展空间三个维度给出取舍建议。',
+  },
+  {
+    icon: 'refresh',
+    label: '本周复盘',
+    prompt: '根据我最近完成的任务、投入时长与新增证据,做一次本周复盘:三个亮点、两个不足、下周的三条建议。可以用工具查我的任务与档案。',
+  },
+];
+
 function timeAgo(iso: string): string {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return '刚刚';
@@ -538,6 +567,23 @@ export function AgentChat({
 
         {/* 输入区 */}
         <div className={`mx-auto w-full px-4 pb-4 pt-1 ${full ? 'max-w-3xl' : 'max-w-2xl'}`}>
+          {/* 场景指令:一键进入专门对话模式 */}
+          {full && !busy && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {SCENARIOS.map((s) => (
+                <button
+                  key={s.label}
+                  className="flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1.5 text-[11.5px] font-semibold text-slate-1 transition hover:border-accent hover:text-accent-deep"
+                  onClick={() => send(s.prompt)}
+                  disabled={busy}
+                  title={s.prompt.slice(0, 40) + '…'}
+                >
+                  <Ic name={s.icon} size={12} />
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          )}
           <form
             className="relative flex items-end gap-2 rounded-2xl border border-line bg-white px-3 py-2.5 shadow-sm transition focus-within:border-accent focus-within:shadow-[0_0_0_3px_rgba(66,110,254,0.14)]"
             onSubmit={(e) => {

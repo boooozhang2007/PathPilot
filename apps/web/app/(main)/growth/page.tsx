@@ -49,6 +49,19 @@ export default function GrowthPage() {
   if (loading) return <Loading />;
   if (err) return <ErrorState message={err} onRetry={() => location.reload()} />;
 
+  /** 导出任务 CSV(带 BOM,Excel 中文不乱码) */
+  function exportCsv() {
+    const head = '学期,标题,状态,优先级,预计小时,实际小时,完成时间';
+    const rows = tasks.map((t) => [t.semester, t.title, TASK_STATUS_LABELS[t.status], t.priority, t.estimatedHours, t.actualHours ?? '', (t.completedAt ?? '').slice(0, 10)].map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','));
+    const blob = new Blob(['\uFEFF' + [head, ...rows].join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pathpilot-tasks-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const done = tasks.filter((t) => t.status === 'done');
   const evidenced = skills.filter((s) => s.evidenceStatus === 'evidenced');
   const doneRatio = tasks.length ? Math.round((done.length / tasks.length) * 100) : 0;
@@ -130,6 +143,14 @@ export default function GrowthPage() {
                 <div className="mt-0.5 text-[11px] text-white/50">{s.label}</div>
               </div>
             ))}
+          </div>
+          <div className="no-print mt-4 flex gap-2">
+            <button className="pp-btn border border-white/20 px-3 py-1.5 text-xs text-white/85 transition hover:border-white/50 hover:text-white" onClick={exportCsv}>
+              <Ic name="download" size={12} /> 导出任务 CSV
+            </button>
+            <button className="pp-btn border border-white/20 px-3 py-1.5 text-xs text-white/85 transition hover:border-white/50 hover:text-white" onClick={() => window.print()}>
+              <Ic name="font" size={12} /> 打印成长报告
+            </button>
           </div>
         </div>
         <div className="flex items-center gap-8">
