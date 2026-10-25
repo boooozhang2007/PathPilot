@@ -7,7 +7,7 @@
 ```
 
 - **Web 端**（Next.js）：`http://localhost:3001`
-- **Android App**（Expo/React Native）：安装 `dist/PathPilot-v1.0.apk`
+- **Android App**（Expo/React Native）：安装 `dist/PathPilot-v1.1.apk`
 - **统一后端**（Fastify + SQLite + Pi Agent）：`http://localhost:3000`，三端共享同一数据库
 
 ## 快速开始
@@ -22,7 +22,7 @@ npm run dev:web             # 启动 Web  :3001
 
 **模型管理**：登录后访问 Web `http://localhost:3001/admin`（默认管理密钥 `pathpilot-admin`，`.env` 中 `ADMIN_KEY` 修改）——填写 Base URL + API Key、拉取模型列表、设置当前模型，保存即生效。
 
-**Android**：安装 `dist/PathPilot-v1.0.apk`（或用 `apps/mobile` 自行构建，见下文）。真机使用时在 App 登录页或「我的 → 服务器地址」填电脑局域网 IP（如 `http://192.168.x.x:3000`），模拟器用默认 `http://10.0.2.2:3000`。
+**Android**：安装 `dist/PathPilot-v1.1.apk`（或用 `apps/mobile` 自行构建，见下文）。真机使用时在 App 登录页或「我的 → 服务器地址」填电脑局域网 IP（如 `http://192.168.x.x:3000`），模拟器用默认 `http://10.0.2.2:3000`。
 
 ## 环境配置
 
@@ -98,5 +98,5 @@ apps/server      后端（API 文档见 ARCHITECTURE §4）
 apps/web         Web 端
 apps/mobile      Android 端
 packages/shared  共享类型与校验
-dist/            PathPilot-v1.0.apk
+dist/            PathPilot-v1.1.apk
 ```

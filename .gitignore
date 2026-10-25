@@ -7,7 +7,6 @@ dist/
 apps/web/.next/
 apps/web/out/
 apps/mobile/.expo/
-apps/mobile/android/
 apps/mobile/ios/
 apps/mobile/.dart_tool/
 
@@ -37,3 +36,13 @@ tools/liepin-cli/
 
 # apps/mobile/node_modules 局部树由 npm reify 管理，勿提交
 apps/mobile/node_modules/
+
+# 竞品分析参考资料（反编译产物，体积大且非项目代码）
+/deepseek.apk
+/deepseek_decoded/
+
+# 会话工具缓存
+/.playwright-cli/
+
+# 打包产物（发布走 GitHub Release，不入库）
+/*.apk
