@@ -107,11 +107,11 @@ export function Tour({ onClose }: { onClose: () => void }) {
 
       {/* 步骤卡片 */}
       <div
-        className="pp-card reveal fixed w-[380px] overflow-hidden p-0"
-        style={{ left: 276, top: cardTop, boxShadow: '0 24px 64px -16px rgba(7,19,32,0.5)' }}
+        className="glass reveal fixed w-[380px] overflow-hidden"
+        style={{ left: 276, top: cardTop }}
         key={idx}
       >
-        <div className="ink-panel bp-grid-dark relative px-6 pb-5 pt-6 text-white">
+        <div className="ink-panel noise relative px-6 pb-5 pt-6 text-white">
           <div className="flex items-center justify-between">
             <Logo size={30} />
             <button onClick={finish} className="rounded-lg p-1.5 text-white/50 transition hover:bg-white/10 hover:text-white" title="跳过引导">

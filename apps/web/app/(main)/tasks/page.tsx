@@ -258,7 +258,7 @@ export default function TasksPage() {
       {detail && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/45 p-4 backdrop-blur-sm" onClick={() => setDetail(null)}>
           <div className="pp-anim max-h-[85vh] w-full max-w-lg overflow-y-auto p-0" onClick={(e) => e.stopPropagation()} style={{ boxShadow: '0 32px 80px -24px rgba(7,19,32,.55)' }}>
-            <div className="ink-panel bp-grid-dark flex items-start justify-between gap-3 px-6 py-5 text-white">
+            <div className="ink-panel noise flex items-start justify-between gap-3 px-6 py-5 text-white">
               <div className="min-w-0">
                 <div className="num mb-1 text-[10px] tracking-[0.2em] text-white/50">TASK S{detail.semester}</div>
                 <div className="font-display text-lg font-bold leading-snug">{detail.title}</div>

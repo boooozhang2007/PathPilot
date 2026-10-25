@@ -60,7 +60,7 @@ export function PageHeader({ eyebrow, title, desc, right }: { eyebrow?: string; 
     <header className="reveal mb-7 flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
         {eyebrow && <div className="eyebrow mb-2">{eyebrow}</div>}
-        <h1 className="font-display text-[28px] font-bold leading-tight tracking-tight text-ink">{title}</h1>
+        <h1 className="title-metal font-display text-[28px] font-bold leading-tight tracking-tight">{title}</h1>
         {desc && <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-1">{desc}</p>}
       </div>
       {right && <div className="flex shrink-0 items-center gap-2">{right}</div>}

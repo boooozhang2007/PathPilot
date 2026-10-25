@@ -104,7 +104,7 @@ export function CommandPalette({ onLogout }: { onLogout: () => void }) {
 
   return (
     <div className="fixed inset-0 z-[90] flex items-start justify-center bg-ink/45 px-4 pt-[16vh] backdrop-blur-sm" onClick={() => setOpen(false)}>
-      <div className="pp-card w-full max-w-lg overflow-hidden p-0" onClick={(e) => e.stopPropagation()} style={{ boxShadow: '0 32px 80px -24px rgba(7,19,32,.55)' }}>
+      <div className="glass w-full max-w-lg overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
           <Ic name="spark" size={15} className="text-accent" />
           <input

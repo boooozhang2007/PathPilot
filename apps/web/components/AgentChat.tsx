@@ -424,7 +424,7 @@ export function AgentChat({
             {modelOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setModelOpen(false)} />
-                <div className="absolute left-0 top-full z-50 mt-1.5 w-72 overflow-hidden rounded-xl border border-line bg-white shadow-xl">
+                <div className="glass absolute left-0 top-full z-50 mt-1.5 w-72 overflow-hidden">
                   <div className="num border-b border-line px-3 py-2 text-[10px] font-semibold tracking-[0.2em] text-slate-2">MODEL</div>
                   <div className="max-h-72 overflow-y-auto py-1">
                     {catalog.map((c) => {
@@ -500,7 +500,7 @@ export function AgentChat({
                         <AgentMark size={22} />
                         <span className="text-xs font-bold text-ink">PathPilot</span>
                       </div>
-                      <div className="rounded-2xl rounded-tl-md border border-line bg-white px-4 py-3">
+                      <div className="pp-card rounded-2xl rounded-tl-md px-4 py-3">
                         <Markdown text={m.content} />
                       </div>
                       {m.toolCalls.length > 0 && <ToolChain tools={m.toolCalls.map((t) => ({ ...t, status: 'done' as const }))} />}
@@ -696,7 +696,7 @@ function StreamingMessage({ s }: { s: Streaming }) {
           </details>
         )}
         <ToolChain tools={s.tools} />
-        <div className="rounded-2xl rounded-tl-md border border-line bg-white px-4 py-3">
+        <div className="pp-card rounded-2xl rounded-tl-md px-4 py-3">
           {s.text ? (
             <>
               <Markdown text={s.text} />

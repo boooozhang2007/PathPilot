@@ -1,17 +1,18 @@
 @import 'tailwindcss';
 
 /*
-  PathPilot 「墨线蓝图 / Ink & Blueprint」设计系统
-  母题:工程蓝图。暖纸底 + 制图网格,深墨蓝重色块,App 同源蓝 #426EFE 精准点缀。
-  排版:衬线中文大标题(编辑感) + 等宽数据字体(工程感) + 无衬线正文。
-  与移动端共享调色板(paper/ink/accent/teal/amber),保证双端品牌一致。
+  PathPilot 「蓝图精机 / Blueprint Machined」质感体系
+  参考 Linear 的 surface ladder + hairline border + 噪点,与玻璃浮层四层结构:
+  L0 纸面(蓝图网格+环境光) → L1 机加工卡片(渐变面/双色发丝边/顶部高光)
+  → L2 玻璃浮层(模糊+半透明+亮边) → L3 墨色面板(多层径向光+噪点)
+  与移动端共享语义色;墨色面板双模式保持墨色。
 */
 @theme {
   --color-ink: #0b2239;
   --color-ink-2: #1c3a57;
   --color-ink-3: #33506e;
-  --color-paper: #f6f4ec;
-  --color-paper-2: #ece9dd;
+  --color-paper: #f4f1e9;
+  --color-paper-2: #eae6d9;
   --color-accent: #426efe;
   --color-accent-deep: #3157d6;
   --color-accent-soft: #e9efff;
@@ -40,66 +41,6 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* ---------- 深色模式(与 App 深色调色板同源;ink 面板两种模式都保持墨色) ---------- */
-.dark {
-  --color-paper: #131417;
-  --color-paper-2: #1b1e23;
-  --color-line: #2b2f36;
-  --color-line-2: #3a3f47;
-  --color-slate-1: #a7aeba;
-  --color-slate-2: #757c87;
-  --color-accent-deep: #8ba7ff;
-  --color-accent-soft: #232f52;
-  --color-teal-soft: #16302a;
-  --color-amber-soft: #32280e;
-}
-.dark body {
-  color: #e8e9ea;
-  background: var(--color-paper);
-}
-/* ink 在浅色场景里是"正文深字",深色模式下翻转为浅字;bg-ink 的深色块不受影响 */
-.dark .text-ink {
-  color: #e8e9ea;
-}
-.dark .pp-card {
-  background: #1b1e23;
-}
-.dark .pp-input {
-  background: #1b1e23;
-  border-color: #3a3f47;
-  color: #e8e9ea;
-}
-.dark .bg-white {
-  background-color: #1b1e23;
-}
-.dark .bg-white\/95 {
-  background-color: rgba(27, 30, 35, 0.95);
-}
-.dark .bg-white\/50,
-.dark .bg-white\/60,
-.dark .bg-white\/80 {
-  background-color: rgba(27, 30, 35, 0.6);
-}
-.dark .bg-white\/40 {
-  background-color: rgba(27, 30, 35, 0.4);
-}
-.dark .bg-paper\/40 {
-  background-color: rgba(19, 20, 23, 0.4);
-}
-.dark .bg-paper\/50,
-.dark .bg-paper\/60 {
-  background-color: rgba(27, 30, 35, 0.5);
-}
-.dark .bp-grid {
-  background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
-  background-size: 26px 26px;
-}
-.dark .pp-btn-primary {
-  box-shadow: 0 6px 16px -8px rgba(66, 110, 254, 0.4);
-}
-
 ::selection {
   background: var(--color-accent);
   color: #fff;
@@ -121,7 +62,23 @@ body {
   background: transparent;
 }
 
-/* ---------- 蓝图网格(浅底/深底) ---------- */
+/* ---------- L0 工作区:蓝图网格 + 顶部环境光 ---------- */
+.workspace {
+  background-image:
+    radial-gradient(1100px 420px at 62% -180px, rgba(66, 110, 254, 0.07), transparent 62%),
+    radial-gradient(700px 320px at -5% 108%, rgba(14, 124, 107, 0.05), transparent 58%),
+    linear-gradient(to right, rgba(11, 34, 57, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(11, 34, 57, 0.045) 1px, transparent 1px);
+  background-size: auto, auto, 26px 26px, 26px 26px;
+}
+.dark .workspace {
+  background-image:
+    radial-gradient(1100px 420px at 62% -180px, rgba(66, 110, 254, 0.1), transparent 62%),
+    radial-gradient(700px 320px at -5% 108%, rgba(20, 160, 138, 0.06), transparent 58%),
+    linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+}
+/* 旧工具类保留(兼容) */
 .bp-grid {
   background-image:
     linear-gradient(to right, rgba(11, 34, 57, 0.05) 1px, transparent 1px),
@@ -134,11 +91,59 @@ body {
     linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
   background-size: 26px 26px;
 }
-/* 墨色重块:侧栏/主视觉 */
+
+/* ---------- 噪点纹理(Linear 式表面颗粒) ---------- */
+.noise {
+  position: relative;
+  overflow: hidden;
+}
+.noise::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.55;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.55 0 0 0 0.06 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.dark .noise::after,
+.ink-panel.noise::after {
+  opacity: 0.75;
+}
+
+/* ---------- L3 墨色面板:多层径向光 + 发丝内圈 ---------- */
 .ink-panel {
   background:
-    radial-gradient(1200px 500px at -10% -20%, rgba(66, 110, 254, 0.28), transparent 55%),
-    linear-gradient(160deg, #0e2a47 0%, var(--color-ink) 58%, #081726 100%);
+    radial-gradient(900px 380px at 88% -25%, rgba(66, 110, 254, 0.38), transparent 60%),
+    radial-gradient(620px 320px at -8% 112%, rgba(14, 124, 107, 0.2), transparent 55%),
+    linear-gradient(160deg, #11294a 0%, #0b2239 55%, #071523 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.045),
+    0 18px 44px -20px rgba(7, 19, 32, 0.5);
+}
+
+/* ---------- 蓝图角标:制图四角标记(签名元素,用于深色面板) ---------- */
+.corner-ticks::before,
+.corner-ticks::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+  opacity: 0.9;
+}
+.corner-ticks::before {
+  top: 12px;
+  left: 12px;
+  border-top: 1.5px solid rgba(139, 167, 255, 0.75);
+  border-left: 1.5px solid rgba(139, 167, 255, 0.75);
+}
+.corner-ticks::after {
+  right: 12px;
+  bottom: 12px;
+  border-right: 1.5px solid rgba(139, 167, 255, 0.75);
+  border-bottom: 1.5px solid rgba(139, 167, 255, 0.75);
 }
 
 /* ---------- 排版 ---------- */
@@ -151,7 +156,6 @@ body {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
-/* 眉标:编号 + 大写小字距(工程图纸标注风) */
 .eyebrow {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -160,14 +164,37 @@ body {
   text-transform: uppercase;
   color: var(--color-accent);
 }
-
-/* ---------- 通用组件 ---------- */
-.pp-card {
-  background: #fff;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-card);
-  box-shadow: 0 1px 0 rgba(11, 34, 57, 0.03), 0 8px 24px -18px rgba(11, 34, 57, 0.25);
+/* 标题金属渐变(墨色自上而下的机加工高光) */
+.title-metal {
+  background: linear-gradient(180deg, #16324e 0%, #0b2239 58%, #24405c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
+.dark .title-metal {
+  background: linear-gradient(180deg, #f5f7fa 0%, #ccd6e2 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* ---------- L1 机加工卡片:渐变面 + 双色发丝边 + 顶部高光 ---------- */
+.pp-card {
+  position: relative;
+  background: linear-gradient(180deg, #ffffff 0%, #fdfcf8 100%);
+  border: 1px solid;
+  border-color: rgba(11, 34, 57, 0.1) rgba(11, 34, 57, 0.07) rgba(11, 34, 57, 0.13);
+  border-radius: var(--radius-card);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 1px rgba(11, 34, 57, 0.05),
+    0 10px 28px -14px rgba(11, 34, 57, 0.2);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+.pp-card:hover {
+  border-top-color: rgba(11, 34, 57, 0.14);
+}
+
+/* ---------- 按钮:三段渐变 + 内高光/内暗边 + 彩色辉光 ---------- */
 .pp-btn {
   display: inline-flex;
   align-items: center;
@@ -180,52 +207,76 @@ body {
   white-space: nowrap;
 }
 .pp-btn-primary {
-  background: var(--color-accent);
+  background: linear-gradient(180deg, #5c86ff 0%, #426efe 55%, #3157d6 100%);
   color: #fff;
-  box-shadow: 0 6px 16px -8px rgba(66, 110, 254, 0.65);
+  border: 1px solid rgba(13, 33, 88, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -1px 0 rgba(9, 20, 44, 0.25),
+    0 1px 2px rgba(11, 34, 57, 0.24),
+    0 10px 22px -8px rgba(66, 110, 254, 0.6);
 }
 .pp-btn-primary:hover {
-  background: var(--color-accent-deep);
+  filter: brightness(1.06);
+  transform: translateY(-0.5px);
 }
 .pp-btn-primary:active {
-  transform: translateY(1px);
+  transform: translateY(0.5px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 2px 4px rgba(9, 20, 44, 0.35),
+    0 4px 12px -6px rgba(66, 110, 254, 0.5);
 }
 .pp-btn-primary:disabled {
   background: var(--color-slate-2);
-  box-shadow: none;
+  border-color: rgba(11, 34, 57, 0.15);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  filter: none;
+  transform: none;
   cursor: not-allowed;
 }
 .pp-btn-ghost {
-  background: transparent;
+  background: linear-gradient(180deg, #ffffff, #f9f7f1);
   color: var(--color-ink);
-  border: 1px solid var(--color-line-2);
+  border: 1px solid rgba(11, 34, 57, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 1px 2px rgba(11, 34, 57, 0.06);
 }
 .pp-btn-ghost:hover {
-  border-color: var(--color-ink);
-  background: rgba(11, 34, 57, 0.03);
+  border-color: rgba(11, 34, 57, 0.4);
+  transform: translateY(-0.5px);
+}
+.pp-btn-ghost:active {
+  transform: translateY(0.5px);
+  box-shadow: inset 0 1px 2px rgba(11, 34, 57, 0.12);
 }
 .pp-btn-danger {
-  background: transparent;
+  background: linear-gradient(180deg, #ffffff, #fdf4f2);
   color: #d5392f;
-  border: 1px solid #e8b4ae;
+  border: 1px solid rgba(213, 57, 47, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 .pp-btn-danger:hover {
   border-color: #d5392f;
   background: #fdf1ef;
 }
+
+/* ---------- 输入:内凹 + 焦点辉光 ---------- */
 .pp-input {
   width: 100%;
-  border: 1px solid var(--color-line-2);
+  border: 1px solid rgba(11, 34, 57, 0.15);
   border-radius: 10px;
   padding: 9px 12px;
   background: #fff;
   font-size: 14px;
   outline: none;
+  box-shadow: inset 0 1px 2px rgba(11, 34, 57, 0.06);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .pp-input:focus {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(66, 110, 254, 0.14);
+  box-shadow:
+    inset 0 1px 2px rgba(11, 34, 57, 0.04),
+    0 0 0 3px rgba(66, 110, 254, 0.16);
 }
 .pp-label {
   display: block;
@@ -234,6 +285,8 @@ body {
   color: var(--color-slate-1);
   margin-bottom: 4px;
 }
+
+/* ---------- 徽章:机加工小片 ---------- */
 .pp-tag {
   display: inline-flex;
   align-items: center;
@@ -243,6 +296,27 @@ body {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.5;
+  border: 1px solid rgba(11, 34, 57, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+/* ---------- L2 玻璃浮层:模糊 + 半透明 + 亮发丝边 ---------- */
+.glass {
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 24px 60px -18px rgba(7, 19, 32, 0.4);
+}
+.dark .glass {
+  background: rgba(23, 26, 31, 0.85);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 24px 60px -18px rgba(0, 0, 0, 0.7);
 }
 
 /* ---------- 路线节点(贯穿组件) ---------- */
@@ -255,15 +329,17 @@ body {
   border-radius: 999px;
   border: 2px solid var(--color-line-2);
   background: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(11, 34, 57, 0.15);
   transition: all 0.2s;
 }
 .node-active {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 4px rgba(66, 110, 254, 0.18);
+  box-shadow: 0 0 0 4px rgba(66, 110, 254, 0.18), 0 0 12px rgba(66, 110, 254, 0.45);
 }
 .node-done {
   border-color: var(--color-teal);
   background: var(--color-teal);
+  box-shadow: 0 0 0 3px rgba(14, 124, 107, 0.15);
 }
 .pathline {
   position: absolute;
@@ -332,6 +408,84 @@ body {
   transform: scaleX(1);
 }
 
+/* ---------- 深色模式(与 App 深色调色板同源) ---------- */
+.dark {
+  --color-paper: #121316;
+  --color-paper-2: #1a1d22;
+  --color-line: #2a2e35;
+  --color-line-2: #3a3f47;
+  --color-slate-1: #a7aeba;
+  --color-slate-2: #757c87;
+  --color-accent-deep: #8ba7ff;
+  --color-accent-soft: #222e51;
+  --color-teal-soft: #16302a;
+  --color-amber-soft: #32280e;
+}
+.dark body {
+  color: #e8e9ea;
+  background: var(--color-paper);
+}
+.dark .text-ink {
+  color: #e8e9ea;
+}
+.dark .pp-card {
+  background: linear-gradient(180deg, #21242b 0%, #1b1e23 100%);
+  border-color: rgba(255, 255, 255, 0.09) rgba(255, 255, 255, 0.055) rgba(0, 0, 0, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 10px 28px -14px rgba(0, 0, 0, 0.6);
+}
+.dark .pp-card:hover {
+  border-top-color: rgba(255, 255, 255, 0.13);
+}
+.dark .pp-btn-ghost {
+  background: linear-gradient(180deg, #23262d, #1d2026);
+  border-color: rgba(255, 255, 255, 0.13);
+  color: #e8e9ea;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.dark .pp-btn-danger {
+  background: linear-gradient(180deg, #2a1e1d, #221817);
+  border-color: rgba(213, 57, 47, 0.45);
+}
+.dark .pp-input {
+  background: #17191d;
+  border-color: rgba(255, 255, 255, 0.13);
+  color: #e8e9ea;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+.dark .pp-tag {
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.dark .bg-white {
+  background-color: #1d2026;
+}
+.dark .bg-white\/95 {
+  background-color: rgba(26, 29, 34, 0.95);
+}
+.dark .bg-white\/50,
+.dark .bg-white\/60,
+.dark .bg-white\/80 {
+  background-color: rgba(26, 29, 34, 0.6);
+}
+.dark .bg-white\/40 {
+  background-color: rgba(26, 29, 34, 0.4);
+}
+.dark .bg-paper\/40 {
+  background-color: rgba(18, 19, 22, 0.4);
+}
+.dark .bg-paper\/50,
+.dark .bg-paper\/60 {
+  background-color: rgba(26, 29, 34, 0.5);
+}
+.dark .bp-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+
 /* ---------- 打印(简历导出 PDF):只保留简历纸面 ---------- */
 @media print {
   @page {
@@ -349,12 +503,17 @@ body {
     padding: 0 !important;
     background: none !important;
   }
+  .workspace,
   .bp-grid {
     background-image: none !important;
   }
-  .print-area {
+  .noise::after {
+    display: none !important;
+  }
+  .pp-card {
     border: none !important;
     box-shadow: none !important;
+    background: #fff !important;
     padding: 0 !important;
     width: 100% !important;
     max-width: 100% !important;

@@ -75,7 +75,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   return (
     <div className="flex min-h-screen">
       {/* 墨蓝侧栏:品牌 → 路线节点导航 → 状态与账号 */}
-      <aside className="ink-panel bp-grid-dark fixed inset-y-0 left-0 z-30 flex w-60 flex-col border-r border-ink text-white">
+      <aside className="ink-panel noise fixed inset-y-0 left-0 z-30 flex w-60 flex-col border-r border-white/10 text-white">
         <div className="flex items-center gap-3 px-5 pb-6 pt-6">
           <Logo size={36} />
           <div className="min-w-0">
@@ -92,11 +92,11 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                 key={item.href}
                 href={item.href}
                 data-tour-anchor={`nav-${item.href}`}
-                className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${active ? 'bg-white text-ink shadow-lg shadow-black/20' : 'text-white/65 hover:bg-white/10 hover:text-white'}`}
+                className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all ${active ? 'bg-white text-ink shadow-[0_8px_20px_-8px_rgba(0,0,0,.5)]' : 'text-white/65 hover:bg-white/[.08] hover:text-white'}`}
               >
                 {/* 活跃节点:蓝图路线上的当前站点 */}
-                {active && <span className="absolute -left-3 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-accent ring-4 ring-accent/25" />}
-                <Ic name={item.icon} size={17} className={active ? 'text-accent' : 'opacity-70 group-hover:opacity-100'} />
+                {active && <span className="absolute -left-3 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-accent shadow-[0_0_10px_rgba(66,110,254,.9)] ring-4 ring-accent/25" />}
+                <Ic name={item.icon} size={17} className={active ? 'text-accent' : 'opacity-70 transition group-hover:opacity-100'} />
                 <span className="font-medium">{item.label}</span>
                 <span className={`num ml-auto text-[10px] tracking-widest ${active ? 'text-accent' : 'text-white/30'}`}>{item.num}</span>
               </Link>
@@ -148,7 +148,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       </aside>
 
       {/* 纸面工作区 */}
-      <main className="bp-grid ml-60 min-h-screen flex-1 px-9 py-8">
+      <main className="workspace ml-60 min-h-screen flex-1 px-9 py-8">
         <div className="mx-auto max-w-6xl">{children}</div>
       </main>
 
