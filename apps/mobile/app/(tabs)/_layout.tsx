@@ -1,7 +1,7 @@
-// 底部导航（AI 顾问居中）· 矢量图标组：首页（房子）/ 成长路线（里程碑旗）重设计，其余配套统一线型
+// 底部导航（AI 顾问居中）· 矢量图标组：主题化（DeepSeek 蓝 + 深浅色跟随设置）
 import { Tabs } from 'expo-router';
 import { Svg, Path, Circle } from 'react-native-svg';
-import { C } from '../../components/ui';
+import { C, useSettings } from '../../components/ui';
 
 function TabIcon({ name, color, focused }: { name: string; color: string; focused: boolean }) {
   const common = {
@@ -54,14 +54,16 @@ function TabIcon({ name, color, focused }: { name: string; color: string; focuse
 }
 
 export default function TabLayout() {
+  useSettings(); // 消费 context：主题切换时 tab 栏即时重渲染
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: C.accent,
         tabBarInactiveTintColor: C.slate2,
-        tabBarStyle: { backgroundColor: C.white, borderTopColor: C.line, height: 56, paddingBottom: 4 },
+        tabBarStyle: { backgroundColor: C.paper, borderTopColor: C.line, height: 56, paddingBottom: 4 },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        sceneStyle: { backgroundColor: C.paper },
       }}
     >
       <Tabs.Screen name="index" options={{ title: '首页', tabBarIcon: ({ color, focused }) => <TabIcon name="index" color={String(color) || C.ink} focused={focused} /> }} />

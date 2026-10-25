@@ -1,15 +1,17 @@
-// 任务（任务7改版）：点击空白关闭详情 / 任务说明板块 / 成果放大编辑 / 开始·暂停跟踪
+// 任务：详情弹层（滚动修复+对齐）/ 任务说明编辑 / 删除与批量删除 / 开始·暂停跟踪
 import { useCallback, useState } from 'react';
-import { ScrollView, View, Text, TextInput, Modal, RefreshControl, TouchableOpacity, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
+import { ScrollView, View, Text, TextInput, Modal, RefreshControl, TouchableOpacity, Pressable, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { api } from '../../lib/api';
-import { C, Card, Tag, Loading, ErrorBox, EmptyBox, Btn, Body } from '../../components/ui';
+import { C, Card, Tag, Loading, ErrorBox, EmptyBox, Btn, Body, useSettings } from '../../components/ui';
+import { Icon } from '../../components/icons';
 import type { RoadmapTaskDTO } from '@pathpilot/shared';
 import { TASK_STATUS_LABELS, PRIORITY_LABELS } from '@pathpilot/shared';
 
 type View2 = 'today' | 'week' | 'all';
 
 export default function TasksTab() {
+  const { fs } = useSettings();
   const [tasks, setTasks] = useState<RoadmapTaskDTO[]>([]);
   const [view, setView] = useState<View2>('today');
   const [err, setErr] = useState('');
@@ -22,13 +24,17 @@ export default function TasksTab() {
   const [noteMax, setNoteMax] = useState(false); // 成果说明放大编辑
   const [syncFail, setSyncFail] = useState('');
   const [curSemester, setCurSemester] = useState<number | null>(null);
+  // 说明编辑 / 批量管理
+  const [descDraft, setDescDraft] = useState<string | null>(null);
+  const [manage, setManage] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
 
   const load = useCallback(() => {
     Promise.all([api<RoadmapTaskDTO[]>('/api/tasks'), api<{ grade?: string } | null>('/api/profile').catch(() => null)])
       .then(([t, p]) => {
         setTasks(t);
         if (p?.grade) {
-          const map: Record<string, number> = { freshman: 1, sophomore: 3, junior: 5, senior: 7, graduate: 9, other: 5 };
+          const map: Record<string, number> = { freshman: 1, sophomore: 3, junior: 5, senior: 7, graduate: 9, phd: 11, postdoc: 13, other: 5 };
           setCurSemester(map[p.grade] ?? 5);
         }
         setErr('');
@@ -64,6 +70,58 @@ export default function TasksTab() {
     });
   }
 
+  async function saveDescription() {
+    if (!detail || descDraft === null || !descDraft.trim()) return;
+    await update(detail, { description: descDraft.trim() });
+    setDescDraft(null);
+  }
+
+  function removeTask(task: RoadmapTaskDTO) {
+    Alert.alert('删除任务', `「${task.title}」将被删除，不可恢复。确定？`, [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '确认删除',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api(`/api/tasks/${task.id}`, { method: 'DELETE' });
+            setTasks((prev) => prev.filter((t) => t.id !== task.id));
+            setDetail(null);
+            setSelected((prev) => {
+              const n = new Set(prev);
+              n.delete(task.id);
+              return n;
+            });
+          } catch (e) {
+            setSyncFail(e instanceof Error ? e.message : '删除失败');
+          }
+        },
+      },
+    ]);
+  }
+
+  function removeSelected() {
+    const ids = [...selected];
+    if (!ids.length) return;
+    Alert.alert('批量删除', `将删除 ${ids.length} 个任务，不可恢复。确定？`, [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '确认删除',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api('/api/tasks/batch-delete', { method: 'POST', json: { ids } });
+            setSelected(new Set());
+            setManage(false);
+            load();
+          } catch (e) {
+            setSyncFail(e instanceof Error ? e.message : '批量删除失败');
+          }
+        },
+      },
+    ]);
+  }
+
   if (loading) return <Loading />;
   const today = new Date().toISOString().slice(0, 10);
   const visible =
@@ -72,20 +130,53 @@ export default function TasksTab() {
   return (
     <View style={{ flex: 1, backgroundColor: C.paper, paddingTop: 54 }}>
       <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
-        <Text style={{ fontSize: 20, fontWeight: '800', color: C.ink }}>任务</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={{ fontSize: 20, fontWeight: '800', color: C.ink }}>任务</Text>
+          {tasks.length > 0 && (
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, borderWidth: 1, borderColor: manage ? C.accent : C.line, backgroundColor: manage ? C.accentSoft : 'transparent', paddingHorizontal: 11, paddingVertical: 5 }}
+              onPress={() => {
+                setManage((v) => !v);
+                setSelected(new Set());
+              }}
+            >
+              <Icon name={manage ? 'close' : 'checkCircle'} size={13} color={manage ? C.accent : C.slate} />
+              <Text style={{ fontSize: fs(12), fontWeight: '600', color: manage ? C.accent : C.slate }}>{manage ? '退出管理' : '批量管理'}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
         {syncFail ? (
-          <View style={{ backgroundColor: C.amberSoft, borderRadius: 10, padding: 10, marginTop: 10 }}>
-            <Text style={{ color: C.amber, fontSize: 12 }}>{syncFail}</Text>
+          <View style={{ backgroundColor: C.amberSoft, borderRadius: 10, padding: 10, marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Icon name="warn" size={13} color={C.amber} />
+            <Text style={{ color: C.amber, fontSize: fs(12), flex: 1 }}>{syncFail}</Text>
           </View>
         ) : null}
-        <View style={{ flexDirection: 'row', backgroundColor: '#EDE8DB', borderRadius: 10, padding: 3, marginTop: 12 }}>
+        <View style={{ flexDirection: 'row', backgroundColor: C.group, borderRadius: 10, padding: 3, marginTop: 12 }}>
           {([['today', '今日'], ['week', '本学期'], ['all', '全部']] as [View2, string][]).map(([k, label]) => (
-            <TouchableOpacity key={k} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, backgroundColor: view === k ? C.white : 'transparent', alignItems: 'center' }} onPress={() => setView(k)}>
+            <TouchableOpacity key={k} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, backgroundColor: view === k ? C.paper : 'transparent', alignItems: 'center' }} onPress={() => setView(k)}>
               <Text style={{ fontWeight: '600', fontSize: 13, color: view === k ? C.ink : C.slate }}>{label}</Text>
             </TouchableOpacity>
           ))}
         </View>
       </View>
+
+      {/* 批量删除操作条 */}
+      {manage && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 10 }}>
+          <TouchableOpacity style={{ borderRadius: 10, borderWidth: 1, borderColor: C.line, paddingHorizontal: 12, paddingVertical: 7 }} onPress={() => setSelected(new Set(visible.map((t) => t.id)))}>
+            <Text style={{ fontSize: fs(12), color: C.ink, fontWeight: '600' }}>全选</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ borderRadius: 10, backgroundColor: selected.size ? '#E5484D' : C.slate2, paddingHorizontal: 12, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 5 }}
+            disabled={!selected.size}
+            onPress={removeSelected}
+          >
+            <Icon name="trash" size={13} color="#FFFFFF" />
+            <Text style={{ fontSize: fs(12), color: '#FFFFFF', fontWeight: '700' }}>删除所选（{selected.size}）</Text>
+          </TouchableOpacity>
+          <Text style={{ fontSize: fs(10), color: C.slate2, flex: 1 }}>完成前后均可删除</Text>
+        </View>
+      )}
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); setTimeout(() => setRefreshing(false), 800); }} tintColor={C.accent} />}>
         {err ? <ErrorBox message={err} onRetry={load} /> : null}
@@ -93,8 +184,33 @@ export default function TasksTab() {
           <EmptyBox title="暂无任务" hint="下拉刷新；也可在 AI 顾问中让 Agent 添加任务" />
         ) : (
           visible.map((t) => (
-            <Card key={t.id} style={{ marginBottom: 10 }}>
-              <TouchableOpacity onPress={() => { setDetail(t); setEvUrl(t.evidenceUrl ?? ''); setEvNote(t.resultNote ?? ''); setEvHours(t.actualHours != null ? String(t.actualHours) : ''); }}>
+            <Card key={t.id} style={{ marginBottom: 10, ...(manage && selected.has(t.id) ? { borderWidth: 2, borderColor: C.accent } : {}) }}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (manage) {
+                    setSelected((prev) => {
+                      const n = new Set(prev);
+                      if (n.has(t.id)) n.delete(t.id);
+                      else n.add(t.id);
+                      return n;
+                    });
+                  } else {
+                    setDetail(t);
+                    setDescDraft(null);
+                    setEvUrl(t.evidenceUrl ?? '');
+                    setEvNote(t.resultNote ?? '');
+                    setEvHours(t.actualHours != null ? String(t.actualHours) : '');
+                  }
+                }}
+              >
+                {manage && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    <View style={{ width: 18, height: 18, borderRadius: 5, borderWidth: 1.5, borderColor: selected.has(t.id) ? C.accent : C.line, backgroundColor: selected.has(t.id) ? C.accent : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                      {selected.has(t.id) && <Icon name="check" size={11} color="#FFFFFF" strokeWidth={3} />}
+                    </View>
+                    <Text style={{ fontSize: fs(11), color: C.slate }}>{selected.has(t.id) ? '已选' : '点击选择'}</Text>
+                  </View>
+                )}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: C.ink }} numberOfLines={2}>
                     {t.title}
@@ -112,22 +228,27 @@ export default function TasksTab() {
                 <Text style={{ fontSize: 12, color: C.slate2, marginTop: 6 }}>
                   预计 {t.estimatedHours}h · 优先级{PRIORITY_LABELS[t.priority]}{t.actualHours != null ? ` · 实际 ${t.actualHours}h` : ''}
                 </Text>
-                <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                   {/* 跟踪：开始/暂停 */}
                   {t.status === 'not_started' && (
-                    <Btn title="▶ 开始跟踪" kind="ghost" onPress={() => update(t, { status: 'in_progress' })} style={{ paddingVertical: 6, paddingHorizontal: 12 }} />
+                    <Btn title="开始跟踪" kind="ghost" onPress={() => update(t, { status: 'in_progress' })} style={{ paddingVertical: 6, paddingHorizontal: 12 }} />
                   )}
                   {t.status === 'in_progress' && (
                     <>
-                      <Btn title="⏸ 暂停" kind="ghost" onPress={() => update(t, { status: 'not_started' })} style={{ paddingVertical: 6, paddingHorizontal: 12 }} />
-                      <Btn title="完成 ✓" kind="teal" onPress={() => update(t, { status: 'done', actualHours: t.actualHours ?? t.estimatedHours })} style={{ paddingVertical: 6, paddingHorizontal: 12 }} />
+                      <Btn title="暂停" kind="ghost" onPress={() => update(t, { status: 'not_started' })} style={{ paddingVertical: 6, paddingHorizontal: 12 }} />
+                      <Btn title="完成" kind="teal" onPress={() => update(t, { status: 'done', actualHours: t.actualHours ?? t.estimatedHours })} style={{ paddingVertical: 6, paddingHorizontal: 12 }} />
                     </>
                   )}
                   {t.status === 'deferred' && (
-                    <Btn title="▶ 恢复跟踪" kind="ghost" onPress={() => update(t, { status: 'in_progress' })} style={{ paddingVertical: 6, paddingHorizontal: 12 }} />
+                    <Btn title="恢复跟踪" kind="ghost" onPress={() => update(t, { status: 'in_progress' })} style={{ paddingVertical: 6, paddingHorizontal: 12 }} />
                   )}
                   {t.status !== 'done' && t.status !== 'deferred' && (
                     <Btn title="延期" kind="ghost" onPress={() => update(t, { status: 'deferred', deferredReason: '手机端标记延期' })} style={{ paddingVertical: 6, paddingHorizontal: 12 }} />
+                  )}
+                  {!manage && (
+                    <TouchableOpacity style={{ paddingVertical: 6, paddingHorizontal: 12, alignItems: 'center' }} onPress={() => removeTask(t)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                      <Icon name="trash" size={15} color="#E5484D" />
+                    </TouchableOpacity>
                   )}
                   {t.evidenceUrl ? <Tag tone="teal">有成果</Tag> : null}
                 </View>
@@ -137,29 +258,53 @@ export default function TasksTab() {
         )}
       </ScrollView>
 
-      {/* 任务详情/成果记录：点击上方空白处关闭 */}
+      {/* 任务详情/成果记录：内容可滚动（修复关闭行溢出透明背景）；点击上方空白处关闭 */}
       <Modal visible={!!detail} animationType="slide" transparent onRequestClose={() => setDetail(null)}>
         <Pressable style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(11,34,57,0.35)' }} onPress={() => setDetail(null)}>
           <Pressable onPress={(e) => e.stopPropagation()}>
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ backgroundColor: C.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '85%' }}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ backgroundColor: C.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '86%' }}>
               {detail ? (
-                <>
+                <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 28 }} keyboardShouldPersistTaps="handled">
                   <View style={{ width: 40, height: 4, borderRadius: 999, backgroundColor: C.line, alignSelf: 'center', marginBottom: 12 }} />
                   <Text style={{ fontSize: 16, fontWeight: '800', color: C.ink, marginBottom: 8 }}>{detail.title}</Text>
-                  <Body muted style={{ marginBottom: 12 }}>{detail.description}</Body>
-                  <View style={{ backgroundColor: '#F5F2EA', borderRadius: 10, padding: 10, marginBottom: 8 }}>
+
+                  {/* 任务说明（可编辑） */}
+                  {descDraft === null ? (
+                    <TouchableOpacity onPress={() => setDescDraft(detail.description)} style={{ marginBottom: 12 }}>
+                      <Body muted>{detail.description}</Body>
+                      <Text style={{ fontSize: fs(11), color: C.accent, marginTop: 4, fontWeight: '600' }}>编辑任务说明</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={{ marginBottom: 12 }}>
+                      <TextInput
+                        style={[s.input, { minHeight: 80, textAlignVertical: 'top' }]}
+                        value={descDraft}
+                        onChangeText={setDescDraft}
+                        multiline
+                        placeholder="任务详细说明：做法步骤、学习资源、参考例子"
+                        placeholderTextColor={C.slate2}
+                      />
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
+                        <Btn title="保存说明" onPress={saveDescription} style={{ paddingVertical: 7, paddingHorizontal: 14 }} />
+                        <Btn title="取消" kind="ghost" onPress={() => setDescDraft(null)} style={{ paddingVertical: 7, paddingHorizontal: 14 }} />
+                      </View>
+                    </View>
+                  )}
+
+                  <View style={{ backgroundColor: C.group, borderRadius: 10, padding: 10, marginBottom: 8 }}>
                     <Text style={{ fontSize: 12, color: C.ink, lineHeight: 18 }}><Text style={{ fontWeight: '700' }}>产出：</Text>{detail.deliverable}</Text>
                   </View>
-                  <View style={{ backgroundColor: '#F5F2EA', borderRadius: 10, padding: 10, marginBottom: 14 }}>
+                  <View style={{ backgroundColor: C.group, borderRadius: 10, padding: 10, marginBottom: 14 }}>
                     <Text style={{ fontSize: 12, color: C.ink, lineHeight: 18 }}><Text style={{ fontWeight: '700' }}>验收：</Text>{detail.acceptanceCriteria}</Text>
                   </View>
 
                   <Text style={{ fontSize: 13, fontWeight: '700', color: C.ink, marginBottom: 8 }}>记录学习成果</Text>
                   <TextInput style={s.input} placeholder="成果链接（GitHub/部署地址）" placeholderTextColor={C.slate2} value={evUrl} onChangeText={setEvUrl} autoCapitalize="none" />
-                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
+                  {/* 成果说明 + 实际小时：同行等高对齐 */}
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'stretch' }}>
                     <View style={{ flex: 1 }}>
                       <TextInput
-                        style={[s.input, { minHeight: 60, textAlignVertical: 'top' }]}
+                        style={[s.input, { minHeight: 60, textAlignVertical: 'top', marginBottom: 0 }]}
                         placeholder="成果说明"
                         placeholderTextColor={C.slate2}
                         value={evNote}
@@ -167,14 +312,25 @@ export default function TasksTab() {
                         multiline
                       />
                       <TouchableOpacity onPress={() => setNoteMax(true)} style={{ position: 'absolute', right: 8, bottom: 10 }}>
-                        <Text style={{ fontSize: 16 }}>⤢</Text>
+                        <Icon name="expand" size={16} color={C.slate2} />
                       </TouchableOpacity>
                     </View>
-                    <TextInput style={[s.input, { width: 90 }]} placeholder="实际小时" placeholderTextColor={C.slate2} value={evHours} onChangeText={setEvHours} keyboardType="numeric" />
+                    <TextInput
+                      style={[s.input, { width: 90, minHeight: 60, textAlignVertical: 'top' }]}
+                      placeholder="实际小时"
+                      placeholderTextColor={C.slate2}
+                      value={evHours}
+                      onChangeText={setEvHours}
+                      keyboardType="numeric"
+                    />
                   </View>
+                  <View style={{ height: 10 }} />
                   <Btn title="保存成果" onPress={saveEvidence} style={{ marginBottom: 8 }} />
-                  <Btn title="关闭" kind="ghost" onPress={() => setDetail(null)} />
-                </>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <Btn title="删除任务" kind="danger" onPress={() => removeTask(detail)} style={{ flex: 1 }} />
+                    <Btn title="关闭" kind="ghost" onPress={() => setDetail(null)} style={{ flex: 1 }} />
+                  </View>
+                </ScrollView>
               ) : null}
             </KeyboardAvoidingView>
           </Pressable>
@@ -187,7 +343,7 @@ export default function TasksTab() {
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <Text style={{ fontSize: 17, fontWeight: '800', color: C.ink }}>成果说明</Text>
             <TouchableOpacity onPress={() => setNoteMax(false)} style={{ padding: 6 }}>
-              <Text style={{ fontSize: 13, color: C.accent, fontWeight: '700' }}>收起 ⤡</Text>
+              <Icon name="collapse" size={16} color={C.accent} />
             </TouchableOpacity>
           </View>
           <TextInput

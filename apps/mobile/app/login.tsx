@@ -40,7 +40,7 @@ export default function Login() {
       <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 24 }}>
         <View style={{ alignItems: 'center', marginBottom: 28 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: C.deep, alignItems: 'center', justifyContent: 'center' }}>
               <Text style={{ color: C.white, fontWeight: '900', fontSize: 14 }}>PP</Text>
             </View>
             <Text style={{ fontSize: 22, fontWeight: '900', color: C.ink }}>PathPilot AI</Text>
@@ -48,7 +48,7 @@ export default function Login() {
         </View>
 
         <View style={{ backgroundColor: C.white, borderRadius: 14, borderWidth: 1, borderColor: C.line, padding: 20 }}>
-          <View style={{ flexDirection: 'row', backgroundColor: '#EDE8DB', borderRadius: 10, padding: 3, marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', backgroundColor: C.group, borderRadius: 10, padding: 3, marginBottom: 16 }}>
             {(['login', 'register'] as const).map((m) => (
               <TouchableOpacity
                 key={m}

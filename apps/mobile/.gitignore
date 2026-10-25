@@ -37,5 +37,6 @@ yarn-error.*
 *.tsbuildinfo
 
 # generated native folders
+# /android 已解除忽略：prebuild 产物入库（含 styles.xml forceDark 修复、gradle 阿里云镜像），
+# 构建产物由 android/.gitignore 排除；换机无需重新 prebuild
 /ios
-/android

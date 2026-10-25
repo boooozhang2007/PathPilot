@@ -4,6 +4,8 @@ import { ScrollView, View, Text, RefreshControl } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { api } from '../../lib/api';
 import { C, Card, Tag, Ring, Loading, ErrorBox, Btn } from '../../components/ui';
+import { Icon } from '../../components/icons';
+import { GuideTasks } from '../../components/GuideTasks';
 import type { DashboardData, RoadmapTaskDTO } from '@pathpilot/shared';
 import { TASK_STATUS_LABELS } from '@pathpilot/shared';
 
@@ -45,9 +47,12 @@ export default function Home() {
   return (
     <ScrollView style={{ flex: 1, backgroundColor: C.paper }} contentContainerStyle={{ padding: 16, paddingTop: 54 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); setTimeout(() => setRefreshing(false), 800); }} tintColor={C.accent} />}>
       {/* 顶部 Hero：问候 + 进度圆环 */}
-      <View style={{ backgroundColor: C.ink, borderRadius: 16, padding: 20, marginBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+      <View style={{ backgroundColor: C.deep, borderRadius: 16, padding: 20, marginBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <View style={{ flex: 1, paddingRight: 8 }}>
-          <Text style={{ color: '#fff', fontSize: 22, fontWeight: '800' }}>{d?.profile?.nickname ?? '同学'}，加油 🚀</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={{ color: '#fff', fontSize: 22, fontWeight: '800' }}>{d?.profile?.nickname ?? '同学'}，加油</Text>
+            <Icon name="rocket" size={20} color="#FFFFFF" />
+          </View>
           {d?.topGaps?.length ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
               {d.topGaps.slice(0, 3).map((g) => (
@@ -63,6 +68,9 @@ export default function Home() {
 
       {err ? <View style={{ marginBottom: 12 }}><ErrorBox message={err} onRetry={load} /></View> : null}
 
+      {/* 新手引导任务卡（手把手四步，完成/跳过后自动隐藏） */}
+      <GuideTasks />
+
       {/* 本学期进度（从 Hero 移入独立卡片） */}
       {sem ? (
         <Card style={{ marginBottom: 12 }}>
@@ -70,7 +78,7 @@ export default function Home() {
             <Text style={{ fontSize: 14, fontWeight: '700', color: C.ink }}>{sem.label}</Text>
             <Tag tone="teal">{sem.doneRatio}%</Tag>
           </View>
-          <View style={{ height: 8, borderRadius: 999, backgroundColor: '#EDE8DB', marginTop: 10, overflow: 'hidden' }}>
+          <View style={{ height: 8, borderRadius: 999, backgroundColor: C.group, marginTop: 10, overflow: 'hidden' }}>
             <View style={{ height: 8, borderRadius: 999, backgroundColor: C.accent, width: `${sem.doneRatio}%` } as object} />
           </View>
           <Text style={{ fontSize: 12, color: C.slate, marginTop: 8 }}>已完成 {sem.doneTasks} / {sem.totalTasks} 项任务</Text>
