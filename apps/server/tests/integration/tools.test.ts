@@ -1,5 +1,18 @@
 // 工具层集成测试（全模块工具集）：以演示账号验证各模块工具真实可用且归属校验生效
-import { describe, it, expect, beforeAll } from 'vitest';
+// LLM 通道 mock 为固定合法结果（无网络依赖）
+import { describe, it, expect, beforeAll, vi } from 'vitest';
+
+vi.mock('../../src/agent/pi/runtime.js', async (importOriginal) => {
+  const mod = await importOriginal<Record<string, unknown>>();
+  const { runtimeMock } = await import('../fixtures/llmFixtures.js');
+  return { ...mod, ...runtimeMock };
+});
+vi.mock('../../src/agent/settings.js', async (importOriginal) => {
+  const mod = await importOriginal<Record<string, unknown>>();
+  const { settingsMock } = await import('../fixtures/llmFixtures.js');
+  return { ...mod, ...settingsMock };
+});
+
 import { buildAgentTools } from '../../src/agent/pi/tools.js';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { generateRoadmap } from '../../src/agent/planner.js';

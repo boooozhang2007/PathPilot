@@ -17,6 +17,8 @@ function toProfileDTO(row: typeof profiles.$inferSelect): ProfileDTO {
     targetRole: row.targetRole ?? '',
     careerPath: row.careerPath as CareerPath,
     weeklyHours: row.weeklyHours,
+    mbti: row.mbti ?? null,
+    avatar: row.avatar ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

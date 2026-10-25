@@ -1,5 +1,5 @@
-// 成长规划生成/重规划编排（PRD 4.5/4.6）：LLM 通道（Pi Agent）+ 规则引擎双通道
-// 关键约束：任何通道输出都必须过 validateRoadmap；失败不影响已有规划
+// 成长规划生成/重规划编排（PRD 4.5/4.6）：LLM 通道（Pi Agent）
+// 关键约束：任何输出都必须过 validateRoadmap；失败不影响已有规划
 import {
   roadmapResult,
   type RoadmapResult,
@@ -10,16 +10,15 @@ import {
   type ProfileDTO,
   type ProfileSkillDTO,
   type JobAnalysisDTO,
+  skillGroupOf,
 } from '@pathpilot/shared';
 import { getProfile, listProfileSkills } from '../services/profileService.js';
 import { getActiveRoadmap, getTasksOfRoadmap, saveRoadmapVersion } from '../services/roadmapService.js';
 import { validateRoadmap } from '../services/roadmapValidate.js';
 import { remainingSemesters, semesterBudget, semesterLabel } from '../services/semester.js';
-import { generateRoadmapByRules, reviseRoadmapByRules } from './rules/roadmap.js';
-import { currentEngine } from './core.js';
 import { isLlmConfigured } from './settings.js';
 import { runStructuredAgent } from './pi/runtime.js';
-import { budgetExceeded, internal, badRequest } from '../services/errors.js';
+import { badRequest, outputInvalid, modelCallFailed } from '../services/errors.js';
 import { userLatestAnalysis } from './jobs.js';
 import type { RoadmapDTO } from '@pathpilot/shared';
 
@@ -57,54 +56,26 @@ export async function generateRoadmap(userId: number, input: GenerateRoadmapInpu
   const careerPath = (input.careerPath ?? ctx.profile.careerPath) as CareerPath;
   if (!targetRole) throw badRequest('目标岗位未设置');
 
-  let engine: 'pi-llm' | 'rules' = 'rules';
-  let candidate: unknown;
-  let warnings: string[] = [];
-
-  if (await isLlmConfigured()) {
-    try {
-      const llmResult = await llmRoadmap({ ...ctx, weeklyHours, targetRole, careerPath }, false);
-      candidate = llmResult.roadmap;
-      warnings = llmResult.warnings;
-      engine = 'pi-llm';
-    } catch (err) {
-      warnings.push(`AI 模型通道失败（${err instanceof Error ? err.message : '未知错误'}），已自动降级规则引擎生成。`);
-    }
+  if (!(await isLlmConfigured())) {
+    throw badRequest('未配置模型 API：请管理员在 /admin 页面配置后再生成规划');
   }
-  if (!candidate) {
-    const rules = generateRoadmapByRules({
-      targetRole,
-      careerPath,
-      grade: ctx.profile.grade,
-      weeklyHours,
-      userSkills: ctx.skills,
-      topJobSkills: ctx.analysis?.result.skills.map((s) => s.name),
-    });
-    candidate = rules.roadmap;
-    warnings.push(...rules.notes);
-    engine = 'rules';
+
+  let warnings: string[] = [];
+  let candidate: unknown;
+  try {
+    const llmResult = await llmRoadmap({ ...ctx, weeklyHours, targetRole, careerPath }, false);
+    candidate = llmResult.roadmap;
+    warnings = llmResult.warnings;
+  } catch (err) {
+    throw modelCallFailed(`规划生成失败：${err instanceof Error ? err.message : '未知错误'}（现有规划不受影响）`);
   }
 
   // 终校验（结构/依赖/预算），不合法直接报错——不落库，不影响现有规划
   const { result, validation } = validateRoadmap(candidate, { grade: ctx.profile.grade, weeklyHours });
   if (!result || !validation.ok) {
-    if (engine === 'pi-llm') {
-      // LLM 输出语义不合法：降级规则引擎兜底（明确标注）
-      const rules = generateRoadmapByRules({
-        targetRole,
-        careerPath,
-        grade: ctx.profile.grade,
-        weeklyHours,
-        userSkills: ctx.skills,
-        topJobSkills: ctx.analysis?.result.skills.map((s) => s.name),
-      });
-      const revalidated = validateRoadmap(rules.roadmap, { grade: ctx.profile.grade, weeklyHours });
-      if (!revalidated.result || !revalidated.validation.ok) throw internal(`规则引擎输出未通过校验: ${revalidated.validation.errors.join('; ')}`);
-      warnings.push(`AI 输出未通过时间预算/依赖校验（${validation.errors.join('; ')}），已使用规则引擎结果。`);
-      return persist({ userId, ctx, content: revalidated.result, engine: 'rules', weeklyHours, targetRole, careerPath, reason: '首次规划（规则兜底）', warnings: [...warnings, ...revalidated.validation.warnings] });
-    }
-    throw budgetExceeded(`规划未通过校验：${validation.errors.join('; ')}`);
+    throw outputInvalid(`AI 输出未通过时间预算/依赖校验：${validation.errors.join('; ')}（请重试，现有规划不受影响）`);
   }
+  const engine = 'pi-llm' as const;
   return persist({ userId, ctx, content: result, engine, weeklyHours, targetRole, careerPath, reason: '首次规划', warnings: [...warnings, ...validation.warnings] });
 }
 
@@ -127,50 +98,24 @@ export async function reviseRoadmap(userId: number, input: ReviseRoadmapInput): 
         .join('；') || '条件调整'
     }`;
 
-  let engine: 'pi-llm' | 'rules' = 'rules';
-  let candidate: unknown;
-  let warnings: string[] = [];
-  if (await isLlmConfigured()) {
-    try {
-      const llmResult = await llmRoadmap({ ...ctx, weeklyHours, targetRole, careerPath }, true);
-      candidate = llmResult.roadmap;
-      warnings = llmResult.warnings;
-      engine = 'pi-llm';
-    } catch (err) {
-      warnings.push(`AI 模型通道失败（${err instanceof Error ? err.message : '未知错误'}），已自动降级规则引擎。`);
-    }
+  if (!(await isLlmConfigured())) {
+    throw badRequest('未配置模型 API：请管理员在 /admin 页面配置后再重规划');
   }
-  if (!candidate) {
-    const rules = reviseRoadmapByRules({
-      targetRole,
-      careerPath,
-      grade: ctx.profile.grade,
-      weeklyHours,
-      userSkills: ctx.skills,
-      topJobSkills: ctx.analysis?.result.skills.map((s) => s.name),
-      currentTasks: ctx.currentTasks,
-    });
-    candidate = rules.roadmap;
-    warnings.push(...rules.notes);
-    engine = 'rules';
+
+  let warnings: string[] = [];
+  let candidate: unknown;
+  try {
+    const llmResult = await llmRoadmap({ ...ctx, weeklyHours, targetRole, careerPath }, true);
+    candidate = llmResult.roadmap;
+    warnings = llmResult.warnings;
+  } catch (err) {
+    throw modelCallFailed(`重规划失败：${err instanceof Error ? err.message : '未知错误'}（现有规划不受影响）`);
   }
   const { result, validation } = validateRoadmap(candidate, { grade: ctx.profile.grade, weeklyHours });
   if (!result || !validation.ok) {
-    const rules = reviseRoadmapByRules({
-      targetRole,
-      careerPath,
-      grade: ctx.profile.grade,
-      weeklyHours,
-      userSkills: ctx.skills,
-      topJobSkills: ctx.analysis?.result.skills.map((s) => s.name),
-      currentTasks: ctx.currentTasks,
-    });
-    const revalidated = validateRoadmap(rules.roadmap, { grade: ctx.profile.grade, weeklyHours });
-    if (!revalidated.result || !revalidated.validation.ok) throw internal(`规则引擎输出未通过校验: ${revalidated.validation.errors.join('; ')}`);
-    warnings.push(`上一通道输出未通过校验（${validation.errors.join('; ')}），已使用规则引擎结果。`);
-    engine = 'rules';
-    return persist({ userId, ctx, content: revalidated.result!, engine, weeklyHours, targetRole, careerPath, reason, warnings, revise: true });
+    throw outputInvalid(`AI 输出未通过时间预算/依赖校验：${validation.errors.join('; ')}（请重试，现有规划不受影响）`);
   }
+  const engine = 'pi-llm' as const;
   return persist({ userId, ctx, content: result, engine, weeklyHours, targetRole, careerPath, reason, warnings: [...warnings, ...validation.warnings], revise: true });
 }
 
@@ -189,11 +134,14 @@ async function llmRoadmap(
       目标岗位: ctx.targetRole,
       路径: ctx.careerPath,
       每周可投入小时: ctx.weeklyHours,
+      MBTI人格: ctx.profile.mbti ?? '未测',
     },
     剩余学期: sems.map((s) => ({ 序号: s, 名称: semesterLabel(s), 可用小时: budgetPerSem })),
     已掌握技能: mastered,
-    待提升技能: ctx.skills.filter((s) => s.level < 3).map((s) => `${s.name}(lv${s.level}/${s.evidenceStatus})`),
-    岗位分析高频技能: ctx.analysis?.result.skills.slice(0, 15).map((s) => ({ 技能: s.name, 频率: s.frequency, 必备: s.required })),
+    待提升技能: ctx.skills
+      .filter((s) => s.level < 3)
+      .map((s) => `${s.name}(lv${s.level}/${s.evidenceStatus}·${skillGroupOf(s.category) === 'general' ? '通用' : '专业'})`),
+    岗位分析高频技能: ctx.analysis?.result.skills.slice(0, 15).map((s) => ({ 技能: s.name, 频率: s.frequency, 必备: s.required, 类别: skillGroupOf(s.category) === 'general' ? '通用能力' : '专业能力' })),
     ...(isRevise && ctx.currentRoadmap
       ? { 当前规划任务: ctx.currentTasks.map((t) => ({ 标题: t.title, 学期: t.semester, 状态: t.status, 优先级: t.priority })) }
       : {}),
@@ -202,9 +150,15 @@ async function llmRoadmap(
     '1. 只使用给定剩余学期；每学期任务总时长不得超过该学期可用小时。',
     '2. 已掌握技能不安排基础学习；每个重要任务必须有可验证产出(deliverable)与验收标准(acceptance_criteria)。',
     '3. 任务要具体（禁止“提升编程能力”这类空话），考虑先修依赖（prerequisites 引用任务标题）。',
-    isRevise ? '4. 已完成(done)任务必须原样保留在输出中（status=done），不得删除或重排。' : '4. 任务按学期递进，先基础后项目。',
+    isRevise
+      ? '4. 参考当前规划任务可自由调整：增、删、改、重排均可，无需原样保留（含已完成任务）；保留的任务应延续其 status。'
+      : '4. 任务按学期递进，先基础后项目。',
     `5. semester 取值必须是：${sems.join(',')}。`,
     '6. 不把竞赛/证书设为所有人必选项。',
+    '7. 每个任务的 description 必须是详细说明（60 字以上）：写清具体做法与步骤、推荐的学习资源或练习方式，并给出一个可参考的例子（示例项目/题目/场景）。',
+    '8. 任务须覆盖「专业能力」（岗位技术栈）与「通用能力」（沟通表达、协作、文档与复盘习惯）两类；通用能力通过真实场景任务融入（如技术分享、文档写作、组队项目），不做空泛要求。',
+    '9. 核心技能训练遵循刻意练习原则：聚焦当前薄弱点、拆成可重复的小步练习、每步有即时反馈（自测/验收标准可判定），强度略高于现有水平。',
+    '10. 若提供 MBTI，可结合性格特质微调任务形式（如表达、协作类任务的安排方式），但不得因此降低能力目标。',
   ].join('\n');
   const { data } = await runStructuredAgent(
     {
@@ -231,6 +185,7 @@ async function persist(args: {
   warnings: string[];
   revise?: boolean;
 }): Promise<PlannerOutcome> {
+  // 任务可自由增删改排（状态以 AI 输出为准）；carryOver 仅用于给保留的已完成任务延续成果记录
   const carryOver = args.revise ? args.ctx.currentTasks.filter((t) => t.status === 'done') : undefined;
   const saved = await saveRoadmapVersion({
     userId: args.userId,

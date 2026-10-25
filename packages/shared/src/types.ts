@@ -33,6 +33,10 @@ export interface ProfileDTO {
   targetRole: string;
   careerPath: CareerPath;
   weeklyHours: number;
+  /** MBTI 人格类型（如 INTJ），未设置为 null */
+  mbti: string | null;
+  /** 头像 data URL（base64），未设置为 null */
+  avatar: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -171,10 +175,20 @@ export interface ModelCatalogItem {
   price: string;
 }
 
+/** 顾问会话摘要（侧栏列表项） */
+export interface ChatSessionSummaryDTO {
+  id: number;
+  title: string;
+  messageCount: number;
+  updatedAt: string;
+}
+
 export interface DashboardData {
   profile: ProfileDTO | null;
   matchScore: number | null;
   matchSampleCount: number;
+  /** 岗位需求能力（最新岗位分析的高频技能，按 frequency 降序） */
+  jobSkills: { name: string; category: string; frequency: number; required: boolean }[];
   topGaps: { skill: string; importance: string; userStatus: EvidenceStatus }[];
   currentSemester: { label: string; doneRatio: number; totalTasks: number; doneTasks: number } | null;
   recentTasks: RoadmapTaskDTO[];

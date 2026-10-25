@@ -1,5 +1,18 @@
 // 集成测试（PRD 13.8.4-7）：数据权限 / 规划版本 / 任务状态 / 跨端读取
-import { describe, it, expect, beforeAll } from 'vitest';
+// LLM 通道 mock 为固定合法结果（规则引擎兜底已移除，测试不再依赖网络）
+import { describe, it, expect, beforeAll, vi } from 'vitest';
+
+vi.mock('../../src/agent/pi/runtime.js', async (importOriginal) => {
+  const mod = await importOriginal<Record<string, unknown>>();
+  const { runtimeMock } = await import('../fixtures/llmFixtures.js');
+  return { ...mod, ...runtimeMock };
+});
+vi.mock('../../src/agent/settings.js', async (importOriginal) => {
+  const mod = await importOriginal<Record<string, unknown>>();
+  const { settingsMock } = await import('../fixtures/llmFixtures.js');
+  return { ...mod, ...settingsMock };
+});
+
 import { buildApp } from '../../src/app.js';
 import type { FastifyInstance } from 'fastify';
 

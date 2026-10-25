@@ -28,6 +28,10 @@ export const profiles = sqliteTable(
     targetRole: text('target_role'),
     careerPath: text('career_path').notNull().default('undecided'),
     weeklyHours: integer('weekly_hours').notNull().default(8),
+    /** MBTI 人格类型（16 型，如 INTJ）；未测为 null */
+    mbti: text('mbti'),
+    /** 头像 data URL（base64）；未设置为 null */
+    avatar: text('avatar'),
     createdAt: text('created_at').notNull().$defaultFn(isoNow),
     updatedAt: text('updated_at').notNull().$defaultFn(isoNow),
   },
@@ -206,6 +210,8 @@ export const agentChatSessions = sqliteTable(
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
     userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    /** 用户自定义标题（App 端重命名）；空则展示首条用户消息摘要 */
+    title: text('title'),
     createdAt: text('created_at').notNull().$defaultFn(isoNow),
     updatedAt: text('updated_at').notNull().$defaultFn(isoNow),
   },

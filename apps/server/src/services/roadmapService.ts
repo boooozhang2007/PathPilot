@@ -114,14 +114,6 @@ export async function saveRoadmapVersion(input: SaveRoadmapInput): Promise<{ roa
   const nextVersion = (maxRow[0]?.v ?? 0) + 1;
 
   const content = { ...input.content };
-  // 将已完成任务状态合并进 content.tasks（以 carryOver 为准）
-  if (input.carryOverTasks?.length) {
-    const carry = new Map(input.carryOverTasks.map((t) => [t.title, t]));
-    content.tasks = content.tasks.map((t) => {
-      const c = carry.get(t.title);
-      return c ? { ...t, status: c.status as RoadmapResult['tasks'][number]['status'] } : t;
-    });
-  }
 
   return db.transaction((tx) => {
     tx.update(roadmaps)
@@ -145,9 +137,13 @@ export async function saveRoadmapVersion(input: SaveRoadmapInput): Promise<{ roa
       })
       .returning()
       .get();
+    // 重规划可自由调整任务（增删改排，状态以 AI 输出为准）；
+    // 保留且仍为 done 的同名任务延续成果记录（完成时间/实际投入/证据）
     const carryMap = new Map((input.carryOverTasks ?? []).map((t) => [t.title, t]));
     for (const task of content.tasks) {
       const carried = carryMap.get(task.title);
+      const finalStatus = (task.status ?? 'not_started') as RoadmapTaskDTO['status'];
+      const keepEvidence = carried?.status === 'done' && finalStatus === 'done';
       tx.insert(roadmapTasks).values({
         roadmapId: inserted.id,
         userId: input.userId,
@@ -156,16 +152,16 @@ export async function saveRoadmapVersion(input: SaveRoadmapInput): Promise<{ roa
         description: task.description,
         estimatedHours: Math.round(task.estimated_hours),
         priority: task.priority,
-        status: carried ? carried.status : task.status ?? 'not_started',
+        status: finalStatus,
         prerequisites: task.prerequisites ?? [],
         deliverable: task.deliverable,
         acceptanceCriteria: task.acceptance_criteria,
         relatedSkills: task.related_skills ?? [],
-        completedAt: carried?.completedAt ?? null,
-        actualHours: carried?.actualHours ?? null,
-        evidenceUrl: carried?.evidenceUrl ?? null,
-        resultNote: carried?.resultNote ?? null,
-        deferredReason: carried?.deferredReason ?? null,
+        completedAt: keepEvidence ? carried?.completedAt ?? null : null,
+        actualHours: keepEvidence ? carried?.actualHours ?? null : null,
+        evidenceUrl: keepEvidence ? carried?.evidenceUrl ?? null : null,
+        resultNote: keepEvidence ? carried?.resultNote ?? null : null,
+        deferredReason: keepEvidence ? carried?.deferredReason ?? null : null,
         createdAt: now,
         updatedAt: now,
       }).run();
@@ -332,9 +328,23 @@ export async function updateRoadmapTaskFields(
 export async function removeRoadmapTask(userId: number, taskId: number): Promise<void> {
   const rows = await db.select().from(roadmapTasks).where(and(eq(roadmapTasks.id, taskId), eq(roadmapTasks.userId, userId))).limit(1);
   if (!rows[0]) throw notFound('任务不存在');
-  if (rows[0].status === 'done') throw badRequest('已完成任务保留成果记录，不可删除');
+  // 任务完成前后均可删除（用户明确操作即生效，成果记录随任务移除）
   await db.delete(roadmapTasks).where(and(eq(roadmapTasks.id, taskId), eq(roadmapTasks.userId, userId)));
   await syncContentTasks(userId, rows[0].roadmapId);
+}
+
+/** 批量删除任务（完成前后均可删；返回实际删除数） */
+export async function removeRoadmapTasks(userId: number, taskIds: number[]): Promise<number> {
+  if (!taskIds.length) return 0;
+  const rows = await db
+    .select({ id: roadmapTasks.id, roadmapId: roadmapTasks.roadmapId })
+    .from(roadmapTasks)
+    .where(and(eq(roadmapTasks.userId, userId), inArray(roadmapTasks.id, taskIds)));
+  if (!rows.length) return 0;
+  await db.delete(roadmapTasks).where(and(eq(roadmapTasks.userId, userId), inArray(roadmapTasks.id, rows.map((r) => r.id))));
+  const roadmapIds = [...new Set(rows.map((r) => r.roadmapId))];
+  for (const rid of roadmapIds) await syncContentTasks(userId, rid);
+  return rows.length;
 }
 
 /** 将任务行同步进规划 content.tasks（保持 roadmap 页面与任务一致） */

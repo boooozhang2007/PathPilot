@@ -4,8 +4,10 @@ import {
   generateRoadmapInput,
   reviseRoadmapInput,
   taskUpdateInput,
+  taskBatchDeleteInput,
   taskEvidenceInput,
   agentChatInput,
+  agentSessionRenameInput,
   resumeDraftInput,
 } from '@pathpilot/shared';
 import { getUserId } from '../auth/index.js';
@@ -17,10 +19,13 @@ import {
   getTasksOfRoadmap,
   diffRoadmapVersions,
   updateTask,
+  updateRoadmapTaskFields,
+  removeRoadmapTask,
+  removeRoadmapTasks,
   addTaskEvidence,
 } from '../services/roadmapService.js';
 import { generateRoadmap, reviseRoadmap } from '../agent/planner.js';
-import { chat, chatHistory, latestSession } from '../agent/advisor.js';
+import { chat, chatHistory, latestSession, listSessions, deleteSession, renameSession, clearAllSessions } from '../agent/advisor.js';
 import { resumeDraft } from '../agent/resume.js';
 import { createRun, executeRun, getRun, agentConfigSummary } from '../agent/core.js';
 import { analyzeGapByRules } from '../agent/rules/chat.js';
@@ -95,9 +100,43 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.patch('/api/tasks/:id', { preHandler: [auth] }, async (req) => {
+    const userId = getUserId(req);
     const { id } = req.params as { id: string };
     const input = taskUpdateInput.parse(req.body);
-    return updateTask(getUserId(req), Number(id), input);
+    const taskId = Number(id);
+    // 内容编辑字段（标题/学期/任务说明/时长/优先级/产出/验收）→ 走字段编辑；状态字段走状态机
+    const contentKeys = ['title', 'semester', 'description', 'estimatedHours', 'deliverable', 'acceptanceCriteria'] as const;
+    const contentPatch: Record<string, unknown> = {};
+    for (const k of contentKeys) if (input[k] !== undefined) contentPatch[k] = input[k];
+    const statusPatch = {
+      ...(input.status !== undefined ? { status: input.status } : {}),
+      ...(input.actualHours !== undefined ? { actualHours: input.actualHours } : {}),
+      ...(input.evidenceUrl !== undefined ? { evidenceUrl: input.evidenceUrl } : {}),
+      ...(input.resultNote !== undefined ? { resultNote: input.resultNote } : {}),
+      ...(input.priority !== undefined && !contentPatch.priority ? { priority: input.priority } : {}),
+      ...(input.deferredReason !== undefined ? { deferredReason: input.deferredReason } : {}),
+    };
+    let updated = null as Awaited<ReturnType<typeof updateTask>> | null;
+    if (Object.keys(contentPatch).length) {
+      updated = await updateRoadmapTaskFields(userId, taskId, contentPatch as never);
+    }
+    if (Object.keys(statusPatch).length || input.expectedUpdatedAt) {
+      updated = await updateTask(userId, taskId, { ...statusPatch, expectedUpdatedAt: input.expectedUpdatedAt });
+    }
+    if (!updated) throw badRequest('未提供任何更新字段');
+    return updated;
+  });
+
+  app.delete('/api/tasks/:id', { preHandler: [auth] }, async (req) => {
+    const { id } = req.params as { id: string };
+    await removeRoadmapTask(getUserId(req), Number(id));
+    return { ok: true };
+  });
+
+  app.post('/api/tasks/batch-delete', { preHandler: [auth] }, async (req) => {
+    const input = taskBatchDeleteInput.parse(req.body);
+    const deleted = await removeRoadmapTasks(getUserId(req), input.ids);
+    return { ok: true, deleted };
   });
 
   app.post('/api/tasks/:id/evidence', { preHandler: [auth] }, async (req) => {
@@ -119,6 +158,26 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/agent/session', { preHandler: [auth] }, async (req) => latestSession(getUserId(req)));
+
+  app.get('/api/agent/sessions', { preHandler: [auth] }, async (req) => listSessions(getUserId(req)));
+
+  app.patch('/api/agent/sessions/:id', { preHandler: [auth] }, async (req) => {
+    const { id } = req.params as { id: string };
+    const input = agentSessionRenameInput.parse(req.body);
+    await renameSession(getUserId(req), Number(id), input.title);
+    return { ok: true };
+  });
+
+  app.delete('/api/agent/sessions/:id', { preHandler: [auth] }, async (req) => {
+    const { id } = req.params as { id: string };
+    await deleteSession(getUserId(req), Number(id));
+    return { ok: true };
+  });
+
+  app.delete('/api/agent/sessions', { preHandler: [auth] }, async (req) => {
+    const count = await clearAllSessions(getUserId(req));
+    return { ok: true, deleted: count };
+  });
 
   app.get('/api/agent/session/:id', { preHandler: [auth] }, async (req) => {
     const { id } = req.params as { id: string };
@@ -157,6 +216,12 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
       profile: ctx.profile,
       matchScore: gap.sample_count > 0 ? gap.match_score : null,
       matchSampleCount: gap.sample_count,
+      jobSkills: ctx.analysis
+        ? [...ctx.analysis.result.skills]
+            .sort((a, b) => b.frequency - a.frequency)
+            .slice(0, 6)
+            .map((s) => ({ name: s.name, category: s.category, frequency: s.frequency, required: s.required }))
+        : [],
       topGaps: gap.core_skills
         .filter((s) => s.gap && s.importance !== 'low')
         .slice(0, 5)

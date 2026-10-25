@@ -6,6 +6,7 @@ import {
   EVIDENCE_STATUSES,
   EXPERIENCE_TYPES,
   GRADES,
+  MBTI_RE,
   PRIORITIES,
   SOURCE_TYPES,
   TASK_STATUSES,
@@ -40,6 +41,10 @@ export const profileInput = z.object({
   targetRole: z.string().min(1, '目标岗位不能为空').max(50),
   careerPath: z.enum(CAREER_PATHS),
   weeklyHours: z.number().int().min(1).max(80),
+  /** MBTI 人格类型（16 型，如 INTJ）；未测可为空 */
+  mbti: z.string().regex(MBTI_RE, 'MBTI 格式应为 4 位（如 INTJ）').nullable().optional(),
+  /** 头像（data:image/... base64，≤512KB）；null 清除头像 */
+  avatar: z.string().max(760_000).nullable().optional(),
 });
 export type ProfileInput = z.infer<typeof profileInput>;
 
@@ -200,8 +205,20 @@ export const taskUpdateInput = z.object({
   /** 乐观锁：客户端读取时的 updated_at（ISO 字符串） */
   expectedUpdatedAt: z.string().datetime().optional(),
   deferredReason: z.string().max(200).optional(),
+  // ---- 内容编辑（完成前后均可改，含任务说明） ----
+  title: z.string().min(1).max(100).optional(),
+  semester: z.number().int().min(1).max(14).optional(),
+  description: z.string().min(1).max(2000).optional(),
+  estimatedHours: z.number().min(0.5).max(300).optional(),
+  deliverable: z.string().max(500).optional(),
+  acceptanceCriteria: z.string().max(500).optional(),
 });
 export type TaskUpdateInput = z.infer<typeof taskUpdateInput>;
+
+/** 批量删除任务（完成前后均可删） */
+export const taskBatchDeleteInput = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(100),
+});
 
 export const taskEvidenceInput = z.object({
   evidenceUrl: z.string().url(),
@@ -217,6 +234,13 @@ export const agentChatInput = z.object({
   model: z.string().max(100).optional(),
 });
 export type AgentChatInput = z.infer<typeof agentChatInput>;
+
+/** 会话重命名（App 端历史管理） */
+export const agentSessionRenameInput = z.object({
+  title: z.string().min(1).max(60),
+});
+export type AgentSessionRenameInput = z.infer<typeof agentSessionRenameInput>;
+
 
 // ---------- 能力差距分析（PRD 4.3） ----------
 export const skillGapItem = z.object({

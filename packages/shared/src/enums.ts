@@ -1,6 +1,6 @@
 // 全局枚举与展示标签（三端共享）
 
-export const GRADES = ['freshman', 'sophomore', 'junior', 'senior', 'graduate', 'other'] as const;
+export const GRADES = ['freshman', 'sophomore', 'junior', 'senior', 'graduate', 'phd', 'postdoc', 'other'] as const;
 export type Grade = (typeof GRADES)[number];
 export const GRADE_LABELS: Record<Grade, string> = {
   freshman: '大一',
@@ -8,8 +8,19 @@ export const GRADE_LABELS: Record<Grade, string> = {
   junior: '大三',
   senior: '大四',
   graduate: '研究生',
+  phd: '博士',
+  postdoc: '博士后',
   other: '其他',
 };
+
+/** MBTI 四维度（E/I、S/N、T/F、J/P），组合成 16 型人格 */
+export const MBTI_DIMENSIONS = [
+  { key: 'EI', options: ['E', 'I'], labels: ['外向 E', '内向 I'], dim: '精力方向' },
+  { key: 'SN', options: ['S', 'N'], labels: ['实感 S', '直觉 N'], dim: '信息获取' },
+  { key: 'TF', options: ['T', 'F'], labels: ['思考 T', '情感 F'], dim: '决策方式' },
+  { key: 'JP', options: ['J', 'P'], labels: ['判断 J', '知觉 P'], dim: '生活方式' },
+] as const;
+export const MBTI_RE = /^[EI][SN][TF][JP]$/;
 
 export const CAREER_PATHS = ['employment', 'graduate_school', 'undecided'] as const;
 export type CareerPath = (typeof CAREER_PATHS)[number];
@@ -68,6 +79,16 @@ export const SKILL_CATEGORY_LABELS: Record<SkillCategory, string> = {
   project: '项目开发能力',
   soft: '沟通与协作能力',
 };
+
+/** 技能大组：通用能力（软素质）/ 专业能力（技术）——界面与 Agent 提示词统一使用 */
+export type SkillGroup = 'general' | 'professional';
+export const SKILL_GROUP_LABELS: Record<SkillGroup, string> = {
+  general: '通用能力',
+  professional: '专业能力',
+};
+export function skillGroupOf(category: string): SkillGroup {
+  return category === 'soft' ? 'general' : 'professional';
+}
 
 /** 岗位要求类型（PRD 4.2） */
 export const REQUIREMENT_TYPES = [

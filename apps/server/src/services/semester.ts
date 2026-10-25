@@ -1,9 +1,9 @@
 // 时间预算计算（PRD 4.5：总任务量必须符合时间预算，预留机动空间）
 // 学期映射纯函数来自 @pathpilot/shared（三端共用）
 import type { Grade, Priority } from '@pathpilot/shared';
-import { currentSemesterOf, MAX_SEMESTER, semesterLabel } from '@pathpilot/shared';
+import { currentSemesterOf, lastSemesterOf, MAX_SEMESTER, semesterLabel } from '@pathpilot/shared';
 
-export { currentSemesterOf, MAX_SEMESTER, semesterLabel };
+export { currentSemesterOf, lastSemesterOf, MAX_SEMESTER, semesterLabel };
 
 /** 每学期按 18 教学周、75% 利用率估算（预留 25% 机动空间，不允许超强度计划） */
 export const WEEKS_PER_SEMESTER = 18;
@@ -12,7 +12,7 @@ export const UTILIZATION = 0.75;
 /** 剩余学期列表（含当前学期） */
 export function remainingSemesters(grade: Grade): number[] {
   const start = currentSemesterOf(grade);
-  const total = grade === 'graduate' ? MAX_SEMESTER : 8;
+  const total = lastSemesterOf(grade);
   const list: number[] = [];
   for (let s = start; s <= total; s++) list.push(s);
   return list.length ? list : [start];
