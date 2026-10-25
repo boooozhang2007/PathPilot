@@ -1,12 +1,20 @@
 'use client';
-// 岗位洞察:指令台式搜索区 + 技能频次/分布/来源证据
+// 岗位洞察:指令台式搜索区 + 岗位对比 + 技能频次/分布/来源证据
 import { useEffect, useState } from 'react';
 import { api, pollRun } from '@/lib/api';
-import { Loading, Empty, ErrorState, Tag, PageHeader } from '@/components/ui';
+import { Loading, Empty, ErrorState, Tag, PageHeader, SectionTitle } from '@/components/ui';
 import { SkillFreqBar, CategoryPie, DistBars } from '@/components/charts';
 import { Ic } from '@/components/Icon';
 import type { JobAnalysisDTO, JobSourceDTO } from '@pathpilot/shared';
 import { SOURCE_TYPE_LABELS, SKILL_CATEGORY_LABELS, type SkillCategory } from '@pathpilot/shared';
+
+interface AnalysisSummary {
+  id: number;
+  targetRole: string;
+  city: string | null;
+  sampleCount: number;
+  createdAt: string;
+}
 
 export default function JobsPage() {
   const [analysis, setAnalysis] = useState<JobAnalysisDTO | null>(null);
@@ -19,6 +27,12 @@ export default function JobsPage() {
   const [type, setType] = useState<'internship' | 'full_time'>('internship');
   const [manualOpen, setManualOpen] = useState(false);
   const [manual, setManual] = useState({ title: '', company: '', description: '' });
+  // 岗位对比
+  const [history, setHistory] = useState<AnalysisSummary[]>([]);
+  const [cmpA, setCmpA] = useState<number | null>(null);
+  const [cmpB, setCmpB] = useState<number | null>(null);
+  const [cmpData, setCmpData] = useState<{ a: JobAnalysisDTO; b: JobAnalysisDTO } | null>(null);
+  const [cmpBusy, setCmpBusy] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -27,6 +41,16 @@ export default function JobsPage() {
       const a = await api<JobAnalysisDTO | null>('/api/jobs/analysis/latest');
       setAnalysis(a);
       if (a) setSources(await api<JobSourceDTO[]>(`/api/jobs/sources?analysisId=${a.id}`));
+      const h = await api<AnalysisSummary[]>('/api/jobs/analyses').catch(() => []);
+      setHistory(h);
+      // 默认选中最近两条不同的岗位
+      if (h.length >= 2 && cmpA == null && cmpB == null) {
+        const first = h[0].id;
+        const second = h.find((x) => x.id !== first)?.id ?? null;
+        setCmpA(first);
+        setCmpB(second);
+        if (second) void runCompare(first, second);
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : '加载失败');
     } finally {
@@ -35,7 +59,32 @@ export default function JobsPage() {
   }
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function runCompare(a: number, b: number) {
+    if (!a || !b || a === b) {
+      setCmpData(null);
+      return;
+    }
+    setCmpBusy(true);
+    try {
+      const [da, db] = await Promise.all([api<JobAnalysisDTO>(`/api/jobs/analysis/${a}`), api<JobAnalysisDTO>(`/api/jobs/analysis/${b}`)]);
+      setCmpData({ a: da, b: db });
+    } catch {
+      setCmpData(null);
+    } finally {
+      setCmpBusy(false);
+    }
+  }
+
+  function pickCompare(side: 'a' | 'b', id: number) {
+    const nextA = side === 'a' ? id : cmpA;
+    const nextB = side === 'b' ? id : cmpB;
+    setCmpA(nextA);
+    setCmpB(nextB);
+    runCompare(nextA ?? 0, nextB ?? 0);
+  }
 
   async function analyze() {
     setErr('');
@@ -140,6 +189,82 @@ export default function JobsPage() {
           <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
           {busy}
         </div>
+      )}
+
+      {/* ---------- 岗位对比:两次分析的技能重合与差异 ---------- */}
+      {history.length >= 2 && (
+        <section className="pp-card reveal mb-5 p-5">
+          <SectionTitle right={<span className="num text-[10px] tracking-widest text-slate-2">COMPARE</span>}>岗位对比</SectionTitle>
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <select className="pp-input w-auto min-w-44 flex-1 text-sm" value={cmpA ?? ''} onChange={(e) => pickCompare('a', Number(e.target.value))}>
+              {history.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.targetRole}({h.sampleCount})
+                </option>
+              ))}
+            </select>
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-ink text-white">
+              <Ic name="refresh" size={14} />
+            </span>
+            <select className="pp-input w-auto min-w-44 flex-1 text-sm" value={cmpB ?? ''} onChange={(e) => pickCompare('b', Number(e.target.value))}>
+              {history.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.targetRole}({h.sampleCount})
+                </option>
+              ))}
+            </select>
+          </div>
+          {cmpBusy && <Loading text="读取两次分析…" />}
+          {cmpData && !cmpBusy && (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {(() => {
+                const mapA = new Map(cmpData.a.result.skills.map((s) => [s.name, s]));
+                const mapB = new Map(cmpData.b.result.skills.map((s) => [s.name, s]));
+                const names = [...new Set([...mapA.keys(), ...mapB.keys()])];
+                const overlap = names.filter((n) => mapA.has(n) && mapB.has(n)).sort((x, y) => (mapA.get(y)!.frequency + mapB.get(y)!.frequency) - (mapA.get(x)!.frequency + mapB.get(x)!.frequency));
+                const onlyA = [...mapA.keys()].filter((n) => !mapB.has(n)).sort((x, y) => mapA.get(y)!.frequency - mapA.get(x)!.frequency).slice(0, 8);
+                const onlyB = [...mapB.keys()].filter((n) => !mapA.has(n)).sort((x, y) => mapB.get(y)!.frequency - mapB.get(x)!.frequency).slice(0, 8);
+                const pct = (v: number) => `${Math.round(v * 100)}%`;
+                const SkillRow = ({ name, left, right }: { name: string; left?: string; right?: string }) => (
+                  <li className="flex items-center gap-2 py-1.5 text-xs">
+                    <span className="w-16 shrink-0 truncate font-semibold text-ink">{name}</span>
+                    <span className="num w-9 shrink-0 text-slate-2">{left ?? '—'}</span>
+                    <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-paper-2">
+                      <span className={`block h-full rounded-full ${left ? (right ? 'bg-accent/70' : 'bg-accent') : 'bg-slate-2/60'}`} style={{ width: `${Math.max(Number((left ?? '0').replace('%', '')), Number((right ?? '0').replace('%', '')))}%` }} />
+                    </span>
+                    <span className="num w-9 shrink-0 text-right text-slate-2">{right ?? '—'}</span>
+                  </li>
+                );
+                return (
+                  <>
+                    <div className="rounded-xl bg-paper/50 p-3.5">
+                      <div className="mb-1.5 flex items-center gap-2 text-xs font-bold text-teal">
+                        <Ic name="checkCircle" size={13} /> 共同要求({overlap.length})
+                      </div>
+                      <ul className="divide-y divide-line/50">
+                        {overlap.slice(0, 8).map((n) => (
+                          <SkillRow key={n} name={n} left={pct(mapA.get(n)!.frequency)} right={pct(mapB.get(n)!.frequency)} />
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="rounded-xl bg-accent-soft/50 p-3.5">
+                      <div className="mb-1.5 truncate text-xs font-bold text-accent-deep">{cmpData.a.targetRole} 独有</div>
+                      <ul className="divide-y divide-line/50">
+                        {onlyA.length ? onlyA.map((n) => <SkillRow key={n} name={n} left={pct(mapA.get(n)!.frequency)} />) : <li className="py-2 text-[11px] text-slate-2">无</li>}
+                      </ul>
+                    </div>
+                    <div className="rounded-xl bg-amber-soft/60 p-3.5">
+                      <div className="mb-1.5 truncate text-xs font-bold text-amber">{cmpData.b.targetRole} 独有</div>
+                      <ul className="divide-y divide-line/50">
+                        {onlyB.length ? onlyB.map((n) => <SkillRow key={n} name={n} right={pct(mapB.get(n)!.frequency)} />) : <li className="py-2 text-[11px] text-slate-2">无</li>}
+                      </ul>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+        </section>
       )}
       {err && (
         <div className="mb-5">

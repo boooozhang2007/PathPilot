@@ -104,6 +104,25 @@ export async function latestAnalysis(userId: number): Promise<JobAnalysisDTO | n
   return getAnalysis(userId, rows[0].id);
 }
 
+/** 历史分析摘要列表(岗位对比用):最近 N 条 */
+export interface AnalysisSummary {
+  id: number;
+  targetRole: string;
+  city: string | null;
+  sampleCount: number;
+  createdAt: string;
+}
+
+export async function listAnalyses(userId: number, limit = 20): Promise<AnalysisSummary[]> {
+  const rows = await db
+    .select({ id: jobAnalyses.id, targetRole: jobAnalyses.targetRole, city: jobAnalyses.city, sampleCount: jobAnalyses.sampleCount, createdAt: jobAnalyses.createdAt })
+    .from(jobAnalyses)
+    .where(eq(jobAnalyses.userId, userId))
+    .orderBy(desc(jobAnalyses.id))
+    .limit(limit);
+  return rows;
+}
+
 export async function listSources(userId: number, analysisId?: number): Promise<JobSourceDTO[]> {
   // 用户可见：自己抓取/输入的 + 全局预置样本
   const rows = analysisId

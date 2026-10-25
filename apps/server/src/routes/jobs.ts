@@ -2,7 +2,7 @@
 import type { FastifyInstance } from 'fastify';
 import { jobAnalyzeInput, manualJobInput } from '@pathpilot/shared';
 import { getUserId } from '../auth/index.js';
-import { listSources, getAnalysis, latestAnalysis } from '../services/analysisService.js';
+import { listSources, getAnalysis, latestAnalysis, listAnalyses } from '../services/analysisService.js';
 import { analyzeJobs, analyzeManualJob } from '../agent/jobs.js';
 import { createRun, executeRun, getRun } from '../agent/core.js';
 
@@ -38,6 +38,9 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/jobs/analysis/latest', { preHandler: [auth] }, async (req) => (await latestAnalysis(getUserId(req))) ?? null);
+
+  /** 历史分析列表(岗位对比选择器) */
+  app.get('/api/jobs/analyses', { preHandler: [auth] }, async (req) => listAnalyses(getUserId(req)));
 
   app.get('/api/jobs/analysis/:id', { preHandler: [auth] }, async (req) => {
     const { id } = req.params as { id: string };

@@ -142,6 +142,40 @@ export default function GrowthPage() {
         </div>
       </section>
 
+      {/* 本周复盘:近 7 天滚动窗口 */}
+      {(() => {
+        const now = Date.now();
+        const weekAgo = now - 7 * 864e5;
+        const monthAgo = now - 30 * 864e5;
+        const weekDone = done.filter((t) => t.completedAt && Date.parse(t.completedAt) >= weekAgo);
+        const weekHours = weekDone.reduce((s, t) => s + (t.actualHours ?? 0), 0);
+        const monthDone = done.filter((t) => t.completedAt && Date.parse(t.completedAt) >= monthAgo);
+        const newEvidence = skills.filter((s) => s.evidenceStatus === 'evidenced' && Date.parse(s.updatedAt) >= weekAgo);
+        return (
+          <section className="pp-card reveal p-5">
+            <SectionTitle right={<span className="num text-[10px] tracking-widest text-slate-2">LAST 7 DAYS</span>}>本周复盘</SectionTitle>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              {[
+                { icon: 'check' as IconName, label: '完成任务', value: `${weekDone.length}`, tone: 'text-teal' },
+                { icon: 'clock' as IconName, label: '投入小时', value: `${weekHours}h`, tone: 'text-accent' },
+                { icon: 'checkCircle' as IconName, label: '新增证据技能', value: `${newEvidence.length}`, tone: 'text-teal' },
+                { icon: 'calendar' as IconName, label: '近 30 天完成', value: `${monthDone.length}`, tone: 'text-ink' },
+              ].map((s) => (
+                <div key={s.label} className="flex items-center gap-3 rounded-xl border border-line bg-paper/40 px-4 py-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-accent ring-1 ring-line">
+                    <Ic name={s.icon} size={15} />
+                  </span>
+                  <div>
+                    <div className={`num text-lg font-bold ${s.tone}`}>{s.value}</div>
+                    <div className="text-[11px] text-slate-1">{s.label}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        );
+      })()}
+
       {/* 图表区 */}
       <div className="grid grid-cols-12 gap-5">
         <section className="pp-card reveal col-span-12 p-5 lg:col-span-7" style={{ '--d': '80ms' } as never}>
