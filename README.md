@@ -28,7 +28,7 @@ npm run dev:web
 ## 主要功能
 
 - 个人资料、技能、课程、项目和实践经历
-- 多来源岗位搜索与岗位要求分析
+- 统一岗位搜索与岗位要求分析
 - 技能归一化、频次统计和能力差距分析
 - 分学期成长规划与版本历史
 - 父任务、子任务、依赖和进度跟踪
@@ -53,7 +53,7 @@ cd apps/mobile/android
 
 发布 APK 位于 GitHub Releases，不写入仓库。当前版本发布页：
 
-https://github.com/boooozhang2007/PathPilot/releases/tag/v1.3.1
+https://github.com/boooozhang2007/PathPilot/releases/tag/v1.3.2
 
 ## 文档
 

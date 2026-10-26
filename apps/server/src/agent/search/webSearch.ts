@@ -34,6 +34,10 @@ const ALLOWED_HOSTS = [
   'job.bytedance.com',
   'talent.aliyun.com',
   'campus.alibaba.com',
+  'ncss.cn',
+  'chinahr.com',
+  'linkedin.com',
+  'wondercv.com',
 ];
 
 const UA =
@@ -144,7 +148,7 @@ export async function searchJobPages(query: string, limit: number, timeoutMs: nu
   const html = await fetchText(url, timeoutMs);
   const hits: SearchHit[] = [];
   // 解析 b_algo 结果块中的 <h2><a href>
-  const re = /<li class="b_algo"[\s\S]*?<h2[^>]*><a[^>]+href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+  const re = /<li\b[^>]*class\s*=\s*["'][^"']*\bb_algo\b[^"']*["'][\s\S]*?<h2[^>]*>\s*<a[^>]+href\s*=\s*["'](https?:\/\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(html)) && hits.length < limit) {
     const href = decodeEntities(m[1]);
@@ -156,6 +160,20 @@ export async function searchJobPages(query: string, limit: number, timeoutMs: nu
       continue;
     }
     if (title && href) hits.push({ title, url: href });
+  }
+  if (!hits.length) {
+    const fallback = /<h2[^>]*>\s*<a[^>]+href\s*=\s*[\"'](https?:\/\/[^\"']+)[\"'][^>]*>([\s\S]*?)<\/a>/gi;
+    while ((m = fallback.exec(html)) && hits.length < limit) {
+      const href = decodeEntities(m[1]);
+      const title = stripTags(m[2]).trim();
+      try {
+        const host = new URL(href).hostname;
+        if (!ALLOWED_HOSTS.some((d) => host === d || host.endsWith(`.${d}`))) continue;
+      } catch {
+        continue;
+      }
+      if (title && href && !hits.some((hit) => hit.url === href)) hits.push({ title, url: href });
+    }
   }
   return hits;
 }
@@ -186,12 +204,34 @@ export async function webSearchJobs(input: {
   sampleLimit: number;
 }): Promise<WebSearchOutcome> {
   const timeout = config.search.timeoutMs;
-  const typeWord = input.employmentType === 'internship' ? '实习' : '招聘';
   const attempts: SearchAttempt[] = [];
   const samples: JobSample[] = [];
   let searchError = '';
   let hits: SearchHit[] = [];
   const seenUrls = new Set<string>();
+
+  const role = input.targetRole.trim().replace(/\s+/g, ' ');
+  const typeTerms = input.employmentType === 'internship' ? ['实习', '在校生'] : ['校招', '应届'];
+  const roleTerms = [
+    role,
+    `${role} 任职要求 技术栈`,
+    `${role} ${typeTerms[0]} 岗位职责`,
+  ];
+  const addHits = (found: SearchHit[]) => {
+    for (const hit of found) {
+      let key = hit.url;
+      try {
+        const url = new URL(hit.url);
+        url.hash = '';
+        key = url.toString().replace(/\/$/, '').toLowerCase();
+      } catch {
+        key = hit.url.toLowerCase();
+      }
+      if (seenUrls.has(key)) continue;
+      seenUrls.add(key);
+      hits.push(hit);
+    }
+  };
 
   // 通道 0：猎聘官方 MCP（岗位数据 + 来源链接，最高优先）
   let liepinNote = '';
@@ -206,38 +246,34 @@ export async function webSearchJobs(input: {
   // 通道 1：Tavily 搜索 API（可选）
   if (process.env.TAVILY_API_KEY) {
     try {
-      const roleTerms = [
-        input.targetRole,
-        `${input.targetRole} 岗位职责 任职要求`,
-        `${input.targetRole} 技术栈 招聘`,
-        `${input.targetRole} 校招 实习`,
-        `${input.targetRole} ${typeWord} 项目经验`,
-      ];
-      for (const term of roleTerms) {
-        const found = await tavilySearch(`${term} ${input.city ?? ''} ${typeWord}`.trim(), input.sampleLimit, timeout);
-        for (const hit of found) if (!seenUrls.has(hit.url)) { seenUrls.add(hit.url); hits.push(hit); }
-        if (hits.length >= input.sampleLimit) break;
-      }
+      const rounds = await Promise.allSettled(
+        roleTerms.map((term) => tavilySearch(`${term} ${input.city ?? ''} ${typeTerms.join(' ')}`.trim(), input.sampleLimit, timeout))
+      );
+      for (const round of rounds) if (round.status === 'fulfilled') addHits(round.value);
+      if (rounds.some((round) => round.status === 'rejected')) searchError = 'Tavily: 部分关键词搜索失败';
     } catch (err) {
       searchError = `Tavily: ${err instanceof Error ? err.message : '失败'}`;
     }
   }
 
   // 通道 2：必应 HTML（尽力而为，可能被反爬拦截）
-  if (!hits.length) {
-    const queries = [
-      `${input.targetRole} ${typeWord} ${input.city ?? ''} 岗位职责 任职要求 site:zhipin.com OR site:shixiseng.com`.trim(),
-      `${input.targetRole} ${typeWord} 技术栈 项目经验 site:liepin.com OR site:51job.com`.trim(),
-      `${input.targetRole} 校招 实习 任职要求 site:nowcoder.com OR site:ncss.cn`.trim(),
-      `${input.targetRole} ${typeWord} 招聘 任职要求 实习僧 OR BOSS直聘`.trim(),
-    ];
-    for (const q of queries) {
-      try {
-        const found = await searchJobPages(q, input.sampleLimit, timeout);
-        for (const hit of found) if (!seenUrls.has(hit.url)) { seenUrls.add(hit.url); hits.push(hit); }
-        if (hits.length >= input.sampleLimit) break;
-      } catch (err) {
-        searchError = `Bing: ${err instanceof Error ? err.message : '失败'}`;
+  if (hits.length < input.sampleLimit) {
+    const queries = roleTerms.map((term, i) =>
+      `${term} ${input.city ?? ''} ${typeTerms[i % typeTerms.length]} 岗位 招聘 职位详情`.trim()
+    );
+    const rounds = await Promise.allSettled(queries.map((q) => searchJobPages(q, input.sampleLimit, timeout)));
+    for (const round of rounds) {
+      if (round.status === 'fulfilled') addHits(round.value);
+      else searchError = `Bing: ${round.reason instanceof Error ? round.reason.message : '部分关键词搜索失败'}`;
+    }
+    if (!hits.length && !searchError) {
+      for (const q of queries) {
+        try {
+          addHits(await searchJobPages(q, input.sampleLimit, timeout));
+          if (hits.length >= input.sampleLimit) break;
+        } catch (err) {
+          searchError = `Bing: ${err instanceof Error ? err.message : '失败'}`;
+        }
       }
     }
   }
@@ -251,31 +287,37 @@ export async function webSearchJobs(input: {
     };
   }
   const now = new Date().toISOString();
-  for (const hit of hits.slice(0, Math.min(input.sampleLimit, 30))) {
-    try {
-      const html = await fetchText(hit.url, timeout);
-      const jd = extractJdFromHtml(html);
-      if (!jd) {
-        attempts.push({ title: hit.title, url: hit.url, parse_status: 'failed', note: '正文提取不足（可能需要登录或 JS 渲染）' });
-        continue;
+  const candidates = hits.slice(0, Math.min(input.sampleLimit, 30));
+  const parsed = await Promise.all(
+    candidates.map(async (hit): Promise<{ sample?: JobSample; attempt: SearchAttempt }> => {
+      try {
+        const html = await fetchText(hit.url, timeout);
+        const jd = extractJdFromHtml(html);
+        if (!jd) return { attempt: { title: hit.title, url: hit.url, parse_status: 'failed', note: '正文提取不足（可能需要登录或 JS 渲染）' } };
+        return {
+          attempt: { title: hit.title, url: hit.url, parse_status: 'ok' },
+          sample: {
+            title: hit.title.slice(0, 100),
+            company: null,
+            location: input.city ?? null,
+            employment_type: input.employmentType,
+            education_requirement: jd.education,
+            experience_requirement: jd.experience,
+            skills: [],
+            description: jd.description,
+            source_url: hit.url,
+            fetched_at: now,
+            source_type: 'web',
+          },
+        };
+      } catch (err) {
+        return { attempt: { title: hit.title, url: hit.url, parse_status: 'failed', note: err instanceof Error ? err.message : '抓取失败' } };
       }
-      attempts.push({ title: hit.title, url: hit.url, parse_status: 'ok' });
-      samples.push({
-        title: hit.title.slice(0, 100),
-        company: null, // 搜索结果标题中公司不可靠，如实置空（PRD 允许未知为空）
-        location: input.city ?? null,
-        employment_type: input.employmentType,
-        education_requirement: jd.education,
-        experience_requirement: jd.experience,
-        skills: [], // 技能由抽取阶段填充
-        description: jd.description,
-        source_url: hit.url,
-        fetched_at: now,
-        source_type: 'web',
-      });
-    } catch (err) {
-      attempts.push({ title: hit.title, url: hit.url, parse_status: 'failed', note: err instanceof Error ? err.message : '抓取失败' });
-    }
+    })
+  );
+  for (const item of parsed) {
+    attempts.push(item.attempt);
+    if (item.sample) samples.push(item.sample);
   }
   const failedCount = attempts.filter((a) => a.parse_status === 'failed').length;
   return {

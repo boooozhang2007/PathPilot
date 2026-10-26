@@ -13,6 +13,8 @@ export function currentEngine(): 'pi-llm' | 'rules' {
 }
 
 export async function createRun(userId: number, taskType: string, inputSummary: string): Promise<number> {
+  // 历史进程崩溃或请求超时后，旧任务不能永久阻塞同类任务。
+  await recoverStaleRuns();
   // 防重复提交（PRD 12：防止重复提交产生重复版本）
   const running = await db
     .select({ id: agentRuns.id })
@@ -48,9 +50,21 @@ export async function cancelRun(userId: number, runId: number): Promise<void> {
 
 export async function recoverStaleRuns(staleMs = 10 * 60 * 1000): Promise<number> {
   const cutoff = new Date(Date.now() - staleMs).toISOString();
-  const rows = await db.select({ id: agentRuns.id }).from(agentRuns).where(and(eq(agentRuns.status, 'running'), or(lt(agentRuns.lockedAt, cutoff), isNull(agentRuns.lockedAt))));
+  const staleCondition = and(
+    or(eq(agentRuns.status, 'queued'), eq(agentRuns.status, 'running')),
+    or(lt(agentRuns.startedAt, cutoff), lt(agentRuns.lockedAt, cutoff), and(eq(agentRuns.status, 'running'), isNull(agentRuns.lockedAt)))
+  );
+  const rows = await db.select({ id: agentRuns.id }).from(agentRuns).where(staleCondition);
   if (!rows.length) return 0;
-  await db.update(agentRuns).set({ status: 'queued', lockedAt: null, workerId: null, progressMessage: '服务重启后重新排队' }).where(and(eq(agentRuns.status, 'running'), or(lt(agentRuns.lockedAt, cutoff), isNull(agentRuns.lockedAt))));
+  await db.update(agentRuns).set({
+    status: 'failed',
+    finishedAt: new Date().toISOString(),
+    errorCode: 'STALE_RUN',
+    errorDetail: '任务超过允许执行时间，已自动结束',
+    lockedAt: null,
+    workerId: null,
+    progressMessage: '任务超时，已自动结束',
+  }).where(staleCondition);
   return rows.length;
 }
 
@@ -74,8 +88,23 @@ export async function getRun(userId: number, runId: number): Promise<AgentRunDTO
 
 /** 异步执行（不阻塞请求；失败记录错误码） */
 export function executeRun(runId: number, taskType: string, job: () => Promise<{ resultType: string; resultId: number }>): void {
-  void db.update(agentRuns).set({ status: 'running', lockedAt: new Date().toISOString(), workerId: `worker-${process.pid}`, attemptCount: sql`${agentRuns.attemptCount} + 1`, progress: 5, progressMessage: '开始执行' }).where(eq(agentRuns.id, runId));
-  job()
+  void (async () => {
+    // Persist the running state before invoking the job. Without awaiting this
+    // write, a fast follow-up tool call can still see the run as queued.
+    await db
+      .update(agentRuns)
+      .set({
+        status: 'running',
+        startedAt: new Date().toISOString(),
+        lockedAt: new Date().toISOString(),
+        workerId: `worker-${process.pid}`,
+        attemptCount: sql`${agentRuns.attemptCount} + 1`,
+        progress: 5,
+        progressMessage: '开始执行',
+      })
+      .where(eq(agentRuns.id, runId));
+    return job();
+  })()
     .then((r) => finishRun(runId, 'succeeded', r))
     .catch(async (err) => {
       const code = (err as { code?: string }).code ?? 'INTERNAL_ERROR';

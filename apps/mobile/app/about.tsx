@@ -8,7 +8,7 @@ import { Icon, LogoMark, type IconName } from '../components/icons';
 const PROJECT_URL = 'https://github.com/boooozhang2007/PathPilot';
 
 const FEATURES: { icon: IconName; title: string; desc: string }[] = [
-  { icon: 'target', title: '岗位洞察', desc: '基于真实招聘平台样本（猎聘 / 应届生等）分析目标岗位的技能要求与出现频次' },
+  { icon: 'target', title: '岗位洞察', desc: '基于真实招聘平台样本分析目标岗位的技能要求与出现频次' },
   { icon: 'layers', title: '能力档案', desc: '技能分专业/通用两类管理，等级 + 证据链接（代码 / 项目 / 证书），能力是否掌握由证据说话' },
   { icon: 'chat', title: 'AI 顾问', desc: '对话式助手，可查数据、调规划、管任务，操作真实生效' },
   { icon: 'roadmap', title: '成长路线', desc: '按学期生成可执行规划，随进度与目标变化动态调整、版本可回溯' },
