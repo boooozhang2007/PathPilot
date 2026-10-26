@@ -112,6 +112,7 @@ export function Tour({ onClose }: { onClose: () => void }) {
         key={idx}
       >
         <div className="ink-panel noise relative px-6 pb-5 pt-6 text-white">
+          <span className="tape" />
           <div className="flex items-center justify-between">
             <Logo size={30} />
             <button onClick={finish} className="rounded-lg p-1.5 text-white/50 transition hover:bg-white/10 hover:text-white" title="跳过引导">

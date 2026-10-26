@@ -77,7 +77,8 @@ export default function RoadmapPage() {
             <section key={sem.index} className="reveal relative mb-7" style={{ '--d': `${140 + idx * 70}ms` } as never}>
               <span className={`node ${complete ? 'node-done' : idx === 0 ? 'node-active' : ''}`} />
               {idx < roadmap.content.semesters.length - 1 && <span className="pathline" />}
-              <div className="pp-card p-5">
+              <div className="pp-card relative p-5">
+                {idx === 0 && <span className="pin" />}
                 <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2.5">
                     <span className="num text-[11px] font-bold tracking-widest text-slate-2">S{sem.index}</span>

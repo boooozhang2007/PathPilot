@@ -36,7 +36,8 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen bg-paper">
       {/* 品牌面板:蓝图网格 + 路线母题 */}
-      <section className="ink-panel noise corner-ticks relative hidden w-[46%] flex-col justify-between p-12 text-white lg:flex">
+      <section className="ink-panel noise corner-ticks sheet-frame relative hidden w-[46%] flex-col justify-between p-12 text-white lg:flex">
+          <span className="tape" />
         <div className="flex items-center gap-3">
           <Logo size={40} />
           <div>

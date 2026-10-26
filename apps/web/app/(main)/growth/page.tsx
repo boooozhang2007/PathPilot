@@ -122,7 +122,8 @@ export default function GrowthPage() {
   return (
     <div className="space-y-6">
       {/* 主视觉:一句话看清投入产出 */}
-      <section className="ink-panel noise corner-ticks reveal flex flex-wrap items-center justify-between gap-6 rounded-[10px] px-8 py-7 text-white">
+      <section className="ink-panel noise corner-ticks sheet-frame reveal relative flex flex-wrap items-center justify-between gap-6 rounded-[10px] px-8 py-7 text-white">
+          <span className="tape" />
         <div className="min-w-0">
           <div className="eyebrow mb-2" style={{ color: '#8ba7ff' }}>
             05 · GROWTH

@@ -22,8 +22,8 @@ export function useDark(): boolean {
 /** 主题相关的坐标/文字色 */
 function axisTheme(dark: boolean) {
   return dark
-    ? { label: '#a7aeba', split: 'rgba(255,255,255,0.09)', area: ['#1b1e23', '#17191d'], pieBorder: '#1b1e23' }
-    : { label: '#52627A', split: '#e7e3d5', area: ['#fff', '#f6f4ec'], pieBorder: '#fff' };
+    ? { label: '#b3a07e', split: 'rgba(255,235,190,0.10)', area: ['#332a1c', '#2b2316'], pieBorder: '#332a1c' }
+    : { label: '#6b5b45', split: '#ddcda6', area: ['#fdfaf0', '#f6efdc'], pieBorder: '#fdfaf0' };
 }
 
 export function Chart({ option, height = 300 }: { option: echarts.EChartsOption; height?: number }) {

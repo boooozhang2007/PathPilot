@@ -75,7 +75,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   return (
     <div className="flex min-h-screen">
       {/* 墨蓝侧栏:品牌 → 路线节点导航 → 状态与账号 */}
-      <aside className="ink-panel noise fixed inset-y-0 left-0 z-30 flex w-60 flex-col border-r border-white/10 text-white">
+      <aside className="leather fixed inset-y-0 left-0 z-30 flex w-60 flex-col text-[#f3ead5]">
         <div className="flex items-center gap-3 px-5 pb-6 pt-6">
           <Logo size={36} />
           <div className="min-w-0">
@@ -92,34 +92,34 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                 key={item.href}
                 href={item.href}
                 data-tour-anchor={`nav-${item.href}`}
-                className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all ${active ? 'bg-white text-ink shadow-[0_8px_20px_-8px_rgba(0,0,0,.5)]' : 'text-white/65 hover:bg-white/[.08] hover:text-white'}`}
+                className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all ${active ? 'bg-[#f6efdc] text-[#3a2812] shadow-[0_3px_6px_rgba(15,8,2,.45),inset_0_1px_0_rgba(255,255,255,.9)]' : 'text-[#e8d9b8]/75 hover:bg-[#d8b276]/15 hover:text-[#f3ead5]'}`}
               >
                 {/* 活跃节点:蓝图路线上的当前站点 */}
                 {active && <span className="absolute -left-3 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-accent shadow-[0_0_10px_rgba(66,110,254,.9)] ring-4 ring-accent/25" />}
-                <Ic name={item.icon} size={17} className={active ? 'text-accent' : 'opacity-70 transition group-hover:opacity-100'} />
+                <Ic name={item.icon} size={17} className={active ? 'text-[#8a4a1f]' : 'opacity-70 transition group-hover:opacity-100'} />
                 <span className="font-medium">{item.label}</span>
-                <span className={`num ml-auto text-[10px] tracking-widest ${active ? 'text-accent' : 'text-white/30'}`}>{item.num}</span>
+                <span className={`num ml-auto text-[10px] tracking-widest ${active ? 'text-[#8a4a1f]' : 'text-[#d8b276]/35'}`}>{item.num}</span>
               </Link>
             );
           })}
         </nav>
 
-        <div className="space-y-3 border-t border-white/10 px-4 py-4">
+        <div className="space-y-3 border-t border-[#d8b276]/20 px-4 py-4">
           <div className="flex items-center gap-2">
             <button
               onClick={() => window.dispatchEvent(new Event('pp:cmdk'))}
-              className="flex flex-1 items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-white/75 transition hover:border-accent hover:text-white"
+              className="flex flex-1 items-center gap-2 rounded-lg border border-[#d8b276]/35 px-3 py-2 text-xs font-semibold text-[#e8d9b8]/80 transition hover:border-[#d8b276] hover:text-[#f6efdc]"
               title="命令面板"
             >
               <Ic name="menu" size={13} />
               快速跳转
-              <span className="num ml-auto rounded border border-white/20 px-1 py-0.5 text-[9px] text-white/45">⌘K</span>
+              <span className="num ml-auto rounded border border-[#d8b276]/40 px-1 py-0.5 text-[9px] text-[#d8b276]/70">⌘K</span>
             </button>
-            <button onClick={toggleTheme} title={dark ? '切到浅色' : '切到深色'} className="rounded-lg border border-white/15 p-2 text-white/70 transition hover:border-accent hover:text-white">
+            <button onClick={toggleTheme} title={dark ? '切到浅色' : '切到深色'} className="rounded-lg border border-[#d8b276]/35 p-2 text-[#e8d9b8]/70 transition hover:border-[#d8b276] hover:text-[#f6efdc]">
               <Ic name={dark ? 'spark' : 'moon'} size={14} />
             </button>
           </div>
-          <button onClick={() => setTourOpen(true)} className="flex w-full items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-white/75 transition hover:border-accent hover:text-white" data-tour="tour-entry">
+          <button onClick={() => setTourOpen(true)} className="flex w-full items-center gap-2 rounded-lg border border-[#d8b276]/35 px-3 py-2 text-xs font-semibold text-[#e8d9b8]/80 transition hover:border-[#d8b276] hover:text-[#f6efdc]" data-tour="tour-entry">
             <Ic name="compass" size={14} />
             新手引导 · 五步上手
           </button>

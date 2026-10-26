@@ -135,7 +135,8 @@ export default function JobsPage() {
       <PageHeader eyebrow="02 · INSIGHT" title="岗位洞察" desc="输入目标岗位,AI 联网采集真实招聘样本,统计技能需求与分布" />
 
       {/* 指令台:一行完成一次分析 */}
-      <section className="ink-panel noise reveal mb-5 rounded-[10px] p-1.5">
+      <section className="ink-panel noise reveal relative mb-5 rounded-[10px] p-1.5">
+          <span className="pin pin--blue" style={{ left: 14 }} />
         <div className="flex flex-wrap items-end gap-3 rounded-lg bg-white/95 p-4 backdrop-blur">
           <div className="min-w-44 flex-1">
             <label className="pp-label">目标岗位</label>

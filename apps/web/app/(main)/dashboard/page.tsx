@@ -43,7 +43,8 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* ---------- 主视觉:墨色蓝图,一屏回答两件事(距离 & 下一步) ---------- */}
-      <section className="ink-panel noise corner-ticks reveal relative overflow-hidden rounded-[10px] px-8 py-7 text-white">
+      <section className="ink-panel noise corner-ticks sheet-frame reveal relative overflow-hidden rounded-[10px] px-8 py-7 text-white">
+          <span className="tape" />
         <div className="flex flex-wrap items-start justify-between gap-6">
           <div className="min-w-0 max-w-xl">
             <div className="eyebrow mb-2 text-accent" style={{ color: '#8ba7ff' }}>
