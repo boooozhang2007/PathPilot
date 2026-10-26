@@ -1,5 +1,4 @@
 // Seed：技能别名词典（PRD 4.3 归一化基础） + 预置真实岗位样本库（开发期联网采集，附真实来源链接）
-// 演示账号：demo@pathpilot.ai / demo123456
 import { eq } from 'drizzle-orm';
 import { db, getDb } from './client.js';
 import { skills, users, profiles, jobSources, jobRequirements } from './schema.js';
@@ -123,7 +122,8 @@ const PRESET_JOBS: SeedJob[] = [
 export async function seedIfNeeded(): Promise<void> {
   await seedSkills();
   await seedPresetJobs();
-  await seedDemoAccount();
+  // 演示账号只允许测试或显式本地演示环境启用，生产初始化不会创建公开凭据。
+  if (process.env.NODE_ENV === 'test' || process.env.PATHPILOT_SEED_DEMO === '1') await seedDemoAccount();
 }
 
 async function seedSkills(): Promise<void> {
@@ -197,7 +197,7 @@ async function seedDemoAccount(): Promise<void> {
     careerPath: 'employment',
     weeklyHours: 10,
   });
-  console.log('[seed] 演示账号已创建: demo@pathpilot.ai / demo123456');
+  console.log('[seed] 测试演示账号已创建');
 }
 
 // CLI: npm run db:seed
