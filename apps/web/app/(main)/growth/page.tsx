@@ -120,9 +120,9 @@ export default function GrowthPage() {
   const unlocked = badges.filter((b) => b.on).length;
 
   return (
-    <div className="space-y-6">
+    <div className="grid grid-cols-12 grid-flow-row-dense gap-4">
       {/* 主视觉:一句话看清投入产出 */}
-      <section className="ink-panel noise corner-ticks sheet-frame reveal relative flex flex-wrap items-center justify-between gap-6 rounded-[10px] px-8 py-7 text-white">
+      <section className="ink-panel noise corner-ticks sheet-frame reveal relative col-span-12 flex flex-wrap items-center justify-between gap-6 overflow-hidden rounded-[10px] px-7 py-6 text-white lg:col-span-8 lg:row-span-2">
           <span className="tape" />
         <div className="min-w-0">
           <div className="eyebrow mb-2" style={{ color: '#8ba7ff' }}>
@@ -174,9 +174,9 @@ export default function GrowthPage() {
         const monthDone = done.filter((t) => t.completedAt && Date.parse(t.completedAt) >= monthAgo);
         const newEvidence = skills.filter((s) => s.evidenceStatus === 'evidenced' && Date.parse(s.updatedAt) >= weekAgo);
         return (
-          <section className="pp-card reveal p-5">
-            <SectionTitle right={<span className="num text-[10px] tracking-widest text-slate-2">LAST 7 DAYS</span>}>本周复盘</SectionTitle>
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <section className="pp-card reveal col-span-12 p-5 lg:col-span-4 lg:row-span-2">
+            <SectionTitle right={<span className="num text-[10px] tracking-widest text-slate-2">7D</span>}>本周复盘</SectionTitle>
+            <div className="grid grid-cols-2 gap-3">
               {[
                 { icon: 'check' as IconName, label: '完成任务', value: `${weekDone.length}`, tone: 'text-teal' },
                 { icon: 'clock' as IconName, label: '投入小时', value: `${weekHours}h`, tone: 'text-accent' },
@@ -198,8 +198,7 @@ export default function GrowthPage() {
         );
       })()}
 
-      {/* 图表区 */}
-      <div className="grid grid-cols-12 gap-5">
+      {/* 图表格 */}
         <section className="pp-card reveal col-span-12 p-5 lg:col-span-7" style={{ '--d': '80ms' } as never}>
           <SectionTitle right={<span className="num text-[10px] tracking-widest text-slate-2">HOURS</span>}>按学期投入(计划 vs 实际)</SectionTitle>
           <Chart
@@ -207,12 +206,12 @@ export default function GrowthPage() {
             option={{
               grid: { left: 8, right: 16, top: 28, bottom: 4, containLabel: true },
               tooltip: { trigger: 'axis' },
-              legend: { top: 0, right: 0, textStyle: { fontSize: 11, color: '#52627A' }, itemWidth: 12, itemHeight: 8 },
+              legend: { top: 0, right: 0, textStyle: { fontSize: 11, color: '#6b5b45' }, itemWidth: 12, itemHeight: 8 },
               xAxis: { type: 'category', data: hoursBySem.map((h) => h.sem), axisTick: { show: false } },
-              yAxis: { type: 'value', splitLine: { lineStyle: { color: '#e7e3d5' } } },
+              yAxis: { type: 'value', splitLine: { lineStyle: { color: '#ddcda6' } } },
               series: [
-                { name: '计划', type: 'bar', data: hoursBySem.map((h) => h.planned), itemStyle: { borderRadius: [5, 5, 0, 0], color: '#C6CFDE' }, barMaxWidth: 22 },
-                { name: '实际', type: 'bar', data: hoursBySem.map((h) => h.actual), itemStyle: { borderRadius: [5, 5, 0, 0], color: '#426EFE' }, barMaxWidth: 22 },
+                { name: '计划', type: 'bar', data: hoursBySem.map((h) => h.planned), itemStyle: { borderRadius: [5, 5, 0, 0], color: '#cdbb92' }, barMaxWidth: 22 },
+                { name: '实际', type: 'bar', data: hoursBySem.map((h) => h.actual), itemStyle: { borderRadius: [5, 5, 0, 0], color: '#3d63e0' }, barMaxWidth: 22 },
               ],
             }}
           />
@@ -227,8 +226,8 @@ export default function GrowthPage() {
                 grid: { left: 8, right: 16, top: 14, bottom: 4, containLabel: true },
                 tooltip: { trigger: 'axis' },
                 xAxis: { type: 'category', data: months, axisTick: { show: false } },
-                yAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: '#e7e3d5' } } },
-                series: [{ type: 'bar', data: months.map((m) => byMonth.get(m) ?? 0), itemStyle: { borderRadius: [5, 5, 0, 0], color: '#0E7C6B' }, barMaxWidth: 26 }],
+                yAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: '#ddcda6' } } },
+                series: [{ type: 'bar', data: months.map((m) => byMonth.get(m) ?? 0), itemStyle: { borderRadius: [5, 5, 0, 0], color: '#1a6e5c' }, barMaxWidth: 26 }],
               }}
             />
           ) : (
@@ -266,10 +265,9 @@ export default function GrowthPage() {
             ))}
           </div>
         </section>
-      </div>
 
       {/* 成就徽章墙 */}
-      <section className="pp-card reveal p-5" style={{ '--d': '280ms' } as never}>
+      <section className="pp-card reveal col-span-12 p-5" style={{ '--d': '280ms' } as never}>
         <SectionTitle
           right={
             <span className="num text-xs text-slate-2">
