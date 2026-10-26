@@ -8,7 +8,7 @@ function requireEnv(name: string, fallback?: string): string {
 
 export const config = {
   port: Number(process.env.PORT ?? 3000),
-  jwtSecret: requireEnv('JWT_SECRET', 'pathpilot-dev-secret-change-me-in-production'),
+  jwtSecret: requireEnv('JWT_SECRET'),
   jwtExpiresIn: '7d',
   dbPath: process.env.DB_PATH ?? './data/pathpilot.db',
 

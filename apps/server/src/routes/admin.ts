@@ -1,14 +1,14 @@
-// 管理路由（任务1：模型配置管理页）：/api/admin/* 需 ADMIN_KEY（.env，默认 pathpilot-admin）
+// 管理路由：/api/admin/* 需要通过环境变量配置管理密钥。
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { getLlmSettings, saveLlmSettings, fetchRemoteModels, MODEL_CATALOG, isLlmConfigured } from '../agent/settings.js';
 import { unauthorized } from '../services/errors.js';
 
-const ADMIN_KEY = process.env.ADMIN_KEY ?? 'pathpilot-admin';
+const ADMIN_KEY = process.env.ADMIN_KEY;
 
 async function adminGuard(req: FastifyRequest, _reply: FastifyReply): Promise<void> {
   const key = (req.headers['x-admin-key'] as string) ?? (req.query as { admin_key?: string })?.admin_key;
-  if (key !== ADMIN_KEY) throw unauthorized('管理密钥不正确');
+  if (!ADMIN_KEY || key !== ADMIN_KEY) throw unauthorized('管理密钥不正确');
 }
 
 const llmPatch = z.object({

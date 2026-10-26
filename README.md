@@ -1,102 +1,62 @@
 # PathPilot AI
 
-面向计算机专业大学生的 AI 职业成长规划与能力管理平台 —— 以岗位证据为依据、以个人成长记录为基础、以可执行行动计划为核心。
+PathPilot 是面向计算机专业学生的职业成长平台：从目标岗位出发，整理招聘要求，生成成长路线，并把路线拆成可以持续完成的任务。
 
-```
-岗位需求采集 → 技能分析 → 能力差距分析 → 四年成长规划 → 每周行动 → 进度记录 → 动态调整
-```
+## 组成
 
-- **Web 端**（Next.js）：`http://localhost:3001`
-- **Android App**（Expo/React Native）：安装 `dist/PathPilot-v1.1.apk`
-- **统一后端**（Fastify + SQLite + Pi Agent）：`http://localhost:3000`，三端共享同一数据库
+- Web：Next.js
+- Android：Expo / React Native
+- 服务端：Fastify、SQLite、Drizzle、Pi Agent
+- 共享层：TypeScript 类型、Zod 数据结构和业务枚举
 
-## 快速开始
+## 本地启动
 
 ```bash
-npm install                 # 安装全部工作区依赖（Node ≥ 22.19）
-npm run dev:server          # 启动后端 :3000（首次自动迁移 + seed）
-npm run dev:web             # 启动 Web  :3001
+npm install
+npm run dev:server
+npm run dev:web
 ```
 
-演示账号：`demo@pathpilot.ai` / `demo123456`
+首次启动服务端会执行数据库迁移和基础数据初始化。服务端默认监听 `3000`，Web 默认监听 `3001`。
 
-**模型管理**：登录后访问 Web `http://localhost:3001/admin`（默认管理密钥 `pathpilot-admin`，`.env` 中 `ADMIN_KEY` 修改）——填写 Base URL + API Key、拉取模型列表、设置当前模型，保存即生效。
+## 配置
 
-**Android**：安装 `dist/PathPilot-v1.1.apk`（或用 `apps/mobile` 自行构建，见下文）。App 默认连接 `https://pathpilot.070320.xyz`，也可在「我的 → 服务器地址」切换。
+将 `.env.example` 复制为 `apps/server/.env`，按部署环境填写认证、模型和搜索服务配置。模型配置页面位于 Web 的 `/admin`。
 
-## 环境配置
+默认线上服务地址：`https://pathpilot.070320.xyz`。
 
-复制 `.env.example` 为 `apps/server/.env`：
+## 主要功能
 
-| 变量 | 说明 |
-|---|---|
-| `JWT_SECRET` | 认证密钥（生产必改） |
-| `AGENT_PROVIDER` | `zhipu`（GLM）/ `deepseek` / `custom` |
-| `AGENT_BASE_URL` | OpenAI 兼容端点（默认智谱 `https://open.bigmodel.cn/api/paas/v4`） |
-| `AGENT_API_KEY` | **可选**。不配置自动降级规则引擎，全流程照常可演示；配置后启用 Pi Agent LLM 通道 |
-| `AGENT_MODEL` | 如 `glm-4.6` / `deepseek-chat` |
-| `TAVILY_API_KEY` | **可选**。Tavily 搜索通道 |
-| `LIEPIN_USER_TOKEN` | **可选**。猎聘官方岗位搜索通道（[liepin.com/mcp/auth](https://www.liepin.com/mcp/auth) 获取，90 天有效）；需先安装猎聘 CLI（见下） |
-
-## 架构（摘要）
-
-```
-apps/server   Fastify(ESM) · Drizzle+SQLite · JWT · Pi Agent(@earendil-works/pi-agent-core v1.4)
-              ├─ 确定性业务：技能归一化/频次统计/加权匹配度/时间预算/规划校验/版本管理
-              ├─ Agent 层：Pi LLM 通道 ⇄ 规则引擎降级（响应标注 engine 来源）
-              └─ 岗位数据：联网搜索(Tavily/必应) → 预置真实样本库 → 手动粘贴（来源全部如实标注）
-apps/web      Next.js 15 · 8 页面 · ECharts · 复刻 design/ 设计系统
-apps/mobile   Expo SDK 58 · expo-router · 5 Tab · 服务器地址可配 · react-native-svg
-packages/shared 三端共享 TS 类型 + Zod schema + 枚举
-```
-
-详见 [ARCHITECTURE.md](./ARCHITECTURE.md)（模块图 / DB ER / API 契约 / 安全与降级策略）与 [PRD.md](./PRD.md)。
-
-## 数据可信度规则（PRD 核心）
-
-- 技能频次只基于成功解析的真实岗位样本统计，`sample_count` 如实展示
-- 搜索失败自动回退预置真实样本库（23 条，开发期联网采集、附原始链接）或手动粘贴，来源类型全部标注
-- 匹配度 = Σ(要求权重 × 满足系数) / Σ(要求权重)，透明可解释，不代表就业概率
-- AI 通道输出必须通过 Zod 结构校验 + 时间预算校验才落库；失败不覆盖旧规划
-- 已完成任务在重规划时永远保留；规划版本不可变（parent 链可追溯）
+- 个人资料、技能、课程、项目和实践经历
+- 多来源岗位搜索与岗位要求分析
+- 技能归一化、频次统计和能力差距分析
+- 分学期成长规划与版本历史
+- 父任务、子任务、依赖和进度跟踪
+- AI 职业顾问与任务执行工具
+- Web 与 Android 共用数据
+- 简历素材整理和成果记录
 
 ## 测试
 
 ```bash
-npm test    # vitest：归一化/时间预算/规划校验/匹配度/数据权限/版本保存/任务乐观锁/跨端读取
+npm run build
+npm run test
+cd apps/mobile && npx tsc --noEmit
 ```
 
-## 猎聘官方岗位搜索通道（可选）
-
-后端通过官方 `liepin-cli`（Python CLI，[github.com/liepin-tech-2026/liepin-cil](https://github.com/liepin-tech-2026/liepin-cil)）接入猎聘实时岗位数据：
+## Android 构建
 
 ```bash
-git clone --depth 1 https://github.com/liepin-tech-2026/liepin-cil.git tools/liepin-cli
-cd tools/liepin-cli && python -m venv .venv && .venv/Scripts/pip install -e .   # Python ≥3.11
-```
-
-然后在 `apps/server/.env` 配置 `LIEPIN_USER_TOKEN`（猎聘授权页扫码获取）。配置后岗位分析优先走猎聘官方渠道（搜索 → 抓取完整 JD → 频次统计，均附原始链接）；未配置则自动走 Tavily/必应/预置样本库，来源类型如实标注。搜索结果缓存 10 分钟。
-
-## Android APK 构建
-
-```bash
-cd apps/mobile
-npx expo prebuild -p android --no-install   # 生成 android/（首次）
-cd android
-# 签名：keystore.properties + pathpilot.keystore 已配置（app/build.gradle 已接 release 签名）
+cd apps/mobile/android
 ./gradlew assembleRelease
-# 产物 → android/app/build/outputs/apk/release/app-release.apk
 ```
 
-> `android/` 目录被 gitignore（由 prebuild 生成）。重跑 prebuild 后需重新应用 `app/build.gradle` 的 release 签名块（见 `scripts/android-signing.gradle.md` 或直接参考本文件历史）。
+发布 APK 位于 GitHub Releases，不写入仓库。当前版本发布页：
 
-## 目录
+https://github.com/boooozhang2007/PathPilot/releases/tag/v1.3.0
 
-```
-ARCHITECTURE.md  PRD.md  design/           # 架构 / 需求 / 高保真设计稿
-apps/server      后端（API 文档见 ARCHITECTURE §4）
-apps/web         Web 端
-apps/mobile      Android 端
-packages/shared  共享类型与校验
-dist/            PathPilot-v1.1.apk
-```
+## 文档
+
+- [产品成熟度提升计划](./PRODUCT_MATURITY_PLAN.md)
+- [架构说明](./ARCHITECTURE.md)
+- [产品需求文档](./PRD.md)
