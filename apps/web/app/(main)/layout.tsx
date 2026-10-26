@@ -147,9 +147,9 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         </div>
       </aside>
 
-      {/* 纸面工作区 */}
+      {/* 纸面工作区:内容贴左排布(制图桌语义——纸件从左侧开始铺),宽屏最多 1200px */}
       <main className="workspace ml-60 min-h-screen flex-1 px-9 py-8">
-        <div className="mx-auto max-w-6xl">{children}</div>
+        <div className="max-w-[1200px]">{children}</div>
       </main>
 
       {tourOpen && <Tour onClose={() => setTourOpen(false)} />}

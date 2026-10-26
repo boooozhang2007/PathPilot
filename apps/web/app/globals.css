@@ -93,14 +93,13 @@ body {
   background-size: 26px 26px;
 }
 
-/* ---------- 皮革工具栏(侧栏) ---------- */
+/* ---------- 皮革工具栏(侧栏;定位由 markup 上的 Tailwind fixed 类负责,勿在此设 position 以免覆盖) ---------- */
 .leather {
   background:
     radial-gradient(600px 300px at 20% -10%, rgba(255, 226, 170, 0.08), transparent 60%),
     linear-gradient(180deg, #57402a 0%, #46311d 55%, #362413 100%);
   border-right: 1px solid #1f130a;
   box-shadow: inset -3px 0 8px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 240, 200, 0.08);
-  position: relative;
 }
 .leather::before {
   content: '';
@@ -465,7 +464,6 @@ body {
   }
 }
 .coach-target {
-  position: relative;
   z-index: 60;
   animation: coach-pulse 1.6s ease-in-out infinite;
   border-radius: 8px;
