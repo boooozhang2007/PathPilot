@@ -46,3 +46,8 @@ apps/mobile/node_modules/
 
 # 打包产物（发布走 GitHub Release，不入库）
 /*.apk
+
+# Expo Web 预览导出（仅本地用）
+apps/mobile/dist-*/
+apps/mobile/.playwright-mcp/
+/.playwright-mcp/

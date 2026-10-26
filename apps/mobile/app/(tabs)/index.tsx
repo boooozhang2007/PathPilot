@@ -3,13 +3,14 @@ import { useCallback, useState } from 'react';
 import { ScrollView, View, Text, RefreshControl } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { api } from '../../lib/api';
-import { C, Card, Tag, Ring, Loading, ErrorBox, Btn } from '../../components/ui';
+import { C, SF, Card, Panel, Tag, Ring, Loading, ErrorBox, Btn, useSettings } from '../../components/ui';
 import { Icon } from '../../components/icons';
 import { GuideTasks } from '../../components/GuideTasks';
 import type { DashboardData, RoadmapTaskDTO } from '@pathpilot/shared';
 import { TASK_STATUS_LABELS } from '@pathpilot/shared';
 
 export default function Home() {
+  useSettings();
   const [data, setData] = useState<DashboardData | null>(null);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
@@ -45,26 +46,26 @@ export default function Home() {
   const sem = d?.currentSemester ?? null;
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: C.paper }} contentContainerStyle={{ padding: 16, paddingTop: 54 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); setTimeout(() => setRefreshing(false), 800); }} tintColor={C.accent} />}>
+    <ScrollView style={{ flex: 1, ...SF.page }} contentContainerStyle={{ padding: 16, paddingTop: 54 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); setTimeout(() => setRefreshing(false), 800); }} tintColor={C.accent} />}>
       {/* 顶部 Hero：问候 + 进度圆环 */}
-      <View style={{ backgroundColor: C.deep, borderRadius: 16, padding: 20, marginBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+      <Panel style={{ padding: 20, marginBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <View style={{ flex: 1, paddingRight: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Text style={{ color: '#fff', fontSize: 22, fontWeight: '800' }}>{d?.profile?.nickname ?? '同学'}，加油</Text>
-            <Icon name="rocket" size={20} color="#FFFFFF" />
+            <Text style={{ color: C.deepText, fontSize: 22, fontWeight: '800' }}>{d?.profile?.nickname ?? '同学'}，加油</Text>
+            <Icon name="rocket" size={20} color={C.deepText} />
           </View>
           {d?.topGaps?.length ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
               {d.topGaps.slice(0, 3).map((g) => (
-                <View key={g.skill} style={{ backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 }}>
-                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>{g.skill}</Text>
+                <View key={g.skill} style={{ backgroundColor: C.deepLine, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 }}>
+                  <Text style={{ color: C.deepText, fontSize: 11, fontWeight: '600' }}>{g.skill}</Text>
                 </View>
               ))}
             </View>
           ) : null}
         </View>
-        <Ring value={sem ? sem.doneRatio : 0} size={104} />
-      </View>
+        <Ring value={sem ? sem.doneRatio : 0} size={104} track={C.deepLine} fg={C.deepText} labelColor={C.deepMuted} accentColor={C.accent} />
+      </Panel>
 
       {err ? <View style={{ marginBottom: 12 }}><ErrorBox message={err} onRetry={load} /></View> : null}
 
@@ -78,7 +79,7 @@ export default function Home() {
             <Text style={{ fontSize: 14, fontWeight: '700', color: C.ink }}>{sem.label}</Text>
             <Tag tone="teal">{sem.doneRatio}%</Tag>
           </View>
-          <View style={{ height: 8, borderRadius: 999, backgroundColor: C.group, marginTop: 10, overflow: 'hidden' }}>
+          <View style={{ ...SF.inset, height: 8, borderRadius: 999, marginTop: 10, overflow: 'hidden' }}>
             <View style={{ height: 8, borderRadius: 999, backgroundColor: C.accent, width: `${sem.doneRatio}%` } as object} />
           </View>
           <Text style={{ fontSize: 12, color: C.slate, marginTop: 8 }}>已完成 {sem.doneTasks} / {sem.totalTasks} 项任务</Text>

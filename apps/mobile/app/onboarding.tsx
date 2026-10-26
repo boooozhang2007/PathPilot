@@ -4,7 +4,7 @@ import { View, Text, TouchableOpacity, ScrollView, useWindowDimensions, type Scr
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Circle } from 'react-native-svg';
-import { C } from '../components/ui';
+import { C, SF, useSettings } from '../components/ui';
 import { getToken, isGuest } from '../lib/api';
 
 export const KEY_ONBOARDED = 'pp_onboarded';
@@ -91,6 +91,7 @@ const SLIDES = [
 
 export default function Onboarding() {
   const router = useRouter();
+  const { fs } = useSettings();
   const [page, setPage] = useState(0);
   const scrollRef = useRef<ScrollViewInstance | null>(null);
   const { width } = useWindowDimensions();
@@ -115,7 +116,7 @@ export default function Onboarding() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.paper }}>
+    <View style={{ flex: 1, ...SF.page }}>
       {/* 顶部跳过 */}
       <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingTop: 54, paddingRight: 20 }}>
         {!last && (
@@ -139,12 +140,10 @@ export default function Onboarding() {
           <View key={s.key} style={{ width, flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
             <View
               style={{
+                ...SF.card,
                 width: 180,
                 height: 180,
                 borderRadius: 40,
-                backgroundColor: C.white,
-                borderWidth: 1,
-                borderColor: C.line,
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginBottom: 30,
@@ -152,8 +151,8 @@ export default function Onboarding() {
             >
               <Illus name={s.key} />
             </View>
-            <Text style={{ fontSize: 22, fontWeight: '800', color: C.ink, textAlign: 'center', marginBottom: 12 }}>{s.title}</Text>
-            <Text style={{ fontSize: 13, color: C.slate, lineHeight: 22, textAlign: 'center' }}>{s.desc}</Text>
+            <Text style={{ fontSize: fs(22), fontWeight: '800', color: C.ink, textAlign: 'center', marginBottom: 12 }}>{s.title}</Text>
+            <Text style={{ fontSize: fs(13), color: C.slate, lineHeight: 22, textAlign: 'center' }}>{s.desc}</Text>
           </View>
         ))}
       </ScrollView>
@@ -175,18 +174,16 @@ export default function Onboarding() {
         </View>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           {page > 0 && (
-            <TouchableOpacity
-              style={{ flex: 1, borderRadius: 12, borderWidth: 1, borderColor: C.line, paddingVertical: 14, alignItems: 'center' }}
-              onPress={() => go(page - 1)}
-            >
+            <TouchableOpacity style={{ ...SF.raised, flex: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' }} onPress={() => go(page - 1)}>
               <Text style={{ fontSize: 14, fontWeight: '700', color: C.ink }}>上一步</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
-            style={{ flex: 2, borderRadius: 12, backgroundColor: C.accent, paddingVertical: 14, alignItems: 'center' }}
+            style={{ ...SF.chip, flex: 2, borderRadius: 12, backgroundColor: C.accent, paddingVertical: 14, alignItems: 'center', borderWidth: 0 }}
             onPress={() => (last ? finish() : go(page + 1))}
+            activeOpacity={0.85}
           >
-            <Text style={{ fontSize: 14, fontWeight: '700', color: C.white }}>{last ? '开始使用' : '下一步'}</Text>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: C.onAccent }}>{last ? '开始使用' : '下一步'}</Text>
           </TouchableOpacity>
         </View>
       </View>

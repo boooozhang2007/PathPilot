@@ -2,12 +2,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type AppearanceMode = 'light' | 'dark' | 'system';
+/** 主题风格：极简（默认）/ 拟物（皮革·牛皮纸）/ 新拟物（soft UI） */
+export type ThemeStyle = 'minimal' | 'skeuo' | 'neumorph';
 export type LanguageMode = 'system' | 'zh' | 'en';
 export type FontSizeMode = 'small' | 'default' | 'large' | 'xlarge';
 export type AnswerStyle = 'concise' | 'detailed';
 
 export interface AppSettings {
   appearance: AppearanceMode;
+  themeStyle: ThemeStyle;
   language: LanguageMode;
   fontSize: FontSizeMode;
   /** 个性化：思考过程展示 / 工具调用展示 / 回答风格 */
@@ -18,6 +21,7 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   appearance: 'light',
+  themeStyle: 'minimal',
   language: 'system',
   fontSize: 'default',
   showThinking: true,

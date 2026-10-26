@@ -4,7 +4,7 @@ import { ScrollView, View, Text, Image, Alert, RefreshControl, TouchableOpacity 
 import { useFocusEffect, useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 import { api, clearAuth, getNickname, isGuest, setGuest } from '../../lib/api';
-import { C, Card, Tag, Btn, Body, Loading, SettingGroup, SettingRow, useSettings } from '../../components/ui';
+import { C, SF, Card, Panel, Tag, Btn, Body, Loading, SettingGroup, SettingRow, useSettings } from '../../components/ui';
 import { Icon } from '../../components/icons';
 import type { ProfileDTO, ProfileSkillDTO, RoadmapVersionSummary, RoadmapTaskDTO } from '@pathpilot/shared';
 import { CAREER_PATH_LABELS, EVIDENCE_STATUS_LABELS, TASK_STATUS_LABELS, skillGroupOf, SKILL_GROUP_LABELS } from '@pathpilot/shared';
@@ -95,7 +95,7 @@ export default function MineTab() {
       <Image source={{ uri: profile.avatar }} style={{ width: size, height: size, borderRadius: 999 }} />
     ) : (
       <View style={{ width: size, height: size, borderRadius: 999, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ color: '#fff', fontSize: size * 0.38, fontWeight: '800' }}>{(guest ? '访' : nickname || '同')[0]}</Text>
+        <Text style={{ color: C.onAccent, fontSize: size * 0.38, fontWeight: '800' }}>{(guest ? '访' : nickname || '同')[0]}</Text>
       </View>
     );
 
@@ -107,20 +107,20 @@ export default function MineTab() {
   );
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: C.paper }} contentContainerStyle={{ padding: 16, paddingTop: 54, paddingBottom: 40 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); setTimeout(() => setRefreshing(false), 800); }} tintColor={C.accent} />}>
+    <ScrollView style={{ flex: 1, ...SF.page }} contentContainerStyle={{ padding: 16, paddingTop: 54, paddingBottom: 40 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); setTimeout(() => setRefreshing(false), 800); }} tintColor={C.accent} />}>
       {/* 账号卡：点击进入个人信息修改 */}
       <TouchableOpacity onPress={() => !guest && router.push('/profile-edit')}>
-        <View style={{ backgroundColor: C.deep, borderRadius: 16, padding: 18, marginBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+        <Panel style={{ padding: 18, marginBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
           <Avatar />
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ color: '#fff', fontSize: 17, fontWeight: '800' }}>{guest ? '访客' : nickname}</Text>
+              <Text style={{ color: C.deepText, fontSize: 17, fontWeight: '800' }}>{guest ? '访客' : nickname}</Text>
               {profile?.mbti ? <Tag tone="ink">{profile.mbti}</Tag> : null}
             </View>
-            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 3 }}>{guest ? '未登录' : '点击修改个人信息'}</Text>
+            <Text style={{ color: C.deepMuted, fontSize: 12, marginTop: 3 }}>{guest ? '未登录' : '点击修改个人信息'}</Text>
           </View>
-          {!guest && <Icon name="chevronRight" size={20} color="rgba(255,255,255,0.6)" strokeWidth={2} />}
-        </View>
+          {!guest && <Icon name="chevronRight" size={20} color={C.deepMuted} strokeWidth={2} />}
+        </Panel>
       </TouchableOpacity>
 
       {guest ? (
@@ -134,7 +134,7 @@ export default function MineTab() {
           {/* 职业目标（加大板块） */}
           <Card style={{ marginBottom: 12 }}>
             <Text style={{ fontSize: 15, fontWeight: '800', color: C.ink, marginBottom: 10 }}>职业目标</Text>
-            <View style={{ backgroundColor: C.group, borderRadius: 12, padding: 14 }}>
+            <View style={{ ...SF.inset, padding: 14 }}>
               <Text style={{ fontSize: 18, fontWeight: '800', color: C.ink }}>{profile?.targetRole || '未设定目标岗位'}</Text>
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
                 <Tag tone="ink">{profile ? CAREER_PATH_LABELS[profile.careerPath] : '—'}</Tag>
@@ -186,7 +186,7 @@ export default function MineTab() {
                     </View>
                   </TouchableOpacity>
                   {expanded === v.id && (
-                    <View style={{ marginTop: 8, backgroundColor: C.group, borderRadius: 10, padding: 10 }}>
+                    <View style={{ ...SF.inset, marginTop: 8, padding: 10 }}>
                       {(versionTasks[v.id] ?? []).length === 0 ? (
                         <Text style={{ fontSize: 11, color: C.slate2 }}>加载中…</Text>
                       ) : (

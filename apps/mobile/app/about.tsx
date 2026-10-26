@@ -2,7 +2,7 @@
 import { View, Text, TouchableOpacity, ScrollView, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
-import { C, useSettings } from '../components/ui';
+import { C, SF, Panel, useSettings } from '../components/ui';
 import { Icon, LogoMark, type IconName } from '../components/icons';
 
 const PROJECT_URL = 'https://github.com/boooozhang2007/PathPilot';
@@ -21,7 +21,7 @@ export default function About() {
   const version = Constants.expoConfig?.version ?? '1.0.0';
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: C.paper }} contentContainerStyle={{ padding: 16, paddingTop: 54, paddingBottom: 40 }}>
+    <ScrollView style={{ flex: 1, ...SF.page }} contentContainerStyle={{ padding: 16, paddingTop: 54, paddingBottom: 40 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <Text style={{ fontSize: 20, fontWeight: '800', color: C.ink }}>关于</Text>
         <TouchableOpacity onPress={() => router.back()}>
@@ -30,19 +30,19 @@ export default function About() {
       </View>
 
       {/* 品牌卡 */}
-      <View style={{ backgroundColor: C.deep, borderRadius: 16, padding: 22, alignItems: 'center', marginBottom: 14 }}>
+      <Panel style={{ padding: 22, alignItems: 'center', marginBottom: 14 }}>
         <View style={{ marginBottom: 12 }}>
-          <LogoMark size={56} bg={C.accent} fg="#FFFFFF" />
+          <LogoMark size={56} bg={C.accent} fg={C.onAccent} />
         </View>
-        <Text style={{ color: C.white, fontSize: 19, fontWeight: '800' }}>PathPilot AI</Text>
-        <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12, marginTop: 4 }}>AI 职业成长规划与能力管理平台</Text>
-        <View style={{ marginTop: 10, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 }}>
-          <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: '600' }}>v{version}</Text>
+        <Text style={{ color: C.deepText, fontSize: 19, fontWeight: '800' }}>PathPilot AI</Text>
+        <Text style={{ color: C.deepMuted, fontSize: 12, marginTop: 4 }}>AI 职业成长规划与能力管理平台</Text>
+        <View style={{ marginTop: 10, backgroundColor: C.deepLine, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 }}>
+          <Text style={{ color: C.deepText, fontSize: 11, fontWeight: '600' }}>v{version}</Text>
         </View>
-      </View>
+      </Panel>
 
       {/* 产品定位 */}
-      <View style={{ backgroundColor: C.white, borderRadius: 14, borderWidth: 1, borderColor: C.line, padding: 16, marginBottom: 14 }}>
+      <View style={{ ...SF.card, padding: 16, marginBottom: 14 }}>
         <Text style={{ fontSize: 14, fontWeight: '800', color: C.ink, marginBottom: 6 }}>我们做什么</Text>
         <Text style={{ fontSize: 13, color: C.slate, lineHeight: 21 }}>
           PathPilot 面向计算机专业大学生，把「岗位要求 → 能力差距 → 学期规划 → 任务证据」连成闭环：岗位结论来自真实招聘样本，能力提升落到可验证的证据与可执行的任务，而不是空泛的建议。
@@ -50,11 +50,11 @@ export default function About() {
       </View>
 
       {/* 核心能力 */}
-      <View style={{ backgroundColor: C.white, borderRadius: 14, borderWidth: 1, borderColor: C.line, padding: 16, marginBottom: 14 }}>
+      <View style={{ ...SF.card, padding: 16, marginBottom: 14 }}>
         <Text style={{ fontSize: 14, fontWeight: '800', color: C.ink, marginBottom: 10 }}>核心能力</Text>
         {FEATURES.map((f) => (
-          <View key={f.title} style={{ flexDirection: 'row', gap: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: C.line + '60' }}>
-            <View style={{ width: 30, height: 30, borderRadius: 9, backgroundColor: C.paper, alignItems: 'center', justifyContent: 'center' }}>
+          <View key={f.title} style={{ flexDirection: 'row', gap: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: C.line }}>
+            <View style={{ ...SF.chip, width: 30, height: 30, borderRadius: 9, backgroundColor: C.group, alignItems: 'center', justifyContent: 'center' }}>
               <Icon name={f.icon} size={15} color={C.accent} />
             </View>
             <View style={{ flex: 1 }}>
@@ -66,16 +66,16 @@ export default function About() {
       </View>
 
       {/* 数据与隐私 */}
-      <View style={{ backgroundColor: C.white, borderRadius: 14, borderWidth: 1, borderColor: C.line, padding: 16, marginBottom: 14 }}>
+      <View style={{ ...SF.card, padding: 16, marginBottom: 14 }}>
         <Text style={{ fontSize: 14, fontWeight: '800', color: C.ink, marginBottom: 6 }}>数据说明</Text>
         <Text style={{ fontSize: 12, color: C.slate, lineHeight: 19 }}>
-          · 岗位样本均采集自公开招聘平台并保留原始来源链接；{'\n'}· 匹配度是基于样本的辅助参考指标，不构成就业概率或承诺；{'\n'}· 个人档案、规划与任务数据保存在你配置的服务器上，删除账号即删除全部数据。
+          · 岗位样本均采集自公开招聘平台并保留原始来源链接；{'\n'}· 匹配度基于样本统计得出；{'\n'}· 个人档案、规划与任务数据保存在你配置的服务器上，删除账号即删除全部数据。
         </Text>
       </View>
 
       {/* 项目主页：真实仓库地址 */}
       <TouchableOpacity
-        style={{ backgroundColor: C.white, borderRadius: 14, borderWidth: 1, borderColor: C.line, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}
+        style={{ ...SF.card, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}
         onPress={() => Linking.openURL(PROJECT_URL).catch(() => {})}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
@@ -89,7 +89,7 @@ export default function About() {
       </TouchableOpacity>
 
       <Text style={{ fontSize: 11, color: C.slate2, textAlign: 'center', lineHeight: 17 }}>
-        © 2026 PathPilot · 毕业设计演示用途{'\n'}AI 生成内容请自行核实关键信息
+        © 2026 PathPilot
       </Text>
     </ScrollView>
   );

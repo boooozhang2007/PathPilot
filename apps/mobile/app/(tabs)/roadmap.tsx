@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import { ScrollView, View, Text, RefreshControl, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { api, pollRun } from '../../lib/api';
-import { C, Card, Tag, Loading, ErrorBox, EmptyBox, Btn, useSettings } from '../../components/ui';
+import { C, SF, Card, Tag, Loading, ErrorBox, EmptyBox, Btn, useSettings } from '../../components/ui';
 import type { RoadmapDTO, RoadmapTaskDTO } from '@pathpilot/shared';
 import { TASK_STATUS_LABELS } from '@pathpilot/shared';
 
@@ -70,7 +70,7 @@ export default function RoadmapTab() {
 
   if (busyText) {
     return (
-      <View style={{ flex: 1, backgroundColor: C.paper, paddingTop: 54, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <View style={{ flex: 1, ...SF.page, paddingTop: 54, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <ActivityIndicator color={C.accent} size="large" />
         <Text style={{ fontSize: fs(14), color: C.ink, fontWeight: '700', marginTop: 16, textAlign: 'center' }}>{busyText}</Text>
         <Text style={{ fontSize: fs(12), color: C.slate, marginTop: 6, textAlign: 'center' }}>生成中可以离开此页，稍后回来下拉刷新</Text>
@@ -80,7 +80,7 @@ export default function RoadmapTab() {
 
   if (!data) {
     return (
-      <ScrollView style={{ flex: 1, backgroundColor: C.paper }} contentContainerStyle={{ padding: 16, paddingTop: 54 }}>
+      <ScrollView style={{ flex: 1, ...SF.page }} contentContainerStyle={{ padding: 16, paddingTop: 54 }}>
         <Text style={{ fontSize: 20, fontWeight: '800', color: C.ink, marginBottom: 12 }}>成长路线</Text>
         {err ? <View style={{ marginBottom: 12 }}><ErrorBox message={err} onRetry={load} /></View> : null}
         <EmptyBox title="还没有成长规划" hint="AI 会基于你的档案、岗位分析与每周可投入时间，按学期拆解成可执行的任务。" />
@@ -92,7 +92,7 @@ export default function RoadmapTab() {
   const { roadmap, tasks } = data;
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: C.paper }} contentContainerStyle={{ padding: 16, paddingTop: 54, paddingBottom: 28 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); setTimeout(() => setRefreshing(false), 800); }} tintColor={C.accent} />}>
+    <ScrollView style={{ flex: 1, ...SF.page }} contentContainerStyle={{ padding: 16, paddingTop: 54, paddingBottom: 28 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); setTimeout(() => setRefreshing(false), 800); }} tintColor={C.accent} />}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <Text style={{ fontSize: 20, fontWeight: '800', color: C.ink }}>成长路线</Text>
         <Tag tone="ink">v{roadmap.version}</Tag>
@@ -105,11 +105,12 @@ export default function RoadmapTab() {
       {roadmap.content.semesters.map((sem, i) => {
         const semTasks = tasks.filter((t) => t.semester === sem.index);
         const done = semTasks.filter((t) => t.status === 'done').length;
+        const complete = semTasks.length > 0 && done === semTasks.length;
         return (
           <View key={sem.index} style={{ flexDirection: 'row', marginBottom: 4 }}>
             {/* 时间轴 */}
             <View style={{ alignItems: 'center', width: 28 }}>
-              <View style={{ width: 12, height: 12, borderRadius: 999, backgroundColor: done === semTasks.length && semTasks.length ? C.teal : i === 0 ? C.accent : C.line, marginTop: 4 }} />
+              <View style={{ ...SF.chip, width: 14, height: 14, borderRadius: 999, backgroundColor: complete ? C.teal : i === 0 ? C.accent : C.group, marginTop: 4 }} />
               {i < roadmap.content.semesters.length - 1 && <View style={{ flex: 1, width: 2, backgroundColor: C.line, marginTop: 4 } as object} />}
             </View>
             <Card style={{ flex: 1, marginBottom: 12 }}>
@@ -127,7 +128,7 @@ export default function RoadmapTab() {
                 </View>
               ) : null}
               {semTasks.map((t) => (
-                <View key={t.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 7, borderTopWidth: 1, borderTopColor: C.line + '70' }}>
+                <View key={t.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 7, borderTopWidth: 1, borderTopColor: C.line }}>
                   <Text style={{ flex: 1, fontSize: 12, fontWeight: '600', color: C.ink }} numberOfLines={1}>
                     {t.title}
                   </Text>

@@ -1,8 +1,9 @@
 import { Link, Stack } from 'expo-router';
 import { Text, View } from 'react-native';
-import { C } from '../components/ui';
+import { C, useSettings } from '../components/ui';
 
 export default function NotFoundScreen() {
+  useSettings();
   return (
     <>
       <Stack.Screen options={{ title: '页面不存在' }} />

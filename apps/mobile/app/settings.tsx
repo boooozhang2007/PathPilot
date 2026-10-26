@@ -4,10 +4,71 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, Modal, Ale
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 import { api, clearAuth, getApiBase, setApiBase, DEFAULT_BASE, isGuest, getNickname } from '../lib/api';
-import { C, useSettings, SettingRow, SettingGroup, GroupTitle } from '../components/ui';
+import { C, SF, useSettings, SettingRow, SettingGroup, GroupTitle } from '../components/ui';
 import { Icon } from '../components/icons';
 import { makeT } from '../lib/i18n';
-import type { AppearanceMode, LanguageMode, FontSizeMode, AnswerStyle } from '../lib/prefs';
+import type { AppearanceMode, LanguageMode, FontSizeMode, AnswerStyle, ThemeStyle } from '../lib/prefs';
+
+/** 主题风格卡片：三选一，缩略图直接画出该风格的卡片/输入槽质感 */
+function StylePicker() {
+  const { settings, update, fs, lang } = useSettings();
+  const t = makeT(lang);
+  const options: { value: ThemeStyle; label: string; desc: string }[] = [
+    { value: 'minimal', label: t('styleMinimal'), desc: t('styleMinimalDesc') },
+    { value: 'skeuo', label: t('styleSkeuo'), desc: t('styleSkeuoDesc') },
+    { value: 'neumorph', label: t('styleNeumorph'), desc: t('styleNeumorphDesc') },
+  ];
+  return (
+    <View style={{ ...SF.card, padding: 14, marginBottom: 14 }}>
+      <Text style={{ fontSize: fs(14), fontWeight: '600', color: C.ink }}>{t('themeStyle')}</Text>
+      <Text style={{ fontSize: fs(11), color: C.slate2, marginTop: 2 }}>{t('themePreview')}</Text>
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+        {options.map((o) => {
+          const active = settings.themeStyle === o.value;
+          return (
+            <TouchableOpacity
+              key={o.value}
+              style={{ flex: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center', gap: 8, backgroundColor: active ? C.accentSoft : C.group, borderWidth: 1.5, borderColor: active ? C.accent : C.line }}
+              onPress={() => update({ themeStyle: o.value })}
+              activeOpacity={0.75}
+            >
+              <StyleThumb kind={o.value} />
+              <Text style={{ fontSize: fs(12), fontWeight: '700', color: active ? C.accent : C.ink }}>{o.label}</Text>
+              <Text style={{ fontSize: fs(10), color: C.slate2, marginTop: -4 }}>{o.desc}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+/** 缩略图：用少量元素示意三种风格的材质差异 */
+function StyleThumb({ kind }: { kind: ThemeStyle }) {
+  if (kind === 'skeuo') {
+    return (
+      <View style={{ width: 56, height: 38, justifyContent: 'flex-end' }}>
+        <View style={{ position: 'absolute', top: 4, left: 8, right: 8, bottom: 0, backgroundColor: '#fbf5e4', borderRadius: 6, borderWidth: 1, borderColor: '#c9b78e', boxShadow: [{ offsetX: 0, offsetY: 3, blurRadius: 6, color: 'rgba(56,32,10,0.35)' }] }} />
+        <View style={{ position: 'absolute', top: 0, left: 16, width: 24, height: 8, backgroundColor: 'rgba(246,232,190,0.85)', borderRadius: 1, transform: [{ rotate: '-4deg' }] }} />
+        <View style={{ position: 'absolute', bottom: 6, left: 14, right: 14, height: 8, backgroundColor: '#ece2c8', borderRadius: 4, borderWidth: 1, borderColor: '#a5905f' }} />
+      </View>
+    );
+  }
+  if (kind === 'neumorph') {
+    return (
+      <View style={{ width: 56, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ width: 44, height: 30, backgroundColor: '#e0e5ec', borderRadius: 10, boxShadow: [{ offsetX: -3, offsetY: -3, blurRadius: 6, color: '#ffffff' }, { offsetX: 3, offsetY: 3, blurRadius: 6, color: '#b8bcc2' }] }} />
+        <View style={{ position: 'absolute', width: 22, height: 8, backgroundColor: '#e0e5ec', borderRadius: 5, boxShadow: [{ inset: true, offsetX: 2, offsetY: 2, blurRadius: 4, color: '#b8bcc2' }, { inset: true, offsetX: -2, offsetY: -2, blurRadius: 4, color: '#ffffff' }] }} />
+      </View>
+    );
+  }
+  return (
+    <View style={{ width: 56, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: 44, height: 30, backgroundColor: '#ffffff', borderRadius: 8, borderWidth: 1, borderColor: '#E8EAEF' }} />
+      <View style={{ position: 'absolute', width: 22, height: 8, backgroundColor: '#F2F4F7', borderRadius: 4 }} />
+    </View>
+  );
+}
 
 /** 底部选项面板（DeepSeek 式 radio 列表） */
 function OptionSheet<T extends string>({
@@ -29,7 +90,7 @@ function OptionSheet<T extends string>({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={{ flex: 1, backgroundColor: C.mask, justifyContent: 'flex-end' }} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity activeOpacity={1} style={{ backgroundColor: C.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 30, paddingTop: 14, paddingHorizontal: 16 }}>
+        <TouchableOpacity activeOpacity={1} style={{ ...SF.sheet, paddingBottom: 30, paddingTop: 14, paddingHorizontal: 16 }}>
           <View style={{ width: 36, height: 4, borderRadius: 999, backgroundColor: C.line, alignSelf: 'center', marginBottom: 12 }} />
           <Text style={{ fontSize: fs(15), fontWeight: '700', color: C.ink, textAlign: 'center', marginBottom: 8 }}>{title}</Text>
           {options.map((o) => (
@@ -148,7 +209,7 @@ export default function Settings() {
   const styleLabel: Record<AnswerStyle, string> = { concise: t('concise'), detailed: t('detailed') };
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.paper }}>
+    <View style={{ flex: 1, ...SF.page }}>
       <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 54, paddingBottom: 40 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <Text style={{ fontSize: fs(20), fontWeight: '800', color: C.ink }}>{t('settings')}</Text>
@@ -159,13 +220,13 @@ export default function Settings() {
 
         {/* 资料区 */}
         <TouchableOpacity
-          style={{ backgroundColor: C.white, borderRadius: 16, borderWidth: 1, borderColor: C.line, padding: 16, marginBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 14 }}
+          style={{ ...SF.card, padding: 16, marginBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 14 }}
           onPress={() => !guest && router.push('/profile-edit')}
           disabled={guest}
           activeOpacity={guest ? 1 : 0.6}
         >
           <View style={{ width: 48, height: 48, borderRadius: 999, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ color: C.white, fontSize: 18, fontWeight: '800' }}>{(guest ? '客' : nickname || '同')[0]}</Text>
+            <Text style={{ color: C.onAccent, fontSize: 18, fontWeight: '800' }}>{(guest ? '客' : nickname || '同')[0]}</Text>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: fs(16), fontWeight: '800', color: C.ink }}>{guest ? t('guest') : nickname || '同学'}</Text>
@@ -184,8 +245,11 @@ export default function Settings() {
           <SettingRow icon={<Icon name="font" size={16} color={C.ink} />} title={t('fontSize')} value={fontLabel[settings.fontSize]} onPress={() => setSheet('fontSize')} last />
         </SettingGroup>
 
+        {/* 主题风格：三选一（极简 / 拟物 / 新拟物） */}
+        <StylePicker />
+
         {/* 字体大小预览条 */}
-        <View style={{ backgroundColor: C.white, borderRadius: 16, borderWidth: 1, borderColor: C.line, padding: 14, marginBottom: 14, alignItems: 'center' }}>
+        <View style={{ ...SF.card, padding: 14, marginBottom: 14, alignItems: 'center' }}>
           <Text style={{ fontSize: fs(13), color: C.slate, lineHeight: fs(22) }}>{t('fontPreview')}</Text>
         </View>
 
@@ -232,7 +296,7 @@ export default function Settings() {
           {serverEdit && (
             <View style={{ padding: 16, gap: 10 }}>
               <TextInput
-                style={{ borderWidth: 1, borderColor: C.line, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: fs(13), color: C.ink, backgroundColor: C.group }}
+                style={{ ...SF.input, paddingHorizontal: 12, paddingVertical: 10, fontSize: fs(13), color: C.ink }}
                 value={base}
                 onChangeText={setBase}
                 autoCapitalize="none"

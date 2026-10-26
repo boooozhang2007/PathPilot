@@ -5,7 +5,7 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingVi
 import * as Clipboard from 'expo-clipboard';
 import { api, getApiBase, getToken } from '../../lib/api';
 import { createUtf8StreamDecoder } from '../../lib/utf8';
-import { C, useSettings } from '../../components/ui';
+import { C, SF, useSettings } from '../../components/ui';
 import { Icon, LogoMark } from '../../components/icons';
 import { Markdown } from '../../components/Markdown';
 import { makeT } from '../../lib/i18n';
@@ -265,9 +265,9 @@ export default function AdvisorTab() {
   const currentTitle = sessions.find((s) => s.id === sessionId)?.title ?? 'PathPilot';
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.paper }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, ...SF.page }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {/* 顶栏：侧栏开关 / 标题 / 新建对话 */}
-      <View style={{ paddingTop: 54, paddingHorizontal: 12, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderBottomColor: C.line, backgroundColor: C.paper }}>
+      <View style={{ paddingTop: 54, paddingHorizontal: 12, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderBottomColor: C.line }}>
         <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setSidebarOpen(true)}>
           <Icon name="menu" size={22} color={C.ink} />
         </TouchableOpacity>
@@ -297,7 +297,7 @@ export default function AdvisorTab() {
             <Text style={{ fontSize: fs(13), color: C.slate, marginBottom: 24, textAlign: 'center' }}>{t('welcomeSubtitle')}</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
               {SUGGESTIONS.map((s2) => (
-                <TouchableOpacity key={s2} style={{ backgroundColor: C.group, borderRadius: 999, paddingHorizontal: 13, paddingVertical: 8 }} onPress={() => send(s2)}>
+                <TouchableOpacity key={s2} style={{ ...SF.raised, borderRadius: 999, paddingHorizontal: 13, paddingVertical: 8 }} onPress={() => send(s2)}>
                   <Text style={{ fontSize: fs(12), color: C.ink }}>{s2}</Text>
                 </TouchableOpacity>
               ))}
@@ -308,7 +308,7 @@ export default function AdvisorTab() {
         {messages.map((m, i) =>
           m.role === 'user' ? (
             <View key={m.id} style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 14 }}>
-              <View style={{ maxWidth: '82%', backgroundColor: C.group, borderRadius: 18, borderBottomRightRadius: 5, paddingHorizontal: 14, paddingVertical: 10 }}>
+              <View style={{ ...SF.inset, maxWidth: '82%', borderRadius: 18, borderBottomRightRadius: 6, paddingHorizontal: 14, paddingVertical: 10 }}>
                 <Text style={{ fontSize: fs(14), lineHeight: fs(21), color: C.ink }}>{m.content}</Text>
               </View>
             </View>
@@ -344,8 +344,8 @@ export default function AdvisorTab() {
       </ScrollView>
 
       {/* 输入区（DeepSeek 式）：圆角容器 + 多行输入 + 功能开关 + 发送/停止 */}
-      <View style={{ padding: 10, paddingBottom: 14, backgroundColor: C.paper, borderTopWidth: 1, borderTopColor: C.line }}>
-        <View style={{ backgroundColor: C.group, borderRadius: 18, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 8 }}>
+      <View style={{ padding: 10, paddingBottom: 14, borderTopWidth: 1, borderTopColor: C.line }}>
+        <View style={{ ...SF.inset, borderRadius: 18, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 8 }}>
           <TextInput
             style={{ fontSize: fs(14), color: C.ink, maxHeight: 110, minHeight: 24, padding: 0, textAlignVertical: 'center' }}
             placeholder={t('inputPlaceholder')}
@@ -356,14 +356,14 @@ export default function AdvisorTab() {
           />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
             <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5, backgroundColor: settings.showThinking ? C.accentSoft : 'transparent', borderWidth: 1, borderColor: settings.showThinking ? C.accent : C.line }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5, backgroundColor: settings.showThinking ? C.accentSoft : 'transparent', borderWidth: 1, borderColor: settings.showThinking ? C.accent : C.line, boxShadow: settings.showThinking ? SF.chip.boxShadow : undefined }}
               onPress={() => update({ showThinking: !settings.showThinking })}
             >
               <Icon name="brain" size={14} color={settings.showThinking ? C.accent : C.slate} />
               <Text style={{ fontSize: fs(12), fontWeight: '600', color: settings.showThinking ? C.accent : C.slate }}>{t('think')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5, backgroundColor: settings.answerStyle === 'concise' ? C.accentSoft : 'transparent', borderWidth: 1, borderColor: settings.answerStyle === 'concise' ? C.accent : C.line }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5, backgroundColor: settings.answerStyle === 'concise' ? C.accentSoft : 'transparent', borderWidth: 1, borderColor: settings.answerStyle === 'concise' ? C.accent : C.line, boxShadow: settings.answerStyle === 'concise' ? SF.chip.boxShadow : undefined }}
               onPress={() => update({ answerStyle: settings.answerStyle === 'concise' ? 'detailed' : 'concise' })}
             >
               <Icon name="pen" size={14} color={settings.answerStyle === 'concise' ? C.accent : C.slate} />
@@ -387,7 +387,6 @@ export default function AdvisorTab() {
             )}
           </View>
         </View>
-        <Text style={{ fontSize: fs(10), color: C.slate2, textAlign: 'center', marginTop: 6 }}>{t('disclaimer')}</Text>
       </View>
 
       {/* 侧栏抽屉：历史对话（支持批量删除） */}
@@ -442,7 +441,7 @@ export default function AdvisorTab() {
                     {grouped[g].map((s) => (
                       <TouchableOpacity
                         key={s.id}
-                        style={{ backgroundColor: !selectMode && s.id === sessionId ? C.group : 'transparent', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                        style={{ ...(!selectMode && s.id === sessionId ? SF.inset : { backgroundColor: 'transparent' }), borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}
                         onPress={() => {
                           if (selectMode) {
                             setSelected((prev) => {
@@ -479,9 +478,9 @@ export default function AdvisorTab() {
       {/* 长按操作面板：重命名 / 删除 */}
       <Modal visible={!!manageFor} transparent animationType="fade" onRequestClose={() => setManageFor(null)}>
         <Pressable style={{ flex: 1, backgroundColor: C.mask, justifyContent: 'center', alignItems: 'center' }} onPress={() => setManageFor(null)}>
-          <Pressable style={{ backgroundColor: C.white, borderRadius: 16, width: '76%', overflow: 'hidden' }} onPress={() => {}}>
+          <Pressable style={{ ...SF.card, width: '76%', overflow: 'hidden' }} onPress={() => {}}>
             <TouchableOpacity
-              style={{ paddingVertical: 15, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.line + '70' }}
+              style={{ paddingVertical: 15, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.line }}
               onPress={() => {
                 setRenameFor(manageFor);
                 setRenameText(manageFor?.title ?? '');
@@ -499,7 +498,7 @@ export default function AdvisorTab() {
             >
               <Text style={{ fontSize: fs(15), color: '#E5484D', fontWeight: '600' }}>{t('deleteChat')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={{ paddingVertical: 15, alignItems: 'center', borderTopWidth: 1, borderTopColor: C.line + '70' }} onPress={() => setManageFor(null)}>
+            <TouchableOpacity style={{ paddingVertical: 15, alignItems: 'center', borderTopWidth: 1, borderTopColor: C.line }} onPress={() => setManageFor(null)}>
               <Text style={{ fontSize: fs(15), color: C.slate }}>{t('cancel')}</Text>
             </TouchableOpacity>
           </Pressable>
@@ -509,10 +508,10 @@ export default function AdvisorTab() {
       {/* 重命名对话框 */}
       <Modal visible={!!renameFor} transparent animationType="fade" onRequestClose={() => setRenameFor(null)}>
         <Pressable style={{ flex: 1, backgroundColor: C.mask, justifyContent: 'center', alignItems: 'center' }} onPress={() => setRenameFor(null)}>
-          <Pressable style={{ backgroundColor: C.white, borderRadius: 16, width: '80%', padding: 18 }} onPress={() => {}}>
+          <Pressable style={{ ...SF.card, width: '80%', padding: 18 }} onPress={() => {}}>
             <Text style={{ fontSize: fs(15), fontWeight: '700', color: C.ink, marginBottom: 12 }}>{t('renameChat')}</Text>
             <TextInput
-              style={{ borderWidth: 1, borderColor: C.line, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: fs(14), color: C.ink, backgroundColor: C.group, marginBottom: 14 }}
+              style={{ ...SF.input, paddingHorizontal: 12, paddingVertical: 9, fontSize: fs(14), color: C.ink, marginBottom: 14 }}
               value={renameText}
               onChangeText={setRenameText}
               autoFocus
@@ -543,7 +542,7 @@ export default function AdvisorTab() {
 function MsgAction({ icon, label, onPress }: { icon: 'copy' | 'check' | 'refresh'; label: string; onPress: () => void }) {
   const { fs } = useSettings();
   return (
-    <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: C.group }} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity style={{ ...SF.chip, flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: C.group }} onPress={onPress} activeOpacity={0.7}>
       <Icon name={icon} size={13} color={C.slate} />
       <Text style={{ fontSize: fs(11), color: C.slate }}>{label}</Text>
     </TouchableOpacity>
@@ -558,7 +557,7 @@ function ToolList({ tools }: { tools: ToolState[] }) {
   if (!settings.showTools || tools.length === 0) return null;
   const running = tools.some((x) => x.status === 'running');
   return (
-    <TouchableOpacity style={{ backgroundColor: C.group, borderRadius: 10, padding: 9, marginTop: 8 }} onPress={() => setOpen((v) => !v)} activeOpacity={0.7}>
+    <TouchableOpacity style={{ ...SF.inset, borderRadius: 10, padding: 9, marginTop: 8 }} onPress={() => setOpen((v) => !v)} activeOpacity={0.7}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
         {running ? <Icon name="clock" size={13} color={C.slate} /> : <Icon name="wrench" size={13} color={C.slate} />}
         <Text style={{ fontSize: fs(11), color: C.slate }}>
@@ -568,7 +567,7 @@ function ToolList({ tools }: { tools: ToolState[] }) {
       </View>
       {open &&
         tools.map((x, i) => (
-          <View key={i} style={{ marginTop: 7, borderTopWidth: 1, borderTopColor: C.line + '60', paddingTop: 6 }}>
+          <View key={i} style={{ marginTop: 7, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 6 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
               <Icon name={x.status === 'running' ? 'clock' : 'checkCircle'} size={12} color={x.status === 'running' ? C.slate : C.teal} />
               <Text style={{ fontSize: fs(11), fontWeight: '700', color: C.ink }}>{x.name}</Text>
@@ -602,7 +601,7 @@ function StreamBubble({ s }: { s: StreamState }) {
         <Text style={{ fontSize: fs(12), fontWeight: '700', color: C.ink }}>PathPilot</Text>
       </View>
       {settings.showThinking && s.thinking ? (
-        <TouchableOpacity style={{ backgroundColor: C.group, borderRadius: 10, padding: 9, marginBottom: 8 }} onPress={() => setThinkOpen((v) => !v)} activeOpacity={0.7}>
+        <TouchableOpacity style={{ ...SF.inset, borderRadius: 10, padding: 9, marginBottom: 8 }} onPress={() => setThinkOpen((v) => !v)} activeOpacity={0.7}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Icon name="brain" size={13} color={thinkingActive ? C.accent : C.slate} />
             <Text style={{ fontSize: fs(11), color: thinkingActive ? C.accent : C.slate, fontWeight: '600' }}>

@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { api } from '../lib/api';
-import { C, Btn, Loading, useSettings } from '../components/ui';
+import { C, SF, Btn, Loading, useSettings } from '../components/ui';
 import { Icon } from '../components/icons';
 import type { ProfileDTO } from '@pathpilot/shared';
 import { GRADES, GRADE_LABELS, CAREER_PATHS, CAREER_PATH_LABELS, MBTI_DIMENSIONS } from '@pathpilot/shared';
@@ -59,7 +59,7 @@ function MonthPicker({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: C.mask, justifyContent: 'flex-end' }} onPress={onClose}>
-        <Pressable style={{ backgroundColor: C.paper, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 30, paddingTop: 14 }} onPress={() => {}}>
+        <Pressable style={{ ...SF.sheet, paddingBottom: 30, paddingTop: 14 }} onPress={() => {}}>
           <View style={{ width: 36, height: 4, borderRadius: 999, backgroundColor: C.line, alignSelf: 'center', marginBottom: 10 }} />
           <Text style={{ fontSize: fs(15), fontWeight: '700', color: C.ink, textAlign: 'center', marginBottom: 8 }}>选择毕业时间（年月）</Text>
           <View style={{ height: ROW * 7, flexDirection: 'row', paddingHorizontal: 12 }}>
@@ -179,7 +179,7 @@ export default function ProfileEdit() {
   if (loading) return <Loading />;
   if (!profile) {
     return (
-      <View style={{ flex: 1, backgroundColor: C.paper, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <View style={{ flex: 1, ...SF.page, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <Text style={{ color: C.slate, fontSize: 13 }}>资料加载失败，请先登录</Text>
         <Btn title="返回" kind="ghost" onPress={() => router.back()} style={{ marginTop: 12, paddingHorizontal: 24 }} />
       </View>
@@ -187,9 +187,10 @@ export default function ProfileEdit() {
   }
 
   const gradYM = (profile.graduationDate || '').slice(0, 7);
+  const inputSt = { ...SF.input, paddingHorizontal: 12, paddingVertical: 10, fontSize: fs(13), color: C.ink };
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: C.paper }} contentContainerStyle={{ padding: 16, paddingTop: 54, paddingBottom: 40 }}>
+    <ScrollView style={{ flex: 1, ...SF.page }} contentContainerStyle={{ padding: 16, paddingTop: 54, paddingBottom: 40 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <Text style={{ fontSize: 20, fontWeight: '800', color: C.ink }}>个人信息</Text>
         <TouchableOpacity onPress={() => router.back()}>
@@ -198,19 +199,19 @@ export default function ProfileEdit() {
       </View>
 
       {msg ? <View style={{ backgroundColor: C.tealSoft, borderRadius: 10, padding: 10, marginBottom: 12 }}><Text style={{ color: C.teal, fontSize: 12 }}>{msg}</Text></View> : null}
-      {err ? <View style={{ backgroundColor: C.accentSoft, borderRadius: 10, padding: 10, marginBottom: 12 }}><Text style={{ color: C.accent, fontSize: 12 }}>{err}</Text></View> : null}
+      {err ? <View style={{ backgroundColor: C.amberSoft, borderRadius: 10, padding: 10, marginBottom: 12 }}><Text style={{ color: C.amber, fontSize: 12 }}>{err}</Text></View> : null}
 
       {/* 头像 */}
-      <View style={{ backgroundColor: C.white, borderRadius: 14, borderWidth: 1, borderColor: C.line, padding: 16, marginBottom: 12, alignItems: 'center' }}>
+      <View style={{ ...SF.card, padding: 16, marginBottom: 12, alignItems: 'center' }}>
         <TouchableOpacity onPress={pickAvatar}>
           {profile.avatar ? (
             <Image source={{ uri: profile.avatar }} style={{ width: 84, height: 84, borderRadius: 999 }} />
           ) : (
             <View style={{ width: 84, height: 84, borderRadius: 999, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ color: '#fff', fontSize: 30, fontWeight: '800' }}>{(profile.nickname || '同')[0]}</Text>
+              <Text style={{ color: C.onAccent, fontSize: 30, fontWeight: '800' }}>{(profile.nickname || '同')[0]}</Text>
             </View>
           )}
-          <View style={{ position: 'absolute', right: -2, bottom: -2, width: 28, height: 28, borderRadius: 999, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: C.white }}>
+          <View style={{ position: 'absolute', right: -2, bottom: -2, width: 28, height: 28, borderRadius: 999, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: C.paper }}>
             <Icon name="pen" size={13} color="#FFFFFF" />
           </View>
         </TouchableOpacity>
@@ -222,19 +223,19 @@ export default function ProfileEdit() {
         ) : null}
       </View>
 
-      <View style={{ backgroundColor: C.white, borderRadius: 14, borderWidth: 1, borderColor: C.line, padding: 16, gap: 12 }}>
+      <View style={{ ...SF.card, padding: 16, gap: 12 }}>
         <View>
           <Text style={s.label}>昵称</Text>
-          <TextInput style={s.input} value={profile.nickname} onChangeText={(v) => applyProfile({ ...profile, nickname: v })} maxLength={30} />
+          <TextInput style={inputSt} value={profile.nickname} onChangeText={(v) => applyProfile({ ...profile, nickname: v })} maxLength={30} />
         </View>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <View style={{ flex: 1 }}>
             <Text style={s.label}>学校</Text>
-            <TextInput style={s.input} value={profile.school ?? ''} onChangeText={(v) => applyProfile({ ...profile, school: v })} />
+            <TextInput style={inputSt} value={profile.school ?? ''} onChangeText={(v) => applyProfile({ ...profile, school: v })} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={s.label}>专业</Text>
-            <TextInput style={s.input} value={profile.major ?? ''} onChangeText={(v) => applyProfile({ ...profile, major: v })} />
+            <TextInput style={inputSt} value={profile.major ?? ''} onChangeText={(v) => applyProfile({ ...profile, major: v })} />
           </View>
         </View>
 
@@ -248,9 +249,9 @@ export default function ProfileEdit() {
                   <TouchableOpacity
                     key={g}
                     onPress={() => savePatch({ grade: g })}
-                    style={{ flex: 1, borderRadius: 999, paddingVertical: 7, alignItems: 'center', backgroundColor: profile.grade === g ? C.accent : C.group }}
+                    style={{ ...SF.chip, flex: 1, borderRadius: 999, paddingVertical: 7, alignItems: 'center', backgroundColor: profile.grade === g ? C.accent : C.group, borderWidth: 0 }}
                   >
-                    <Text style={{ fontSize: fs(12), fontWeight: '600', color: profile.grade === g ? '#fff' : C.slate }}>{GRADE_LABELS[g]}</Text>
+                    <Text style={{ fontSize: fs(12), fontWeight: '600', color: profile.grade === g ? C.onAccent : C.slate }}>{GRADE_LABELS[g]}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -261,7 +262,7 @@ export default function ProfileEdit() {
         {/* 预计毕业时间：年月选择器 */}
         <View>
           <Text style={s.label}>预计毕业时间（年月）</Text>
-          <TouchableOpacity style={[s.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]} onPress={() => setMonthPickerOpen(true)}>
+          <TouchableOpacity style={[inputSt, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]} onPress={() => setMonthPickerOpen(true)}>
             <Text style={{ fontSize: 13, color: gradYM ? C.ink : C.slate2 }}>{gradYM || '点击选择（如 2028-06）'}</Text>
             <Icon name="calendar" size={16} color={C.slate2} />
           </TouchableOpacity>
@@ -280,9 +281,9 @@ export default function ProfileEdit() {
                     <TouchableOpacity
                       key={opt}
                       onPress={() => tapMbti(di, opt)}
-                      style={{ flex: 1, borderRadius: 10, paddingVertical: 8, alignItems: 'center', backgroundColor: active ? C.accent : C.group, borderWidth: 1.5, borderColor: active ? C.accent : C.line }}
+                      style={{ ...SF.chip, flex: 1, borderRadius: 10, paddingVertical: 8, alignItems: 'center', backgroundColor: active ? C.accent : C.group, borderWidth: 1.5, borderColor: active ? C.accent : C.line }}
                     >
-                      <Text style={{ fontSize: fs(12), fontWeight: '600', color: active ? '#fff' : C.slate }}>{dim.labels[oi]}</Text>
+                      <Text style={{ fontSize: fs(12), fontWeight: '600', color: active ? C.onAccent : C.slate }}>{dim.labels[oi]}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -308,14 +309,14 @@ export default function ProfileEdit() {
 
         <View>
           <Text style={s.label}>目标岗位</Text>
-          <TextInput style={s.input} value={profile.targetRole} onChangeText={(v) => applyProfile({ ...profile, targetRole: v })} placeholder="Java 后端开发" placeholderTextColor={C.slate2} />
+          <TextInput style={inputSt} value={profile.targetRole} onChangeText={(v) => applyProfile({ ...profile, targetRole: v })} placeholder="Java 后端开发" placeholderTextColor={C.slate2} />
         </View>
         <View>
           <Text style={s.label}>发展路径</Text>
           <View style={{ flexDirection: 'row', gap: 6 }}>
             {CAREER_PATHS.map((p) => (
-              <TouchableOpacity key={p} onPress={() => savePatch({ careerPath: p })} style={{ flex: 1, borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: profile.careerPath === p ? C.accent : C.group }}>
-                <Text style={{ fontSize: 12, fontWeight: '600', color: profile.careerPath === p ? '#fff' : C.slate }}>{CAREER_PATH_LABELS[p]}</Text>
+              <TouchableOpacity key={p} onPress={() => savePatch({ careerPath: p })} style={{ ...SF.chip, flex: 1, borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: profile.careerPath === p ? C.accent : C.group, borderWidth: 0 }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: profile.careerPath === p ? C.onAccent : C.slate }}>{CAREER_PATH_LABELS[p]}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -335,14 +336,4 @@ export default function ProfileEdit() {
 
 const s = {
   label: { fontSize: 12, fontWeight: '600', color: C.slate, marginBottom: 6 },
-  input: {
-    borderWidth: 1,
-    borderColor: C.line,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 13,
-    color: C.ink,
-    backgroundColor: C.white,
-  },
 } as const;

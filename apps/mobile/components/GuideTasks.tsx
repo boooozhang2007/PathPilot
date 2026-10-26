@@ -4,7 +4,7 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api, getToken, isGuest } from '../lib/api';
-import { C, useSettings } from './ui';
+import { C, SF, useSettings } from './ui';
 import { Icon, type IconName } from './icons';
 import type { ProfileDTO, ChatSessionSummaryDTO, RoadmapVersionSummary } from '@pathpilot/shared';
 
@@ -104,7 +104,7 @@ export function GuideTasks() {
   }
 
   return (
-    <View style={{ backgroundColor: C.white, borderRadius: 16, borderWidth: 1, borderColor: C.line, marginBottom: 12, overflow: 'hidden' }}>
+    <View style={{ ...SF.card, marginBottom: 12, overflow: 'hidden' }}>
       {/* 头部：进度 + × 关闭 */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -121,7 +121,7 @@ export function GuideTasks() {
         <TouchableOpacity
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           onPress={dismiss}
-          style={{ width: 26, height: 26, borderRadius: 999, backgroundColor: C.group, alignItems: 'center', justifyContent: 'center' }}
+          style={{ ...SF.chip, width: 26, height: 26, borderRadius: 999, backgroundColor: C.group, alignItems: 'center', justifyContent: 'center' }}
         >
           <Icon name="close" size={13} color={C.slate} strokeWidth={2.2} />
         </TouchableOpacity>
@@ -141,14 +141,15 @@ export function GuideTasks() {
               <TouchableOpacity
                 key={s.key}
                 style={[
-                  { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 11, borderTopWidth: 1, borderTopColor: C.line + '70' },
-                  active && !done && { backgroundColor: C.accentSoft + '66' },
+                  { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 11, borderTopWidth: 1, borderTopColor: C.line },
+                  active && !done && { backgroundColor: C.accentSoft },
                 ]}
                 onPress={() => router.push(s.route as never)}
                 activeOpacity={0.7}
               >
                 <View
                   style={{
+                    ...SF.chip,
                     width: 30,
                     height: 30,
                     borderRadius: 999,
@@ -157,7 +158,7 @@ export function GuideTasks() {
                     backgroundColor: done ? C.teal : active ? C.accent : C.group,
                   }}
                 >
-                  {done ? <Icon name="check" size={13} color="#FFFFFF" strokeWidth={3} /> : <Icon name={s.icon} size={13} color={active ? '#FFFFFF' : C.slate} />}
+                  {done ? <Icon name="check" size={13} color={C.onAccent} strokeWidth={3} /> : <Icon name={s.icon} size={13} color={active ? C.onAccent : C.slate} />}
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: fs(13), fontWeight: '700', color: done ? C.slate : C.ink }}>

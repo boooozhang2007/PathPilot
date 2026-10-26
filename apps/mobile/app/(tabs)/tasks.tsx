@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import { ScrollView, View, Text, TextInput, Modal, RefreshControl, TouchableOpacity, Pressable, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { api } from '../../lib/api';
-import { C, Card, Tag, Loading, ErrorBox, EmptyBox, Btn, Body, useSettings } from '../../components/ui';
+import { C, SF, Card, Tag, Loading, ErrorBox, EmptyBox, Btn, Body, useSettings } from '../../components/ui';
 import { Icon } from '../../components/icons';
 import type { RoadmapTaskDTO } from '@pathpilot/shared';
 import { TASK_STATUS_LABELS, PRIORITY_LABELS } from '@pathpilot/shared';
@@ -123,18 +123,19 @@ export default function TasksTab() {
   }
 
   if (loading) return <Loading />;
+  const inputSt = { ...SF.input, paddingHorizontal: 12, paddingVertical: 10, fontSize: fs(13), color: C.ink, marginBottom: 10 };
   const today = new Date().toISOString().slice(0, 10);
   const visible =
     view === 'all' ? tasks : view === 'week' ? tasks.filter((t) => t.semester === curSemester) : tasks.filter((t) => t.status === 'in_progress' || (t.completedAt ?? '').startsWith(today));
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.paper, paddingTop: 54 }}>
+    <View style={{ flex: 1, ...SF.page, paddingTop: 54 }}>
       <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <Text style={{ fontSize: 20, fontWeight: '800', color: C.ink }}>任务</Text>
           {tasks.length > 0 && (
             <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, borderWidth: 1, borderColor: manage ? C.accent : C.line, backgroundColor: manage ? C.accentSoft : 'transparent', paddingHorizontal: 11, paddingVertical: 5 }}
+              style={{ ...SF.raised, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, borderColor: manage ? C.accent : C.line, backgroundColor: manage ? C.accentSoft : 'transparent', paddingHorizontal: 11, paddingVertical: 5 }}
               onPress={() => {
                 setManage((v) => !v);
                 setSelected(new Set());
@@ -151,12 +152,19 @@ export default function TasksTab() {
             <Text style={{ color: C.amber, fontSize: fs(12), flex: 1 }}>{syncFail}</Text>
           </View>
         ) : null}
-        <View style={{ flexDirection: 'row', backgroundColor: C.group, borderRadius: 10, padding: 3, marginTop: 12 }}>
-          {([['today', '今日'], ['week', '本学期'], ['all', '全部']] as [View2, string][]).map(([k, label]) => (
-            <TouchableOpacity key={k} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, backgroundColor: view === k ? C.paper : 'transparent', alignItems: 'center' }} onPress={() => setView(k)}>
-              <Text style={{ fontWeight: '600', fontSize: 13, color: view === k ? C.ink : C.slate }}>{label}</Text>
-            </TouchableOpacity>
-          ))}
+        <View style={{ ...SF.inset, flexDirection: 'row', padding: 3, marginTop: 12, borderRadius: 12 }}>
+          {([['today', '今日'], ['week', '本学期'], ['all', '全部']] as [View2, string][]).map(([k, label]) => {
+            const active = view === k;
+            return (
+              <TouchableOpacity
+                key={k}
+                style={{ flex: 1, paddingVertical: 8, borderRadius: 9, alignItems: 'center', ...(active ? { ...SF.raised, borderWidth: 0 } : {}) }}
+                onPress={() => setView(k)}
+              >
+                <Text style={{ fontWeight: '600', fontSize: 13, color: active ? C.ink : C.slate }}>{label}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
@@ -262,7 +270,7 @@ export default function TasksTab() {
       <Modal visible={!!detail} animationType="slide" transparent onRequestClose={() => setDetail(null)}>
         <Pressable style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(11,34,57,0.35)' }} onPress={() => setDetail(null)}>
           <Pressable onPress={(e) => e.stopPropagation()}>
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ backgroundColor: C.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '86%' }}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ ...SF.sheet, maxHeight: '86%' }}>
               {detail ? (
                 <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 28 }} keyboardShouldPersistTaps="handled">
                   <View style={{ width: 40, height: 4, borderRadius: 999, backgroundColor: C.line, alignSelf: 'center', marginBottom: 12 }} />
@@ -277,7 +285,7 @@ export default function TasksTab() {
                   ) : (
                     <View style={{ marginBottom: 12 }}>
                       <TextInput
-                        style={[s.input, { minHeight: 80, textAlignVertical: 'top' }]}
+                        style={[inputSt, { minHeight: 80, textAlignVertical: 'top' }]}
                         value={descDraft}
                         onChangeText={setDescDraft}
                         multiline
@@ -291,20 +299,20 @@ export default function TasksTab() {
                     </View>
                   )}
 
-                  <View style={{ backgroundColor: C.group, borderRadius: 10, padding: 10, marginBottom: 8 }}>
+                  <View style={{ ...SF.inset, padding: 10, marginBottom: 8 }}>
                     <Text style={{ fontSize: 12, color: C.ink, lineHeight: 18 }}><Text style={{ fontWeight: '700' }}>产出：</Text>{detail.deliverable}</Text>
                   </View>
-                  <View style={{ backgroundColor: C.group, borderRadius: 10, padding: 10, marginBottom: 14 }}>
+                  <View style={{ ...SF.inset, padding: 10, marginBottom: 14 }}>
                     <Text style={{ fontSize: 12, color: C.ink, lineHeight: 18 }}><Text style={{ fontWeight: '700' }}>验收：</Text>{detail.acceptanceCriteria}</Text>
                   </View>
 
                   <Text style={{ fontSize: 13, fontWeight: '700', color: C.ink, marginBottom: 8 }}>记录学习成果</Text>
-                  <TextInput style={s.input} placeholder="成果链接（GitHub/部署地址）" placeholderTextColor={C.slate2} value={evUrl} onChangeText={setEvUrl} autoCapitalize="none" />
+                  <TextInput style={inputSt} placeholder="成果链接（GitHub/部署地址）" placeholderTextColor={C.slate2} value={evUrl} onChangeText={setEvUrl} autoCapitalize="none" />
                   {/* 成果说明 + 实际小时：同行等高对齐 */}
                   <View style={{ flexDirection: 'row', gap: 8, alignItems: 'stretch' }}>
                     <View style={{ flex: 1 }}>
                       <TextInput
-                        style={[s.input, { minHeight: 60, textAlignVertical: 'top', marginBottom: 0 }]}
+                        style={[inputSt, { minHeight: 60, textAlignVertical: 'top', marginBottom: 0 }]}
                         placeholder="成果说明"
                         placeholderTextColor={C.slate2}
                         value={evNote}
@@ -316,7 +324,7 @@ export default function TasksTab() {
                       </TouchableOpacity>
                     </View>
                     <TextInput
-                      style={[s.input, { width: 90, minHeight: 60, textAlignVertical: 'top' }]}
+                      style={[inputSt, { width: 90, minHeight: 60, textAlignVertical: 'top' }]}
                       placeholder="实际小时"
                       placeholderTextColor={C.slate2}
                       value={evHours}
@@ -339,7 +347,7 @@ export default function TasksTab() {
 
       {/* 成果说明放大编辑 */}
       <Modal visible={noteMax} animationType="fade" onRequestClose={() => setNoteMax(false)}>
-        <View style={{ flex: 1, backgroundColor: C.paper, paddingTop: 54, paddingHorizontal: 16 }}>
+        <View style={{ flex: 1, ...SF.page, paddingTop: 54, paddingHorizontal: 16 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <Text style={{ fontSize: 17, fontWeight: '800', color: C.ink }}>成果说明</Text>
             <TouchableOpacity onPress={() => setNoteMax(false)} style={{ padding: 6 }}>
@@ -347,7 +355,7 @@ export default function TasksTab() {
             </TouchableOpacity>
           </View>
           <TextInput
-            style={{ flex: 1, backgroundColor: C.white, borderWidth: 1, borderColor: C.line, borderRadius: 12, padding: 14, fontSize: 14, color: C.ink, textAlignVertical: 'top' }}
+            style={{ ...SF.input, flex: 1, padding: 14, fontSize: 14, color: C.ink, textAlignVertical: 'top' }}
             value={evNote}
             onChangeText={setEvNote}
             multiline
@@ -361,16 +369,3 @@ export default function TasksTab() {
   );
 }
 
-const s = {
-  input: {
-    borderWidth: 1,
-    borderColor: C.line,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 13,
-    color: C.ink,
-    backgroundColor: C.white,
-    marginBottom: 10,
-  },
-} as const;

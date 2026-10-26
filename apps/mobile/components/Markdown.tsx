@@ -1,7 +1,7 @@
 // App 端 Markdown 渲染（AI 回复）：react-native-markdown-display，样式随主题/字号实时计算
 import MarkdownDisplay from 'react-native-markdown-display';
 import { useMemo } from 'react';
-import { C, useSettings } from './ui';
+import { C, SF, useSettings } from './ui';
 
 export function Markdown({ text }: { text: string }) {
   const { fs } = useSettings();
@@ -22,9 +22,9 @@ export function Markdown({ text }: { text: string }) {
       ordered_list_icon: { color: C.accent },
       paragraph: { marginTop: 0, marginBottom: 0 },
       link: { color: C.accent, textDecorationLine: 'underline' },
-      code_inline: { backgroundColor: C.group, color: C.ink, fontSize: fs(12), fontFamily: undefined, paddingHorizontal: 4, borderRadius: 4 },
-      codeblock: { backgroundColor: C.group, color: C.ink, fontSize: fs(11), borderRadius: 8, padding: 10 },
-      fence: { backgroundColor: C.group, color: C.ink, borderRadius: 8 },
+      code_inline: { ...SF.chip, backgroundColor: C.group, color: C.ink, fontSize: fs(12), fontFamily: undefined, paddingHorizontal: 4, borderRadius: 4 },
+      codeblock: { ...SF.inset, color: C.ink, fontSize: fs(11), padding: 10 },
+      fence: { ...SF.inset, color: C.ink },
       blockquote: { backgroundColor: C.group, borderLeftColor: C.accent, borderLeftWidth: 3, paddingHorizontal: 10, paddingVertical: 4, marginVertical: 6 },
       hr: { backgroundColor: C.line, marginVertical: 10 },
       table: { borderWidth: 1, borderColor: C.line, borderRadius: 8 },

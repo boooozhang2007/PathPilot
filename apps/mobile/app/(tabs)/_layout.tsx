@@ -1,7 +1,7 @@
-// 底部导航（AI 顾问居中）· 矢量图标组：主题化（DeepSeek 蓝 + 深浅色跟随设置）
+// 底部导航（AI 顾问居中）· 矢量图标组：跟随主题风格（极简 / 拟物皮革栏 / 新拟物浮雕栏）
 import { Tabs } from 'expo-router';
 import { Svg, Path, Circle } from 'react-native-svg';
-import { C, useSettings } from '../../components/ui';
+import { C, SF, useSettings } from '../../components/ui';
 
 function TabIcon({ name, color, focused }: { name: string; color: string; focused: boolean }) {
   const common = {
@@ -59,9 +59,9 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: C.accent,
-        tabBarInactiveTintColor: C.slate2,
-        tabBarStyle: { backgroundColor: C.paper, borderTopColor: C.line, height: 56, paddingBottom: 4 },
+        tabBarActiveTintColor: C.tabActive,
+        tabBarInactiveTintColor: C.tabInactive,
+        tabBarStyle: { ...SF.tabBar, height: 56, paddingBottom: 4 },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
         sceneStyle: { backgroundColor: C.paper },
       }}
