@@ -99,6 +99,41 @@ describe('用户系统与数据权限（PRD 13.1）', () => {
     expect(p.weeklyHours).toBe(10);
   });
 
+  it('个人资料支持单字段保存且不会覆盖其它字段', async () => {
+    const email = `patch${Date.now()}@t.cn`;
+    const token = await register(email);
+    const avatar = await app.inject({
+      method: 'PUT',
+      url: '/api/profile',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { avatar: 'data:image/jpeg;base64,AA==' },
+    });
+
+    expect(avatar.statusCode).toBe(200);
+    expect(avatar.json().avatar).toBe('data:image/jpeg;base64,AA==');
+    expect(avatar.json().targetRole).toBe('');
+
+    const nickname = await app.inject({
+      method: 'PUT',
+      url: '/api/profile',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { nickname: '只保存昵称' },
+    });
+    expect(nickname.statusCode).toBe(200);
+    expect(nickname.json().nickname).toBe('只保存昵称');
+    expect(nickname.json().avatar).toBe('data:image/jpeg;base64,AA==');
+
+    const clearedTarget = await app.inject({
+      method: 'PUT',
+      url: '/api/profile',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { targetRole: '' },
+    });
+    expect(clearedTarget.statusCode).toBe(200);
+    expect(clearedTarget.json().targetRole).toBe('');
+    expect(clearedTarget.json().nickname).toBe('只保存昵称');
+  });
+
   it('用户 A 无法读取用户 B 的资料/经历/任务（越权防护）', async () => {
     await putProfile(tokenA);
     await putProfile(tokenB);

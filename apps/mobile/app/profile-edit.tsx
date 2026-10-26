@@ -81,11 +81,14 @@ export default function ProfileEdit() {
   const [profile, setProfile] = useState<ProfileDTO | null>(null);
   // 同步最新档案的 ref：连续快速修改多个选项时，savePatch 不会用到过期闭包
   const profileRef = useRef<ProfileDTO | null>(null);
+  const activeSavesRef = useRef(0);
+  const savingFieldsRef = useRef(new Set<keyof ProfileDTO>());
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [weeklyHoursDraft, setWeeklyHoursDraft] = useState('');
   // MBTI 逐维选择状态（独立于 profile.mbti：选到一半也能保持高亮，凑齐 4 位才入库）
   const [mbtiSel, setMbtiSel] = useState<[string | null, string | null, string | null, string | null]>([null, null, null, null]);
 
@@ -95,6 +98,7 @@ export default function ProfileEdit() {
         if (p) {
           profileRef.current = p;
           setProfile(p);
+          setWeeklyHoursDraft(String(p.weeklyHours));
           const m = p.mbti ?? '';
           setMbtiSel(m.length === 4 ? [m[0], m[1], m[2], m[3]] : [null, null, null, null]);
         }
@@ -113,38 +117,45 @@ export default function ProfileEdit() {
     setTimeout(() => setMsg(''), 1800);
   }
 
-  /** 即改即存：合并补丁后立刻 PUT（用于头像/年级/年月/路径/MBTI 等选项类设置） */
-  async function savePatch(patch: Partial<ProfileDTO>, opts?: { silent?: boolean }) {
+  /** 每个资料项独立保存；请求只提交当前字段，不带上其它未保存的编辑。 */
+  async function savePatch(patch: Partial<ProfileDTO>) {
     const base = profileRef.current;
-    if (!base) return;
+    if (!base || !Object.keys(patch).length) return;
+    const fields = Object.keys(patch) as (keyof ProfileDTO)[];
+    if (fields.some((field) => savingFieldsRef.current.has(field))) return;
     const next = { ...base, ...patch };
     applyProfile(next); // 乐观更新，失败回滚
+    fields.forEach((field) => savingFieldsRef.current.add(field));
+    activeSavesRef.current += 1;
     setBusy(true);
     setErr('');
     try {
       const updated = await api<ProfileDTO>('/api/profile', {
         method: 'PUT',
-        json: {
-          nickname: next.nickname,
-          school: next.school ?? undefined,
-          major: next.major ?? undefined,
-          grade: next.grade,
-          graduationDate: next.graduationDate,
-          targetRole: next.targetRole,
-          careerPath: next.careerPath,
-          weeklyHours: next.weeklyHours,
-          mbti: next.mbti ?? null,
-          avatar: next.avatar ?? null,
-        },
+        json: patch,
       });
-      applyProfile(updated);
+      // Keep drafts for other fields. Only the submitted keys come from the
+      // server response; this prevents saving one item from resetting another.
+      const current = profileRef.current ?? next;
+      const saved = { ...current, updatedAt: updated.updatedAt };
+      for (const key of Object.keys(patch) as (keyof ProfileDTO)[]) {
+        if (Object.is(current[key], next[key])) Object.assign(saved, { [key]: updated[key] });
+      }
+      applyProfile(saved);
       await AsyncStorage.setItem('pp_nickname', updated.nickname);
-      if (!opts?.silent) flashSaved();
+      flashSaved();
     } catch (e) {
-      applyProfile(base); // 回滚
+      const current = profileRef.current ?? base;
+      const restored = { ...current };
+      for (const key of Object.keys(patch) as (keyof ProfileDTO)[]) {
+        if (Object.is(current[key], next[key])) Object.assign(restored, { [key]: base[key] });
+      }
+      applyProfile(restored);
       setErr(e instanceof Error ? e.message : '保存失败');
     } finally {
-      setBusy(false);
+      fields.forEach((field) => savingFieldsRef.current.delete(field));
+      activeSavesRef.current -= 1;
+      setBusy(activeSavesRef.current > 0);
     }
   }
 
@@ -173,7 +184,16 @@ export default function ProfileEdit() {
     next[dimIdx] = next[dimIdx] === opt ? null : opt;
     setMbtiSel(next);
     const full = next.every((c) => c) ? next.join('') : null;
-    savePatch({ mbti: full }, { silent: !full });
+    if (full) savePatch({ mbti: full });
+  }
+
+  function saveWeeklyHours() {
+    const value = Number(weeklyHoursDraft);
+    if (!Number.isInteger(value) || value < 1 || value > 80) {
+      setErr('每周时长需为 1-80 小时');
+      return;
+    }
+    savePatch({ weeklyHours: value });
   }
 
   if (loading) return <Loading />;
@@ -226,16 +246,27 @@ export default function ProfileEdit() {
       <View style={{ ...SF.card, padding: 16, gap: 12 }}>
         <View>
           <Text style={s.label}>昵称</Text>
-          <TextInput style={inputSt} value={profile.nickname} onChangeText={(v) => applyProfile({ ...profile, nickname: v })} maxLength={30} />
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <TextInput style={[inputSt, { flex: 1 }]} value={profile.nickname} onChangeText={(v) => applyProfile({ ...profile, nickname: v })} maxLength={30} />
+            <TouchableOpacity style={saveChip} onPress={() => savePatch({ nickname: profile.nickname })} disabled={busy}>
+              <Text style={saveChipText}>保存</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <View style={{ flex: 1 }}>
             <Text style={s.label}>学校</Text>
             <TextInput style={inputSt} value={profile.school ?? ''} onChangeText={(v) => applyProfile({ ...profile, school: v })} />
+            <TouchableOpacity style={saveChipBlock} onPress={() => savePatch({ school: profile.school ?? '' })} disabled={busy}>
+              <Text style={saveChipText}>保存学校</Text>
+            </TouchableOpacity>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={s.label}>专业</Text>
             <TextInput style={inputSt} value={profile.major ?? ''} onChangeText={(v) => applyProfile({ ...profile, major: v })} />
+            <TouchableOpacity style={saveChipBlock} onPress={() => savePatch({ major: profile.major ?? '' })} disabled={busy}>
+              <Text style={saveChipText}>保存专业</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -268,7 +299,6 @@ export default function ProfileEdit() {
           </TouchableOpacity>
         </View>
 
-        {/* MBTI：四维度二选一（独立高亮，凑齐 4 位自动保存） */}
         <View>
           <Text style={s.label}>MBTI 人格（选填，供 AI 针对性建议）</Text>
           <View style={{ gap: 6 }}>
@@ -309,7 +339,12 @@ export default function ProfileEdit() {
 
         <View>
           <Text style={s.label}>目标岗位</Text>
-          <TextInput style={inputSt} value={profile.targetRole} onChangeText={(v) => applyProfile({ ...profile, targetRole: v })} placeholder="Java 后端开发" placeholderTextColor={C.slate2} />
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <TextInput style={[inputSt, { flex: 1 }]} value={profile.targetRole} onChangeText={(v) => applyProfile({ ...profile, targetRole: v })} placeholder="Java 后端开发" placeholderTextColor={C.slate2} />
+            <TouchableOpacity style={saveChip} onPress={() => savePatch({ targetRole: profile.targetRole })} disabled={busy}>
+              <Text style={saveChipText}>保存</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         <View>
           <Text style={s.label}>发展路径</Text>
@@ -321,7 +356,23 @@ export default function ProfileEdit() {
             ))}
           </View>
         </View>
-        <Btn title={busy ? '保存中…' : '保存（昵称/学校/岗位等文字信息）'} onPress={() => savePatch({})} disabled={busy} style={{ marginTop: 4 }} />
+        <View>
+          <Text style={s.label}>每周可投入时间（小时）</Text>
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <TextInput
+              style={[inputSt, { flex: 1 }]}
+              value={weeklyHoursDraft}
+              onChangeText={setWeeklyHoursDraft}
+              keyboardType="number-pad"
+              maxLength={2}
+              placeholder="例如 8"
+              placeholderTextColor={C.slate2}
+            />
+            <TouchableOpacity style={saveChip} onPress={saveWeeklyHours} disabled={busy}>
+              <Text style={saveChipText}>保存</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
 
       <MonthPicker
@@ -337,3 +388,23 @@ export default function ProfileEdit() {
 const s = {
   label: { fontSize: 12, fontWeight: '600', color: C.slate, marginBottom: 6 },
 } as const;
+
+const saveChip = {
+  backgroundColor: C.accent,
+  borderRadius: 9,
+  paddingHorizontal: 11,
+  paddingVertical: 9,
+  minWidth: 48,
+  alignItems: 'center',
+} as const;
+
+const saveChipBlock = {
+  alignSelf: 'flex-start',
+  backgroundColor: C.accent,
+  borderRadius: 8,
+  paddingHorizontal: 9,
+  paddingVertical: 6,
+  marginTop: 6,
+} as const;
+
+const saveChipText = { color: C.onAccent, fontSize: 11, fontWeight: '700' } as const;

@@ -48,7 +48,10 @@ export const profileInput = z.object({
 });
 export type ProfileInput = z.infer<typeof profileInput>;
 /** 局部资料更新：头像、昵称等可以独立保存，不要求同时填写其它资料。 */
-export const profilePatchInput = profileInput.partial();
+export const profilePatchInput = profileInput.partial().extend({
+  // 目标岗位是可选资料；允许用户单独清空它。
+  targetRole: z.string().max(50).optional(),
+});
 export type ProfilePatchInput = z.infer<typeof profilePatchInput>;
 
 // ---------- 技能档案（PRD 8.3） ----------
