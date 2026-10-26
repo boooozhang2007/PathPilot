@@ -4,7 +4,6 @@ import { ScrollView, View, Text, RefreshControl } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { api } from '../../lib/api';
 import { C, SF, Card, Panel, Tag, Ring, Loading, ErrorBox, Btn, useSettings } from '../../components/ui';
-import { Icon } from '../../components/icons';
 import { GuideTasks } from '../../components/GuideTasks';
 import type { DashboardData, RoadmapTaskDTO } from '@pathpilot/shared';
 import { TASK_STATUS_LABELS } from '@pathpilot/shared';
@@ -54,7 +53,6 @@ export default function Home() {
         <View style={{ flex: 1, paddingRight: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={{ color: C.deepText, fontSize: 22, fontWeight: '800' }}>{d?.profile?.nickname ?? '同学'}</Text>
-            <Icon name="rocket" size={20} color={C.deepText} />
           </View>
           <Text style={{ color: C.deepMuted, fontSize: 12, lineHeight: 19, marginTop: 5 }}>{motto}</Text>
           {d?.topGaps?.length ? (
