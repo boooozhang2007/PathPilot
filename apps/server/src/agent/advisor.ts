@@ -8,11 +8,15 @@ import { badRequest, modelCallFailed, notFound } from '../services/errors.js';
 import { buildUserContext } from './context.js';
 import { isLlmConfigured } from './settings.js';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
-import { flowPrompt, flowToolsEnabled, markFlowResult, prepareFlow } from './flow.js';
+import { flowPrompt, markFlowResult, prepareFlow } from './flow.js';
 
 export interface ToolTraceEntry {
   name: string;
   summary: string;
+}
+
+export function buildAdvisorSystemPrompt(ctxSummary: string, flow: import('@pathpilot/shared').AgentFlowDTO): string {
+  return `你是 PathPilot AI 职业顾问，服务对象是计算机专业大学生。${flowPrompt(flow)}当工具能帮助核对用户资料、岗位信息或完成操作时，调用合适的工具并结合返回结果继续回答。对用户明确的请求直接推进；只在关键信息缺失并影响结论时询问。遇到几十小时以上的大目标，保留父任务并用 roadmap_add_task 创建带 parent_task_id 的子任务，为每个子任务设置产出、验收标准和预计时长。中文回答，用 Markdown 排版。\n\n用户数据摘要：\n${ctxSummary}`;
 }
 
 /**
@@ -63,7 +67,7 @@ export function tracedTools(tools: AgentTool<any>[], trace: ToolTraceEntry[]): A
 
 export async function chat(
   userId: number,
-  input: { sessionId?: number; message: string; model?: string; answerStyle?: 'concise' | 'detailed' }
+  input: { sessionId?: number; message: string; answerStyle?: 'concise' | 'detailed' }
 ): Promise<{ sessionId: number; reply: ChatMessageDTO; engine: 'pi-llm' | 'rules'; model?: string; fallbackReason?: string }> {
   // 会话管理（会话记忆不代替正式业务记录，PRD 4.8）
   let sessionId = input.sessionId;
@@ -126,18 +130,18 @@ export async function chat(
     1
   );
   let llmErr = '';
-  const attemptLlm = async (modelId?: string): Promise<void> => {
+  const attemptLlm = async (): Promise<void> => {
     const { runAgentWith } = await import('./pi/runtime.js');
     const { resolveModel } = await import('./pi/provider.js');
     const { buildAgentTools } = await import('./pi/tools.js');
-    const { models, model, cfg } = await resolveModel(modelId);
-    usedModel = model.id ?? cfg.model;
+    const { models, model } = await resolveModel();
+    usedModel = model.id;
     const trace: ToolTraceEntry[] = [];
     const outcome = await runAgentWith(models, model, {
-      systemPrompt: `你是 PathPilot AI 职业顾问，服务对象是计算机专业大学生。${flowPrompt(flow)}\n回答保持${input.answerStyle === 'concise' ? '重点和下一步操作' : '清晰完整并按需给出步骤和依据'}。遇到几十小时以上的大目标，先保留父任务，再用 roadmap_add_task 创建带 parent_task_id 的子任务，为每个子任务设置产出、验收标准和预计时长。中文回答，简洁分段，技能建议区分专业能力与通用能力。\n\n用户数据摘要（授权范围）：\n${ctxSummary}`,
+      systemPrompt: buildAdvisorSystemPrompt(ctxSummary, flow),
       prompt: input.message,
       history: recent,
-      tools: flowToolsEnabled(flow) ? tracedTools(buildAgentTools(userId), trace) : [],
+      tools: tracedTools(buildAgentTools(userId), trace),
       wallClockMs: 300_000,
     });
     if (!outcome.text) throw new Error('模型返回为空');
@@ -146,26 +150,14 @@ export async function chat(
     toolTrace = trace;
   };
   try {
-    await attemptLlm(input.model);
+    await attemptLlm();
   } catch (err) {
     llmErr = err instanceof Error ? err.message : String(err);
-    // 所选模型失败时降级到管理页配置的当前模型重试一次
-    const { getLlmSettings } = await import('./settings.js');
-    const cfg = await getLlmSettings();
-    if (input.model && input.model !== cfg.model) {
-      try {
-        await attemptLlm(cfg.model);
-        fallbackReason = `所选模型 ${input.model} 不可用（${llmErr.slice(0, 80)}），已用 ${cfg.model} 回答`;
-        llmErr = '';
-      } catch (err2) {
-        llmErr = err2 instanceof Error ? err2.message : String(err2);
-      }
-    }
     if (llmErr && /timed? ?out|timeout|econn|fetch failed|network|50[234]/i.test(llmErr)) {
       // 瞬时错误（超时/网络/5xx）间隔 2s 再重试一次
       await new Promise((r) => setTimeout(r, 2000));
       try {
-        await attemptLlm(cfg.model);
+        await attemptLlm();
         llmErr = '';
         fallbackReason = '';
       } catch (err3) {
@@ -180,7 +172,7 @@ export async function chat(
     .values({ sessionId: sid, role: 'assistant', content: replyText, engine, toolCalls: toolTrace.length ? toolTrace : null })
     .returning();
   await db.update(agentChatSessions).set({ updatedAt: new Date().toISOString() }).where(eq(agentChatSessions.id, sid));
-  if (flowToolsEnabled(flow)) await markFlowResult(sid);
+  if (toolTrace.length) await markFlowResult(sid);
   const row = inserted[0];
   return {
     sessionId: sid,

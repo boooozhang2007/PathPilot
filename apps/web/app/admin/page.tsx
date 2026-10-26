@@ -1,14 +1,8 @@
 'use client';
-// 模型管理页:Base URL + API Key → 拉取模型列表 → 设置当前模型
+// 模型管理页：Base URL + API Key + 模型 ID
 import { useEffect, useState } from 'react';
 import { API_BASE } from '@/lib/api';
 import { Ic, Logo } from '@/components/Icon';
-
-interface CatalogItem {
-  id: string;
-  name: string;
-  price: string;
-}
 
 export default function AdminPage() {
   const [adminKey, setAdminKey] = useState('');
@@ -17,8 +11,6 @@ export default function AdminPage() {
   const [apiKey, setApiKey] = useState('');
   const [apiKeySet, setApiKeySet] = useState(false);
   const [model, setModel] = useState('');
-  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
-  const [remoteModels, setRemoteModels] = useState<string[]>([]);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState('');
@@ -43,7 +35,6 @@ export default function AdminPage() {
       setApiKey(d.apiKey);
       setApiKeySet(d.apiKeySet);
       setModel(d.model);
-      setCatalog(d.catalog);
       setAuthed(true);
       localStorage.setItem('pp_admin_key', key);
     } catch (e) {
@@ -62,7 +53,7 @@ export default function AdminPage() {
       const res = await fetch(`${API_BASE}/api/admin/llm`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'x-admin-key': adminKey },
-        body: JSON.stringify({ baseUrl, apiKey: apiKey.includes('…') ? undefined : apiKey, model }),
+        body: JSON.stringify({ baseUrl, apiKey: apiKey.includes('…') ? undefined : apiKey, model: model.trim() }),
       });
       if (!res.ok) throw new Error((await res.json())?.error?.message ?? '保存失败');
       setMsg('已保存,即刻生效');
@@ -74,19 +65,18 @@ export default function AdminPage() {
     }
   }
 
-  async function fetchModels() {
-    setBusy('获取模型列表…');
+  async function clearModel() {
+    setBusy('清除模型配置…');
     setErr('');
     try {
-      const res = await fetch(`${API_BASE}/api/admin/llm/models`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-key': adminKey },
-        body: JSON.stringify({ baseUrl, apiKey: apiKey.includes('…') ? undefined : apiKey }),
+      const res = await fetch(`${API_BASE}/api/admin/llm/model`, {
+        method: 'DELETE',
+        headers: { 'x-admin-key': adminKey },
       });
-      if (!res.ok) throw new Error((await res.json())?.error?.message ?? '获取失败');
+      if (!res.ok) throw new Error((await res.json())?.error?.message ?? '清除失败');
       const d = await res.json();
-      setRemoteModels(d.models);
-      setMsg(`获取到 ${d.models.length} 个模型`);
+      setModel(d.model);
+      setMsg('已清除当前模型配置');
     } catch (e) {
       setErr(e instanceof Error ? e.message : '获取失败');
     } finally {
@@ -143,50 +133,22 @@ export default function AdminPage() {
             </label>
             <input className="pp-input" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" type="password" />
           </div>
+          <div>
+            <label className="pp-label">当前模型 ID</label>
+            <input className="pp-input" value={model} onChange={(e) => setModel(e.target.value)} placeholder="例如 deepseek-chat 或 glm-4.6" />
+            <div className="mt-1 text-xs text-slate-2">填写服务端支持的模型 ID，保存后立即生效。</div>
+          </div>
           <div className="flex gap-2">
-            <button className="pp-btn pp-btn-ghost flex-1 py-2.5 text-sm" onClick={fetchModels} disabled={!!busy}>
-              <Ic name="download" size={14} /> 获取模型
-            </button>
             <button className="pp-btn pp-btn-primary flex-1 py-2.5 text-sm" onClick={save} disabled={!!busy}>
               <Ic name="check" size={14} /> 保存配置
             </button>
+            <button className="pp-btn pp-btn-ghost flex-1 py-2.5 text-sm" onClick={clearModel} disabled={!!busy}>
+              <Ic name="trash" size={14} /> 清除模型
+            </button>
           </div>
-          {remoteModels.length > 0 && (
-            <div className="max-h-44 overflow-y-auto rounded-lg border border-line bg-paper/60 p-2">
-              {remoteModels.map((m) => (
-                <button
-                  key={m}
-                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs transition hover:bg-white ${model === m ? 'bg-white font-bold text-accent-deep' : 'text-slate-1'}`}
-                  onClick={() => setModel(m)}
-                >
-                  <span className="num min-w-0 flex-1 truncate">{m}</span>
-                  {model === m && <Ic name="check" size={13} strokeWidth={2.6} className="text-accent" />}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
-        <div className="pp-card p-6">
-          <div className="mb-3 text-sm font-bold">
-            当前模型:<span className="num text-accent-deep">{model || '未设置'}</span>
-          </div>
-          <div className="num mb-2 text-[10px] tracking-[0.2em] text-slate-2">CATALOG</div>
-          <div className="space-y-2">
-            {catalog.map((c) => (
-              <button
-                key={c.id}
-                className={`flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left text-sm transition ${model === c.id ? 'border-accent bg-accent-soft' : 'border-line hover:border-ink'}`}
-                onClick={() => setModel(c.id)}
-              >
-                <span className="font-semibold">{c.name}</span>
-                <span className="num text-xs text-slate-1">
-                  {c.id} · {c.price}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
+        <div className="pp-card p-6 text-sm font-bold">当前模型：<span className="num text-accent-deep">{model || '未设置'}</span></div>
       </div>
     </main>
   );

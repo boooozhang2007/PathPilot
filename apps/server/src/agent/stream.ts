@@ -6,12 +6,12 @@ import { db } from '../db/client.js';
 import { agentChatSessions, agentChatMessages } from '../db/schema.js';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { getUserId } from '../auth/index.js';
-import { toPiHistory, tracedTools, type ToolTraceEntry } from './advisor.js';
+import { buildAdvisorSystemPrompt, toPiHistory, tracedTools, type ToolTraceEntry } from './advisor.js';
 import { buildUserContext } from './context.js';
-import { isLlmConfigured, getLlmSettings } from './settings.js';
+import { isLlmConfigured } from './settings.js';
 import { skillGroupOf } from '@pathpilot/shared';
 import type { AgentEvent } from '@earendil-works/pi-agent-core';
-import { flowPrompt, flowToolsEnabled, markFlowResult, prepareFlow } from './flow.js';
+import { markFlowResult, prepareFlow } from './flow.js';
 
 export interface StreamEvent {
   type: 'thinking' | 'tool_start' | 'tool_end' | 'text' | 'done' | 'error';
@@ -46,7 +46,7 @@ async function ensureSession(userId: number, sessionId?: number): Promise<number
  */
 export async function streamChat(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   const userId = getUserId(req);
-  const input = (req.body ?? {}) as { sessionId?: number; message?: string; model?: string; answerStyle?: 'concise' | 'detailed' };
+  const input = (req.body ?? {}) as { sessionId?: number; message?: string; answerStyle?: 'concise' | 'detailed' };
   const message = (input.message ?? '').trim();
   if (!message) {
     reply.status(400).send({ error: { code: 'VALIDATION_ERROR', message: '消息不能为空' } });
@@ -146,16 +146,16 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
       ? ((last as { content: { type: string; text?: string }[] }).content.filter((c) => c.type === 'text').map((c) => c.text ?? '').join('') as string)
       : '';
   };
-  const attempt = async (modelId: string | undefined): Promise<string> => {
+  const attempt = async (): Promise<string> => {
     const { Agent } = await import('@earendil-works/pi-agent-core');
     const { resolveModel } = await import('./pi/provider.js');
     const { buildAgentTools } = await import('./pi/tools.js');
-    const { models, model } = await resolveModel(modelId);
+    const { models, model } = await resolveModel();
     const agent = new Agent({
       initialState: {
-        systemPrompt: ADVISOR_PROMPT(ctxSummary, input.answerStyle, flow),
+        systemPrompt: buildAdvisorSystemPrompt(ctxSummary, flow),
         model,
-        tools: flowToolsEnabled(flow) ? tracedTools(buildAgentTools(userId), trace) : [],
+        tools: tracedTools(buildAgentTools(userId), trace),
         messages: recent as never[],
         thinkingLevel: 'off',
       },
@@ -200,30 +200,18 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
   let stopped = false;
   try {
     const { resolveModel } = await import('./pi/provider.js');
-    const { model } = await resolveModel(input.model);
+    const { model } = await resolveModel();
     usedModel = model.id;
-    text = await attempt(input.model ?? usedModel);
+    text = await attempt();
   } catch (err) {
     if (clientGone) {
       stopped = true;
     } else {
       let llmErr = err instanceof Error ? err.message : String(err);
-      const cfg = await getLlmSettings();
-      if (input.model && input.model !== cfg.model) {
-        try {
-          text = await attempt(cfg.model);
-          usedModel = cfg.model;
-          fallbackReason = `所选模型不可用（${llmErr.slice(0, 60)}），已用 ${cfg.model} 回答`;
-          llmErr = '';
-        } catch (err2) {
-          llmErr = err2 instanceof Error ? err2.message : String(err2);
-        }
-      }
       if (llmErr && !clientGone && /timed? ?out|timeout|econn|fetch failed|network|50[234]/i.test(llmErr)) {
         await new Promise((r) => setTimeout(r, 2000));
         try {
-          text = await attempt(cfg.model);
-          usedModel = cfg.model;
+          text = await attempt();
           llmErr = '';
         } catch (err3) {
           llmErr = err3 instanceof Error ? err3.message : String(err3);
@@ -253,11 +241,6 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
     toolCalls: trace.length ? trace : null,
   });
   await db.update(agentChatSessions).set({ updatedAt: new Date().toISOString() }).where(eq(agentChatSessions.id, sid));
-  if (flowToolsEnabled(flow)) await markFlowResult(sid);
+  if (trace.length) await markFlowResult(sid);
   finish({ type: 'done', engine, model: usedModel, fallbackReason: stopped ? '已停止生成（保留已输出部分）' : fallbackReason || undefined } as never);
-}
-
-function ADVISOR_PROMPT(ctxSummary: string, answerStyle: 'concise' | 'detailed' | undefined, flow: import('@pathpilot/shared').AgentFlowDTO): string {
-  const style = answerStyle === 'concise' ? '回答控制在重点要点内，优先给出下一步操作。' : '回答保持清晰完整，按需给出步骤和依据。';
-  return `你是 PathPilot AI 职业顾问，服务对象是计算机专业大学生。${flowPrompt(flow)}\n${style} 遇到几十小时以上的大目标，先保留一个父任务，再用 roadmap_add_task 创建 2-8 个带 parent_task_id 的子任务，并为每个子任务设置产出、验收标准和预计时长。基于用户真实数据作答，中文回答，用 Markdown 排版。\n\n用户数据摘要（授权范围）：\n${ctxSummary}`;
 }

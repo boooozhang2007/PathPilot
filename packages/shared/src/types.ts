@@ -191,13 +191,6 @@ export interface AgentFlowDTO {
   nextActions: { id: AdviceIntent | 'profile'; label: string }[];
 }
 
-/** 前端可选模型目录 */
-export interface ModelCatalogItem {
-  id: string;
-  name: string;
-  price: string;
-}
-
 /** 顾问会话摘要（侧栏列表项） */
 export interface ChatSessionSummaryDTO {
   id: number;

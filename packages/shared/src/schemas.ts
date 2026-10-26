@@ -247,8 +247,6 @@ export const taskEvidenceInput = z.object({
 export const agentChatInput = z.object({
   sessionId: z.number().int().positive().optional(),
   message: z.string().min(1).max(2000),
-  /** 前端选择的模型 id（模型目录见 GET /api/agent/models） */
-  model: z.string().max(100).optional(),
   answerStyle: z.enum(['concise', 'detailed']).optional(),
 });
 export type AgentChatInput = z.infer<typeof agentChatInput>;

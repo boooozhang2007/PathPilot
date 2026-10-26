@@ -1,12 +1,12 @@
 'use client';
 // Agent 对话组件:
-// full 模式 = 会话侧栏 + 模型选择器 + 全高消息流;紧凑模式供仪表盘嵌入
+// full 模式 = 会话侧栏 + 全高消息流;紧凑模式供仪表盘嵌入
 // 流式:thinking(可折叠)/ 工具调用链 / 增量文本 / 停止生成 / 逐条复制与重新生成
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, API_BASE, getToken } from '@/lib/api';
 import { Markdown } from '@/components/Markdown';
 import { Ic } from '@/components/Icon';
-import type { ChatMessageDTO, ChatSessionSummaryDTO, ModelCatalogItem, ProfileDTO } from '@pathpilot/shared';
+import type { ChatMessageDTO, ChatSessionSummaryDTO, ProfileDTO } from '@pathpilot/shared';
 
 export const DEFAULT_SUGGESTIONS = ['我目前最应该学习什么？', '帮我分析北京的 Java 岗位', '把每周改成 8 小时并重新规划', '在规划里加一个 Redis 学习任务'];
 
@@ -92,12 +92,6 @@ export function AgentChat({
   const [input, setInput] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  // 模型
-  const [catalog, setCatalog] = useState<ModelCatalogItem[]>([]);
-  const [currentModel, setCurrentModel] = useState('');
-  const [configured, setConfigured] = useState(false);
-  const [availability, setAvailability] = useState<Record<string, { available: boolean; error?: string }> | null>(null);
-  const [modelOpen, setModelOpen] = useState(false);
   // UI 杂项
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
@@ -114,14 +108,6 @@ export function AgentChat({
   }, [full]);
 
   useEffect(() => {
-    api<{ catalog: ModelCatalogItem[]; current: string; configured: boolean; availability: Record<string, { available: boolean; error?: string }> | null }>('/api/agent/models?probe=1')
-      .then((m) => {
-        setCatalog(m.catalog);
-        setCurrentModel(localStorage.getItem('pp_model') ?? m.current);
-        setConfigured(m.configured);
-        setAvailability(m.availability);
-      })
-      .catch(() => {});
     if (full) {
       loadSessions();
       api<{ sessionId: number; messages: ChatMessageDTO[] } | null>('/api/agent/session')
@@ -164,12 +150,6 @@ export function AgentChat({
     if (!ta) return;
     ta.style.height = 'auto';
     ta.style.height = `${Math.min(ta.scrollHeight, 180)}px`;
-  }
-
-  function pickModel(id: string) {
-    setCurrentModel(id);
-    localStorage.setItem('pp_model', id);
-    setModelOpen(false);
   }
 
   function newChat() {
@@ -246,7 +226,7 @@ export function AgentChat({
       const res = await fetch(`${API_BASE}/api/agent/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ sessionId, message, model: currentModel || undefined }),
+        body: JSON.stringify({ sessionId, message }),
         signal: controller.signal,
       });
       if (res.status === 401 && typeof window !== 'undefined') {
@@ -369,8 +349,6 @@ export function AgentChat({
     }
   }
 
-  const activeModelName = catalog.find((c) => c.id === currentModel)?.name ?? currentModel ?? '选择模型';
-
   return (
     <div className="relative flex h-full min-h-0 w-full">
       {/* ------- 会话侧栏(full 模式) ------- */}
@@ -422,50 +400,6 @@ export function AgentChat({
               <Ic name="menu" size={17} />
             </button>
           )}
-          {/* 模型选择器(含可用性/价格) */}
-          <div className="relative">
-            <button
-              className="flex items-center gap-2 rounded-lg border border-line bg-white px-3.5 py-1.5 text-[13px] font-semibold text-ink transition hover:border-slate-2"
-              onClick={() => (configured ? setModelOpen((v) => !v) : setModelOpen(false))}
-              disabled={!full}
-              title={full ? undefined : '模型选择请前往 AI 顾问页'}
-            >
-              <span className={`inline-block h-2 w-2 rounded-full ${availability?.[currentModel]?.available === false ? 'bg-amber' : 'bg-teal'}`} />
-              {activeModelName}
-              {full && <Ic name={modelOpen ? 'chevronUp' : 'chevronDown'} size={12} strokeWidth={2.4} className="text-slate-2" />}
-            </button>
-            {modelOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setModelOpen(false)} />
-                <div className="glass absolute left-0 top-full z-50 mt-1.5 w-72 overflow-hidden">
-                  <div className="num border-b border-line px-3 py-2 text-[10px] font-semibold tracking-[0.2em] text-slate-2">MODEL</div>
-                  <div className="max-h-72 overflow-y-auto py-1">
-                    {catalog.map((c) => {
-                      const avail = availability?.[c.id];
-                      const selected = c.id === currentModel;
-                      return (
-                        <button
-                          key={c.id}
-                          className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition hover:bg-paper ${avail && !avail.available ? 'opacity-55' : ''}`}
-                          onClick={() => pickModel(c.id)}
-                        >
-                          <span className={`mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ${avail ? (avail.available ? 'bg-teal' : 'bg-amber') : 'bg-slate-2'}`} />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[13px] font-semibold text-ink">{c.name}</span>
-                            <span className="num block text-[11px] text-slate-2">
-                              {c.price}
-                              {avail && !avail.available ? ' · 不可用' : ''}
-                            </span>
-                          </span>
-                          {selected && <Ic name="check" size={14} strokeWidth={2.6} className="shrink-0 text-accent" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
           <div className="flex-1" />
           {full && (
             <button className="pp-btn pp-btn-ghost px-3 py-1.5 text-xs" onClick={draftResume} disabled={resumeBusy}>

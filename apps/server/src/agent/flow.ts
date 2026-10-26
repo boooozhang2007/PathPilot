@@ -24,7 +24,6 @@ function missingProfile(profile: Awaited<ReturnType<typeof getProfile>>): string
   if (!profile.weeklyHours || profile.weeklyHours < 1) missing.push('每周可投入时间');
   return missing;
 }
-
 function detectIntent(message: string): AdviceIntent | null {
   const text = message.toLowerCase();
   const hit = INTENTS.find((x) => x.words.some((word) => text.includes(word.toLowerCase())));
@@ -65,13 +64,7 @@ export async function markFlowResult(sessionId: number, resultType = 'assistant'
 }
 
 export function flowPrompt(flow: AgentFlowDTO): string {
-  if (flow.state === 'profile_collect') return `当前流程阶段：资料补充。缺少字段：${flow.missingProfileFields.join('、')}。只引导用户到资料页补充这些字段，不调用业务工具，不生成岗位分析、规划或任务。`;
-  if (flow.state === 'advice_intent_select') return '当前流程阶段：建议类型选择。请用清晰的选项让用户选择岗位洞察、能力差距、成长路线、任务拆解、简历准备或面试模拟；不要提前执行工具。';
-  if (flow.state === 'tool_execution') return `当前流程阶段：执行${flow.selectedIntent ?? '用户选择的建议'}。调用与该意图匹配的工具，完成后说明结果并给出下一步操作。`;
-  if (flow.state === 'result_review') return '当前流程阶段：结果复核。让用户确认结果是否符合预期，并提供继续、调整或查看详情的操作。';
-  return '当前流程阶段：下一步行动。优先提供可以直接执行的下一步操作。';
-}
-
-export function flowToolsEnabled(flow: AgentFlowDTO): boolean {
-  return flow.state === 'tool_execution' || flow.state === 'result_review' || flow.state === 'next_action';
+  const missing = flow.missingProfileFields.length ? `目前尚未填写的资料有：${flow.missingProfileFields.join('、')}。` : '';
+  const intent = flow.selectedIntent ? `用户近期关注${flow.selectedIntent}。` : '';
+  return `${missing}${intent}结合用户的明确请求和现有资料自然推进对话；只有在用户目标宽泛时，才提供岗位洞察、能力差距、成长路线、任务拆解、简历准备或面试模拟等方向供选择。缺少的信息只有在会影响结论时再询问。`;
 }

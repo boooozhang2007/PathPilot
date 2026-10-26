@@ -44,7 +44,7 @@ beforeAll(async () => {
 describe('全模块 Agent 工具集', () => {
   const names = () => buildAgentTools(demoUserId).map((t) => t.name);
 
-  it('覆盖全部业务模块（22 个工具）', () => {
+  it('覆盖全部业务模块（20 个工具）', () => {
     const expected = [
       'get_user_profile', 'upsert_skill', 'create_experience', // 档案
       'get_tasks', 'update_task_status', // 任务
@@ -54,6 +54,12 @@ describe('全模块 Agent 工具集', () => {
       'normalize_skills', 'generate_resume_draft', // 归一化/简历
     ];
     expect(names().sort()).toEqual([...expected].sort());
+  });
+
+  it('岗位分析工具由 Pi 当前循环同步返回结果', () => {
+    const tool = buildAgentTools(demoUserId).find((t) => t.name === 'analyze_jobs')!;
+    expect(tool.description).toContain('同步完成');
+    expect(tool.description).not.toContain('run_id');
   });
 
   it('档案：get_user_profile 返回真实档案', async () => {
