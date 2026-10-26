@@ -1,7 +1,7 @@
 {
   "name": "pathpilot",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.3.0",
   "description": "PathPilot AI - 面向计算机专业大学生的 AI 职业成长规划与能力管理平台",
   "type": "module",
   "workspaces": [

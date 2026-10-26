@@ -115,6 +115,11 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
       ...(input.resultNote !== undefined ? { resultNote: input.resultNote } : {}),
       ...(input.priority !== undefined && !contentPatch.priority ? { priority: input.priority } : {}),
       ...(input.deferredReason !== undefined ? { deferredReason: input.deferredReason } : {}),
+      ...(input.parentTaskId !== undefined ? { parentTaskId: input.parentTaskId } : {}),
+      ...(input.taskType !== undefined ? { taskType: input.taskType } : {}),
+      ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
+      ...(input.dependencyIds !== undefined ? { dependencyIds: input.dependencyIds } : {}),
+      ...(input.completionRule !== undefined ? { completionRule: input.completionRule } : {}),
     };
     let updated = null as Awaited<ReturnType<typeof updateTask>> | null;
     if (Object.keys(contentPatch).length) {

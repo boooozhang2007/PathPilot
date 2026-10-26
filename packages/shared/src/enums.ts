@@ -135,7 +135,7 @@ export const EXPERIENCE_TYPE_LABELS: Record<ExperienceType, string> = {
 export const ROADMAP_STATUSES = ['draft', 'active', 'archived'] as const;
 export type RoadmapStatus = (typeof ROADMAP_STATUSES)[number];
 
-export const AGENT_RUN_STATUSES = ['running', 'succeeded', 'failed'] as const;
+export const AGENT_RUN_STATUSES = ['queued', 'running', 'succeeded', 'failed', 'canceled'] as const;
 export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number];
 
 /** 生成引擎：Pi LLM 通道 / 规则引擎降级通道 */

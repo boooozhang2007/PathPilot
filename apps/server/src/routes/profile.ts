@@ -1,6 +1,6 @@
 // 档案路由：个人资料 / 技能 / 经历 / 账号（PRD §9）
 import type { FastifyInstance } from 'fastify';
-import { profileInput, profileSkillInput, experienceInput, experienceUpdate } from '@pathpilot/shared';
+import { profilePatchInput, profileSkillInput, experienceInput, experienceUpdate } from '@pathpilot/shared';
 import { getUserId } from '../auth/index.js';
 import {
   getProfile,
@@ -23,7 +23,7 @@ export async function profileRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/profile', { preHandler: [auth] }, async (req) => getProfile(getUserId(req)));
 
   app.put('/api/profile', { preHandler: [auth] }, async (req) => {
-    const input = profileInput.parse(req.body);
+    const input = profilePatchInput.parse(req.body);
     return upsertProfile(getUserId(req), input);
   });
 

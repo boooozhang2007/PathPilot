@@ -104,6 +104,9 @@ export const jobSources = sqliteTable(
     fetchedAt: text('fetched_at').notNull(),
     contentHash: text('content_hash').notNull(),
     parseStatus: text('parse_status').notNull().default('pending'),
+    relevanceScore: integer('relevance_score'),
+    contentQualityScore: integer('content_quality_score'),
+    dedupeKey: text('dedupe_key'),
     createdAt: text('created_at').notNull().$defaultFn(isoNow),
   },
   (t) => [index('job_sources_hash_idx').on(t.contentHash), index('job_sources_analysis_idx').on(t.analysisId)]
@@ -149,6 +152,12 @@ export const roadmapTasks = sqliteTable(
     id: integer('id').primaryKey({ autoIncrement: true }),
     roadmapId: integer('roadmap_id').notNull().references(() => roadmaps.id, { onDelete: 'cascade' }),
     userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    parentTaskId: integer('parent_task_id'),
+    taskType: text('task_type').notNull().default('task'),
+    sortOrder: integer('sort_order').notNull().default(0),
+    dueDate: text('due_date'),
+    dependencyIds: text('dependency_ids', { mode: 'json' }).$type<number[]>().notNull().default([]),
+    completionRule: text('completion_rule').notNull().default('manual'),
     semester: integer('semester').notNull(),
     title: text('title').notNull(),
     description: text('description').notNull(),
@@ -193,7 +202,7 @@ export const agentRuns = sqliteTable(
     id: integer('id').primaryKey({ autoIncrement: true }),
     userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     taskType: text('task_type').notNull(),
-    status: text('status').notNull().default('running'), // running|succeeded|failed
+    status: text('status').notNull().default('queued'), // queued|running|succeeded|failed|canceled
     inputSummary: text('input_summary'),
     errorCode: text('error_code'),
     resultType: text('result_type'), // job_analysis|roadmap
@@ -201,6 +210,14 @@ export const agentRuns = sqliteTable(
     errorDetail: text('error_detail'),
     startedAt: text('started_at').notNull().$defaultFn(isoNow),
     finishedAt: text('finished_at'),
+    attemptCount: integer('attempt_count').notNull().default(0),
+    maxAttempts: integer('max_attempts').notNull().default(2),
+    nextRetryAt: text('next_retry_at'),
+    progress: integer('progress').notNull().default(0),
+    progressMessage: text('progress_message'),
+    lockedAt: text('locked_at'),
+    workerId: text('worker_id'),
+    inputJson: text('input_json', { mode: 'json' }),
   },
   (t) => [index('agent_runs_user_idx').on(t.userId, t.status)]
 );
@@ -212,6 +229,10 @@ export const agentChatSessions = sqliteTable(
     userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     /** 用户自定义标题（App 端重命名）；空则展示首条用户消息摘要 */
     title: text('title'),
+    flowState: text('flow_state').notNull().default('profile_check'),
+    profileSnapshot: text('profile_snapshot', { mode: 'json' }).$type<Record<string, unknown> | null>(),
+    selectedIntent: text('selected_intent'),
+    lastResultRef: text('last_result_ref', { mode: 'json' }).$type<{ type: string; id?: number } | null>(),
     createdAt: text('created_at').notNull().$defaultFn(isoNow),
     updatedAt: text('updated_at').notNull().$defaultFn(isoNow),
   },

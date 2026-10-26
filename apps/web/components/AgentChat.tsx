@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, API_BASE, getToken } from '@/lib/api';
 import { Markdown } from '@/components/Markdown';
 import { Ic } from '@/components/Icon';
-import type { ChatMessageDTO, ChatSessionSummaryDTO, ModelCatalogItem } from '@pathpilot/shared';
+import type { ChatMessageDTO, ChatSessionSummaryDTO, ModelCatalogItem, ProfileDTO } from '@pathpilot/shared';
 
 export const DEFAULT_SUGGESTIONS = ['我目前最应该学习什么？', '帮我分析北京的 Java 岗位', '把每周改成 8 小时并重新规划', '在规划里加一个 Redis 学习任务'];
 
@@ -103,6 +103,9 @@ export function AgentChat({
   const [atBottom, setAtBottom] = useState(true);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [resumeBusy, setResumeBusy] = useState(false);
+  const [guideProfile, setGuideProfile] = useState<ProfileDTO | null>(null);
+  const [guideReady, setGuideReady] = useState(false);
+  const [guideStep, setGuideStep] = useState<'profile' | 'choice' | 'done'>('profile');
   const listRef = useRef<HTMLDivElement>(null);
 
   const loadSessions = useCallback(() => {
@@ -131,6 +134,16 @@ export function AgentChat({
         .catch(() => {});
     }
   }, [full, loadSessions]);
+
+  useEffect(() => {
+    api<ProfileDTO | null>('/api/profile')
+      .then((p) => {
+        setGuideProfile(p);
+        setGuideStep(p?.targetRole && p.weeklyHours && p.grade ? 'choice' : 'profile');
+      })
+      .catch(() => setGuideStep('choice'))
+      .finally(() => setGuideReady(true));
+  }, []);
 
   // 滚动:贴底时自动跟随
   const scrollToEnd = useCallback((smooth = true) => {
@@ -470,23 +483,35 @@ export function AgentChat({
                 <div className="reveal flex flex-col items-center px-2 pt-[8vh] text-center">
                   <AgentMark size={52} />
                   <div className="font-display mt-4 text-2xl font-bold text-ink">{greeting()},同学</div>
-                  <div className="mt-2 text-sm text-slate-1">查数据、改规划、管任务,一句话搞定</div>
-                  <div className={`mt-8 grid w-full max-w-xl gap-2.5 ${full ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                    {suggestions.map((s, i) => (
-                      <button
-                        key={s}
-                        className="group flex items-center gap-3 rounded-lg border border-line bg-white px-4 py-3.5 text-left text-[13px] text-slate-1 transition hover:-translate-y-0.5 hover:border-accent hover:text-ink hover:shadow-md"
-                        style={{ animationDelay: `${i * 60 + 100}ms` }}
-                        onClick={() => send(s)}
-                      >
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-paper-2 text-slate-1 transition group-hover:bg-accent-soft group-hover:text-accent">
-                          <Ic name={SUGGEST_ICONS[i % SUGGEST_ICONS.length]} size={14} />
-                        </span>
-                        <span className="min-w-0 flex-1">{s}</span>
-                        <Ic name="chevronRight" size={13} className="text-slate-2 transition group-hover:translate-x-0.5 group-hover:text-accent" />
-                      </button>
-                    ))}
-                  </div>
+                  <div className="mt-2 text-sm text-slate-1">{guideStep === 'profile' ? '先告诉我你的目标和时间，我会为你安排下一步。' : '你想先从哪一件事开始？'}</div>
+                  {guideReady && guideStep === 'profile' && (
+                    <div className="mt-8 w-full max-w-xl rounded-xl border border-line bg-white p-5 text-left shadow-sm">
+                      <div className="text-sm font-bold text-ink">先完善 3 项信息</div>
+                      <div className="mt-2 text-xs leading-5 text-slate-1">目标岗位、当前年级、每周可投入时间会决定岗位检索关键词与规划节奏。</div>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <a href="/profile" className="pp-btn pp-btn-primary px-4 py-2 text-xs">去填写资料</a>
+                        <button className="pp-btn pp-btn-ghost px-4 py-2 text-xs" onClick={() => setGuideStep('choice')}>资料已完善，继续</button>
+                      </div>
+                      {guideProfile && <div className="mt-3 text-[11px] text-slate-2">已读取：{guideProfile.nickname} · {guideProfile.targetRole || '还未设置目标岗位'}</div>}
+                    </div>
+                  )}
+                  {guideReady && guideStep === 'choice' && (
+                    <div className={`mt-8 grid w-full max-w-xl gap-2.5 ${full ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                      {[
+                        ['岗位洞察', '分析目标岗位的真实招聘要求', '帮我搜索并分析目标岗位的真实招聘要求'],
+                        ['能力差距', '找出当前技能与岗位要求的差距', '请结合我的档案做一次能力差距分析'],
+                        ['成长路线', '生成分阶段的学习与项目路线', '请根据我的情况生成成长路线'],
+                        ['任务拆解', '把大目标拆成可以逐项完成的任务', '请把我当前最重要的目标拆成可跟踪的子任务'],
+                        ['简历准备', '把真实经历整理成简历素材', '请帮我整理简历并指出需要补充的真实证据'],
+                        ['面试模拟', '按目标岗位开始一轮模拟面试', '请开始一轮针对我目标岗位的模拟面试'],
+                      ].map(([title, desc, prompt], i) => (
+                        <button key={title} className="group rounded-lg border border-line bg-white px-4 py-3 text-left transition hover:-translate-y-0.5 hover:border-accent hover:shadow-md" onClick={() => { setGuideStep('done'); send(prompt); }}>
+                          <div className="flex items-center gap-2 text-[13px] font-semibold text-ink"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-paper-2 text-accent"><Ic name={SUGGEST_ICONS[i % SUGGEST_ICONS.length]} size={14} /></span>{title}</div>
+                          <div className="mt-1 text-[11px] text-slate-2">{desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

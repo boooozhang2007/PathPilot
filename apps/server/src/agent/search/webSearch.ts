@@ -191,6 +191,7 @@ export async function webSearchJobs(input: {
   const samples: JobSample[] = [];
   let searchError = '';
   let hits: SearchHit[] = [];
+  const seenUrls = new Set<string>();
 
   // 通道 0：猎聘官方 MCP（岗位数据 + 来源链接，最高优先）
   let liepinNote = '';
@@ -205,11 +206,18 @@ export async function webSearchJobs(input: {
   // 通道 1：Tavily 搜索 API（可选）
   if (process.env.TAVILY_API_KEY) {
     try {
-      hits = await tavilySearch(
-        `${input.targetRole} ${typeWord} ${input.city ?? ''} 岗位职责 任职要求 招聘`.trim(),
-        input.sampleLimit,
-        timeout
-      );
+      const roleTerms = [
+        input.targetRole,
+        `${input.targetRole} 岗位职责 任职要求`,
+        `${input.targetRole} 技术栈 招聘`,
+        `${input.targetRole} 校招 实习`,
+        `${input.targetRole} ${typeWord} 项目经验`,
+      ];
+      for (const term of roleTerms) {
+        const found = await tavilySearch(`${term} ${input.city ?? ''} ${typeWord}`.trim(), input.sampleLimit, timeout);
+        for (const hit of found) if (!seenUrls.has(hit.url)) { seenUrls.add(hit.url); hits.push(hit); }
+        if (hits.length >= input.sampleLimit) break;
+      }
     } catch (err) {
       searchError = `Tavily: ${err instanceof Error ? err.message : '失败'}`;
     }
@@ -219,13 +227,15 @@ export async function webSearchJobs(input: {
   if (!hits.length) {
     const queries = [
       `${input.targetRole} ${typeWord} ${input.city ?? ''} 岗位职责 任职要求 site:zhipin.com OR site:shixiseng.com`.trim(),
+      `${input.targetRole} ${typeWord} 技术栈 项目经验 site:liepin.com OR site:51job.com`.trim(),
+      `${input.targetRole} 校招 实习 任职要求 site:nowcoder.com OR site:ncss.cn`.trim(),
       `${input.targetRole} ${typeWord} 招聘 任职要求 实习僧 OR BOSS直聘`.trim(),
     ];
     for (const q of queries) {
       try {
         const found = await searchJobPages(q, input.sampleLimit, timeout);
-        hits = found;
-        if (found.length) break;
+        for (const hit of found) if (!seenUrls.has(hit.url)) { seenUrls.add(hit.url); hits.push(hit); }
+        if (hits.length >= input.sampleLimit) break;
       } catch (err) {
         searchError = `Bing: ${err instanceof Error ? err.message : '失败'}`;
       }
@@ -241,7 +251,7 @@ export async function webSearchJobs(input: {
     };
   }
   const now = new Date().toISOString();
-  for (const hit of hits.slice(0, input.sampleLimit)) {
+  for (const hit of hits.slice(0, Math.min(input.sampleLimit, 30))) {
     try {
       const html = await fetchText(hit.url, timeout);
       const jd = extractJdFromHtml(html);

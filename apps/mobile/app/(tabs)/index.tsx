@@ -15,6 +15,7 @@ export default function Home() {
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [motto, setMotto] = useState('向着热爱深处，慢慢长成自己的答案。');
 
   const load = useCallback(() => {
     api<DashboardData>('/api/dashboard')
@@ -31,6 +32,7 @@ export default function Home() {
       load();
     }, [load])
   );
+  useFocusEffect(useCallback(() => { api<{ text: string }>('/api/motto').then((x) => setMotto(x.text)).catch(() => {}); }, []));
 
   async function quickDone(task: RoadmapTaskDTO) {
     try {
@@ -51,9 +53,10 @@ export default function Home() {
       <Panel style={{ padding: 20, marginBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <View style={{ flex: 1, paddingRight: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Text style={{ color: C.deepText, fontSize: 22, fontWeight: '800' }}>{d?.profile?.nickname ?? '同学'}，加油</Text>
+            <Text style={{ color: C.deepText, fontSize: 22, fontWeight: '800' }}>{d?.profile?.nickname ?? '同学'}</Text>
             <Icon name="rocket" size={20} color={C.deepText} />
           </View>
+          <Text style={{ color: C.deepMuted, fontSize: 12, lineHeight: 19, marginTop: 5 }}>{motto}</Text>
           {d?.topGaps?.length ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
               {d.topGaps.slice(0, 3).map((g) => (

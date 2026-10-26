@@ -8,6 +8,7 @@ import { badRequest, modelCallFailed, notFound } from '../services/errors.js';
 import { buildUserContext } from './context.js';
 import { isLlmConfigured } from './settings.js';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
+import { flowPrompt, flowToolsEnabled, markFlowResult, prepareFlow } from './flow.js';
 
 export interface ToolTraceEntry {
   name: string;
@@ -62,7 +63,7 @@ export function tracedTools(tools: AgentTool<any>[], trace: ToolTraceEntry[]): A
 
 export async function chat(
   userId: number,
-  input: { sessionId?: number; message: string; model?: string }
+  input: { sessionId?: number; message: string; model?: string; answerStyle?: 'concise' | 'detailed' }
 ): Promise<{ sessionId: number; reply: ChatMessageDTO; engine: 'pi-llm' | 'rules'; model?: string; fallbackReason?: string }> {
   // 会话管理（会话记忆不代替正式业务记录，PRD 4.8）
   let sessionId = input.sessionId;
@@ -79,6 +80,7 @@ export async function chat(
   }
   const sid: number = sessionId;
   await db.insert(agentChatMessages).values({ sessionId: sid, role: 'user', content: input.message });
+  const flow = await prepareFlow(userId, sid, input.message);
 
   const ctx = await buildUserContext(userId);
   let replyText = '';
@@ -132,10 +134,10 @@ export async function chat(
     usedModel = model.id ?? cfg.model;
     const trace: ToolTraceEntry[] = [];
     const outcome = await runAgentWith(models, model, {
-      systemPrompt: `你是 PathPilot AI 职业顾问，服务对象是计算机专业大学生。\n回答规范：\n1. 基于用户真实数据作答。你可调用工具操作各模块：档案（get_user_profile、upsert_skill、create_experience）、任务（get_tasks、update_task_status，跟踪开始/暂停）、规划（get_current_roadmap、get_roadmap_versions、generate_roadmap、create_roadmap_revision、roadmap_add_task、roadmap_update_task、roadmap_remove_task，任务均可增删改）、岗位分析（get_job_analysis、analyze_jobs、analyze_skill_gap、search_jobs、fetch_job_page、extract_requirements、search_yjs_jobs（应届生求职网校招搜索）、parse_yjs_jobs（解析粘贴的岗位数据）、normalize_skills）、简历（generate_resume_draft）。需要细节或执行操作时调用工具。\n2. 回答应基于真实数据、言之有据，但无需在回复中显式标注【事实】【推断】【建议】等分类标签，自然表述即可。\n3. 工具操作即真实生效；执行后告知结果与查看入口。\n4. 中文回答，简洁分段，必要时给下一步行动。\n5. 技能建议区分「专业能力」（岗位技术栈）与「通用能力」（沟通表达、协作、学习习惯），通用能力落到具体场景任务而非空泛要求。\n6. 若用户档案含 MBTI，可结合性格特质给出更贴合的建议（如任务形式、协作与表达方式），但不因性格限制能力目标。\n\n用户数据摘要（授权范围）：\n${ctxSummary}`,
+      systemPrompt: `你是 PathPilot AI 职业顾问，服务对象是计算机专业大学生。${flowPrompt(flow)}\n回答保持${input.answerStyle === 'concise' ? '重点和下一步操作' : '清晰完整并按需给出步骤和依据'}。遇到几十小时以上的大目标，先保留父任务，再用 roadmap_add_task 创建带 parent_task_id 的子任务，为每个子任务设置产出、验收标准和预计时长。中文回答，简洁分段，技能建议区分专业能力与通用能力。\n\n用户数据摘要（授权范围）：\n${ctxSummary}`,
       prompt: input.message,
       history: recent,
-      tools: tracedTools(buildAgentTools(userId), trace),
+      tools: flowToolsEnabled(flow) ? tracedTools(buildAgentTools(userId), trace) : [],
       wallClockMs: 300_000,
     });
     if (!outcome.text) throw new Error('模型返回为空');
@@ -178,6 +180,7 @@ export async function chat(
     .values({ sessionId: sid, role: 'assistant', content: replyText, engine, toolCalls: toolTrace.length ? toolTrace : null })
     .returning();
   await db.update(agentChatSessions).set({ updatedAt: new Date().toISOString() }).where(eq(agentChatSessions.id, sid));
+  if (flowToolsEnabled(flow)) await markFlowResult(sid);
   const row = inserted[0];
   return {
     sessionId: sid,
@@ -256,6 +259,8 @@ export async function listSessions(userId: number): Promise<ChatSessionSummaryDT
     title: s.title ?? titleOf.get(s.id) ?? '新对话',
     messageCount: countOf.get(s.id) ?? 0,
     updatedAt: s.updatedAt,
+    flowState: s.flowState,
+    selectedIntent: s.selectedIntent,
   }));
 }
 

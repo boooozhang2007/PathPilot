@@ -11,6 +11,12 @@ function toTaskDTO(row: typeof roadmapTasks.$inferSelect): RoadmapTaskDTO {
   return {
     id: row.id,
     roadmapId: row.roadmapId,
+    parentTaskId: row.parentTaskId ?? null,
+    taskType: (row.taskType ?? (row.parentTaskId ? 'subtask' : 'task')) as RoadmapTaskDTO['taskType'],
+    sortOrder: row.sortOrder ?? 0,
+    dueDate: row.dueDate ?? null,
+    dependencyIds: row.dependencyIds ?? [],
+    completionRule: (row.completionRule ?? 'manual') as RoadmapTaskDTO['completionRule'],
     semester: row.semester,
     title: row.title,
     description: row.description,
@@ -80,8 +86,16 @@ export async function listRoadmapTasks(userId: number, roadmapId?: number): Prom
   const where = roadmapId
     ? and(eq(roadmapTasks.userId, userId), eq(roadmapTasks.roadmapId, roadmapId))
     : eq(roadmapTasks.userId, userId);
-  const rows = await db.select().from(roadmapTasks).where(where).orderBy(roadmapTasks.semester, roadmapTasks.id);
-  return rows.map(toTaskDTO);
+  const rows = await db.select().from(roadmapTasks).where(where).orderBy(roadmapTasks.semester, roadmapTasks.sortOrder, roadmapTasks.id);
+  const tasks = rows.map(toTaskDTO);
+  const children = new Map<number, RoadmapTaskDTO[]>();
+  for (const task of tasks) if (task.parentTaskId) children.set(task.parentTaskId, [...(children.get(task.parentTaskId) ?? []), task]);
+  return tasks.map((task) => {
+    const child = children.get(task.id) ?? [];
+    if (!child.length) return task;
+    const done = child.filter((x) => x.status === 'done').length;
+    return { ...task, childCount: child.length, completedChildCount: done, progressPercent: Math.round((done / child.length) * 100) };
+  });
 }
 
 export async function getTasksOfRoadmap(roadmapId: number): Promise<RoadmapTaskDTO[]> {
@@ -147,6 +161,11 @@ export async function saveRoadmapVersion(input: SaveRoadmapInput): Promise<{ roa
       tx.insert(roadmapTasks).values({
         roadmapId: inserted.id,
         userId: input.userId,
+        parentTaskId: task.parent_task_id ?? null,
+        taskType: task.parent_task_id ? 'subtask' : 'task',
+        sortOrder: 0,
+        dependencyIds: [],
+        completionRule: 'manual',
         semester: task.semester,
         title: task.title,
         description: task.description,
@@ -205,11 +224,20 @@ export async function updateTask(
     priority?: Priority;
     expectedUpdatedAt?: string;
     deferredReason?: string;
+    parentTaskId?: number | null;
+    taskType?: RoadmapTaskDTO['taskType'];
+    dueDate?: string | null;
+    dependencyIds?: number[];
+    completionRule?: RoadmapTaskDTO['completionRule'];
   }
 ): Promise<RoadmapTaskDTO> {
   const rows = await db.select().from(roadmapTasks).where(and(eq(roadmapTasks.id, taskId), eq(roadmapTasks.userId, userId))).limit(1);
   if (!rows[0]) throw notFound('任务不存在');
   const task = rows[0];
+  if (input.status === 'in_progress' && task.dependencyIds?.length) {
+    const deps = await db.select({ id: roadmapTasks.id, status: roadmapTasks.status }).from(roadmapTasks).where(inArray(roadmapTasks.id, task.dependencyIds));
+    if (deps.some((d) => d.status !== 'done')) throw badRequest('请先完成前置任务');
+  }
   if (input.expectedUpdatedAt && input.expectedUpdatedAt !== task.updatedAt) {
     throw conflict('任务已被其他设备修改，请刷新后重试');
   }
@@ -229,12 +257,28 @@ export async function updateTask(
       resultNote: input.resultNote ?? task.resultNote,
       priority: input.priority ?? task.priority,
       deferredReason: input.deferredReason ?? task.deferredReason,
+      ...(input.parentTaskId !== undefined ? { parentTaskId: input.parentTaskId } : {}),
+      ...(input.taskType !== undefined ? { taskType: input.taskType } : {}),
+      ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
+      ...(input.dependencyIds !== undefined ? { dependencyIds: input.dependencyIds } : {}),
+      ...(input.completionRule !== undefined ? { completionRule: input.completionRule } : {}),
       completedAt: input.status === 'done' ? (task.completedAt ?? now) : input.status ? null : task.completedAt,
       updatedAt: now,
     })
     .where(and(eq(roadmapTasks.id, taskId), eq(roadmapTasks.userId, userId)))
     .returning();
+  await refreshParentTask(userId, updated[0].parentTaskId);
   return toTaskDTO(updated[0]);
+}
+
+async function refreshParentTask(userId: number, parentTaskId: number | null): Promise<void> {
+  if (!parentTaskId) return;
+  const parent = await db.select().from(roadmapTasks).where(and(eq(roadmapTasks.id, parentTaskId), eq(roadmapTasks.userId, userId))).limit(1);
+  if (!parent[0]) return;
+  const children = await db.select({ status: roadmapTasks.status }).from(roadmapTasks).where(and(eq(roadmapTasks.parentTaskId, parentTaskId), eq(roadmapTasks.userId, userId)));
+  if (!children.length) return;
+  const nextStatus = children.every((x) => x.status === 'done') && parent[0].completionRule === 'all_children' ? 'done' : children.some((x) => x.status === 'in_progress') ? 'in_progress' : parent[0].status;
+  if (nextStatus !== parent[0].status) await db.update(roadmapTasks).set({ status: nextStatus, completedAt: nextStatus === 'done' ? new Date().toISOString() : null, updatedAt: new Date().toISOString() }).where(eq(roadmapTasks.id, parentTaskId));
 }
 
 export async function addTaskEvidence(
@@ -270,7 +314,7 @@ export async function roadmapTitlesExist(userId: number, titles: string[]): Prom
 // ---------- Agent 直接编辑成长路线（用户授权的操作，作用于当前生效规划；content JSON 与任务行保持同步） ----------
 export async function addRoadmapTask(
   userId: number,
-  input: { title: string; semester: number; description: string; estimatedHours: number; priority: Priority; deliverable?: string; acceptanceCriteria?: string; relatedSkills?: string[]; prerequisites?: string[] }
+  input: { title: string; semester: number; description: string; estimatedHours: number; priority: Priority; deliverable?: string; acceptanceCriteria?: string; relatedSkills?: string[]; prerequisites?: string[]; parentTaskId?: number | null; taskType?: RoadmapTaskDTO['taskType']; dueDate?: string | null; dependencyIds?: number[]; completionRule?: RoadmapTaskDTO['completionRule'] }
 ): Promise<RoadmapTaskDTO> {
   const roadmap = await getActiveRoadmap(userId);
   if (!roadmap) throw badRequest('当前没有生效规划，请先让 AI 生成规划');
@@ -280,6 +324,12 @@ export async function addRoadmapTask(
     .values({
       roadmapId: roadmap.id,
       userId,
+      parentTaskId: input.parentTaskId ?? null,
+      taskType: input.taskType ?? (input.parentTaskId ? 'subtask' : 'task'),
+      sortOrder: 0,
+      dueDate: input.dueDate ?? null,
+      dependencyIds: input.dependencyIds ?? [],
+      completionRule: input.completionRule ?? 'manual',
       semester: input.semester,
       title: input.title,
       description: input.description,
@@ -355,6 +405,7 @@ async function syncContentTasks(userId: number, roadmapId: number): Promise<void
   const content = roadmapRow.content as unknown as RoadmapResult;
   content.tasks = rows.map((r) => ({
     title: r.title,
+    parent_task_id: r.parentTaskId ?? null,
     semester: r.semester,
     description: r.description,
     estimated_hours: r.estimatedHours,

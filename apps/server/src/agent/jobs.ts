@@ -23,13 +23,13 @@ export async function analyzeJobs(userId: number, input: AnalyzeJobsInput): Prom
   // 1) 真实联网搜索
   const web = await webSearchJobs(input);
   if (web.note) limitations.push(web.note);
-  const samples: JobSample[] = [...web.samples];
+  const samples: JobSample[] = dedupeSamples([...web.samples]);
 
   // 2) 样本不足 → 回退预置样本库（来源类型如实标注）
   if (samples.length < Math.min(5, input.sampleLimit)) {
     const preset = await presetSamplesFor(input.targetRole, input.employmentType, input.sampleLimit);
     if (preset.length) {
-      samples.push(...preset);
+      samples.push(...dedupeSamples(preset, samples));
       limitations.push(`联网样本不足，已补充 ${preset.length} 条预置真实样本（来源类型=preset，附原始链接，采集时间见来源列表）。`);
     }
   }
@@ -73,10 +73,13 @@ export async function analyzeJobs(userId: number, input: AnalyzeJobsInput): Prom
       skills: ex?.skills?.length ? ex.skills : keywordForOne(s, normalize, catalogTerms).skills,
       education_requirement: s.education_requirement ?? ex?.education ?? null,
       experience_requirement: s.experience_requirement ?? ex?.experience ?? null,
+      relevance_score: relevanceScore(s, input.targetRole, input.city),
+      content_quality_score: Math.min(100, Math.round((s.description.length / 1200) * 100)),
+      dedupe_key: s.source_url ? s.source_url.replace(/\/$/, '').toLowerCase() : undefined,
     };
   });
   const stats = computeJobStats(filled, web.failedCount, normalize);
-  if (stats.sampleCount < 5) limitations.push(`样本量仅 ${stats.sampleCount} 条，统计结果代表性有限，仅供参考。`);
+  if (stats.sampleCount < 5) limitations.push(`当前取得 ${stats.sampleCount} 条有效岗位样本，统计按当前样本计算。`);
 
   const result = buildResult(
     input.targetRole,
@@ -146,7 +149,7 @@ export async function analyzeManualJob(
   sample.skills = extracted.skills;
   const stats = computeJobStats([sample], 0, normalize);
   const result = buildResult(input.targetRole, [sample], stats, [], [
-    '本结果基于你手动粘贴的 1 条岗位描述（来源类型=manual），样本量为 1，仅供个人参考。',
+    '本结果基于你手动粘贴的 1 条岗位描述（来源类型=manual）。',
   ]);
   const [sid] = await saveSamples(userId, [sample], 'ok');
   const analysis = await saveAnalysis(userId, { targetRole: input.targetRole, employmentType: input.employmentType, city: input.location, engine: currentEngine() }, result);
@@ -172,6 +175,27 @@ function keywordExtract(samples: JobSample[], normalize: ReturnType<typeof build
 
 function keywordForOne(sample: JobSample, normalize: ReturnType<typeof buildNormalizer>, catalogTerms: string[]): ExtractedJob {
   return extractRequirementsByKeywords(sample, normalize, catalogTerms);
+}
+
+function dedupeSamples(samples: JobSample[], existing: JobSample[] = []): JobSample[] {
+  const seen = new Set(existing.map((s) => s.source_url ? s.source_url.replace(/\/$/, '').toLowerCase() : `${s.title}|${s.company ?? ''}|${s.description.slice(0, 200)}`.toLowerCase()));
+  const out: JobSample[] = [];
+  for (const sample of samples) {
+    const key = sample.source_url ? sample.source_url.replace(/\/$/, '').toLowerCase() : `${sample.title}|${sample.company ?? ''}|${sample.description.slice(0, 200)}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(sample);
+  }
+  return out;
+}
+
+function relevanceScore(sample: JobSample, targetRole: string, city?: string): number {
+  const haystack = `${sample.title} ${sample.description}`.toLowerCase();
+  const terms = targetRole.toLowerCase().split(/[\s/、，,]+/).filter((x) => x.length > 1);
+  const hits = terms.filter((term) => haystack.includes(term)).length;
+  const titleHit = targetRole && sample.title.toLowerCase().includes(targetRole.toLowerCase()) ? 25 : 0;
+  const cityHit = city && `${sample.location ?? ''} ${sample.description}`.includes(city) ? 10 : 0;
+  return Math.min(100, Math.round((hits / Math.max(1, terms.length)) * 55 + titleHit + cityHit + Math.min(10, sample.description.length / 300)));
 }
 
 function buildResult(
@@ -201,6 +225,8 @@ function buildResult(
         source_type: s.source_type,
         parse_status: 'ok',
         fetched_at: s.fetched_at,
+        relevance_score: s.relevance_score ?? null,
+        content_quality_score: s.content_quality_score ?? null,
       })),
       ...webAttempts.map((a) => ({ title: a.title, source_url: a.source_url, source_type: 'web' as const, parse_status: a.parse_status, fetched_at: a.fetched_at })),
     ],

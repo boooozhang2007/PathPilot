@@ -116,20 +116,26 @@ experiences(id, user_id, type[course|project|contest|internship|practice],
 job_sources(id, title, company, location, employment_type,
          education_requirement, experience_requirement, description,
          source_url, source_type[web|manual|preset], fetched_at,
-         content_hash, parse_status[ok|failed|pending], analysis_id)       §8.5
+         content_hash, parse_status[ok|failed|pending], analysis_id,
+         relevance_score, content_quality_score, dedupe_key)                §8.5
 job_requirements(id, job_source_id, skill_id, original_text,
          requirement_type[skill|education|experience|responsibility|soft|bonus],
          importance, evidence_text)                                        §8.6
 roadmaps(id, user_id, version, parent_version_id, target_role, career_path,
          weekly_hours, status[draft|active|archived], generation_reason,
          engine, content[json:PRD§6.4规划结构], created_at)                §8.7
-roadmap_tasks(id, roadmap_id, user_id, semester, title, description,
+roadmap_tasks(id, roadmap_id, user_id, parent_task_id, task_type,
+         sort_order, due_date, dependency_ids, completion_rule,
+         semester, title, description,
          estimated_hours, priority, status[not_started|in_progress|done|deferred],
          prerequisites[json], deliverable, acceptance_criteria, related_skills[json],
          completed_at, actual_hours, evidence_url, created_at, updated_at) §8.8
-agent_runs(id, user_id, task_type, status[running|succeeded|failed],
-         input_summary, error_code, result_ref, started_at, finished_at)   §8.9
-agent_chat_sessions(id, user_id, created_at, updated_at)
+agent_runs(id, user_id, task_type, status[queued|running|succeeded|failed|canceled],
+         input_summary, error_code, result_ref, progress, progress_message,
+         attempt_count, next_retry_at, locked_at, worker_id,
+         started_at, finished_at)                                           §8.9
+agent_chat_sessions(id, user_id, flow_state, profile_snapshot,
+         selected_intent, last_result_ref, created_at, updated_at)
 agent_chat_messages(id, session_id, role, content, engine, created_at)
 job_analyses(id, user_id, target_role, city, employment_type, sample_count,
          source_types[json], skills_freq[json], education_dist[json],
@@ -199,7 +205,7 @@ GET /api/dashboard (首页聚合)   GET /api/stats/growth (成长统计)
 
 ### 7.2 Android（apps/mobile）
 - Expo SDK + expo-router（TypeScript），5 Tab：首页/成长路线/任务/AI 顾问/我的（PRD 5.2）
-- API base URL：默认 `http://10.0.2.2:3000`（模拟器）→「我的」页可改（真机填局域网 IP，AsyncStorage 持久化）
+- API base URL：默认 `https://pathpilot.070320.xyz`；「我的」页仍可按需切换并持久化
 - 图表：react-native-svg 轻量实现（匹配环、进度条）
 - 打包：`expo prebuild -p android` → Gradle `assembleRelease`（自签 keystore，keytool 生成）→ `dist/PathPilot-v1.0.apk`
 

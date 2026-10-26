@@ -4,7 +4,7 @@ import { jobAnalyzeInput, manualJobInput } from '@pathpilot/shared';
 import { getUserId } from '../auth/index.js';
 import { listSources, getAnalysis, latestAnalysis, listAnalyses } from '../services/analysisService.js';
 import { analyzeJobs, analyzeManualJob } from '../agent/jobs.js';
-import { createRun, executeRun, getRun } from '../agent/core.js';
+import { createRun, executeRun, getRun, cancelRun } from '../agent/core.js';
 
 export async function jobRoutes(app: FastifyInstance): Promise<void> {
   const auth = app.authPreHandler;
@@ -30,6 +30,11 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
       return { run, analysis };
     }
     return { run };
+  });
+
+  app.post('/api/agent/runs/:id/cancel', { preHandler: [auth] }, async (req) => {
+    await cancelRun(getUserId(req), Number((req.params as { id: string }).id));
+    return { ok: true };
   });
 
   app.get('/api/jobs/sources', { preHandler: [auth] }, async (req) => {

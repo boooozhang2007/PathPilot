@@ -44,6 +44,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   app.get('/api/health', async () => ({ ok: true, time: new Date().toISOString() }));
+  app.get('/api/motto', async () => {
+    const mottos = ['路虽远，行则将至。', '把今天走稳，远方自会清晰。', '每一次积累，都会在未来回响。', '向着热爱深处，慢慢长成自己的答案。', '星光不问赶路人，时光不负有心人。'];
+    return { text: mottos[Math.floor(Math.random() * mottos.length)] };
+  });
 
   await app.register(authRoutes);
   await app.register(profileRoutes);

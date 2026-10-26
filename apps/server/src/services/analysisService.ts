@@ -15,8 +15,12 @@ export async function saveSamples(
   parseStatus: 'ok' | 'failed' = 'ok'
 ): Promise<number[]> {
   const ids: number[] = [];
+  const seen = new Set<string>();
   for (const s of samples) {
     const hash = contentHash(`${s.title}|${s.company ?? ''}|${s.description.slice(0, 500)}`);
+    const dedupeKey = s.dedupe_key ?? (s.source_url ? s.source_url.replace(/\/$/, '').toLowerCase() : hash);
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
     const inserted = await db
       .insert(jobSources)
       .values({
@@ -33,6 +37,9 @@ export async function saveSamples(
         fetchedAt: s.fetched_at,
         contentHash: hash,
         parseStatus,
+        relevanceScore: s.relevance_score ?? null,
+        contentQualityScore: s.content_quality_score ?? Math.min(100, Math.round((s.description.length / 1200) * 100)),
+        dedupeKey,
       })
       .returning();
     ids.push(inserted[0].id);
@@ -124,10 +131,15 @@ export async function listAnalyses(userId: number, limit = 20): Promise<Analysis
 }
 
 export async function listSources(userId: number, analysisId?: number): Promise<JobSourceDTO[]> {
-  // 用户可见：自己抓取/输入的 + 全局预置样本
-  const rows = analysisId
-    ? await db.select().from(jobSources).where(eq(jobSources.analysisId, analysisId)).orderBy(desc(jobSources.fetchedAt))
-    : await db.select().from(jobSources).where(eq(jobSources.userId, userId)).orderBy(desc(jobSources.fetchedAt)).limit(100);
+  // 分析快照必须先验证归属，再读取关联来源。
+  let rows;
+  if (analysisId) {
+    const owned = await db.select({ id: jobAnalyses.id }).from(jobAnalyses).where(and(eq(jobAnalyses.id, analysisId), eq(jobAnalyses.userId, userId))).limit(1);
+    if (!owned[0]) throw notFound('分析结果不存在');
+    rows = await db.select().from(jobSources).where(and(eq(jobSources.analysisId, analysisId), eq(jobSources.userId, userId))).orderBy(desc(jobSources.fetchedAt));
+  } else {
+    rows = await db.select().from(jobSources).where(eq(jobSources.userId, userId)).orderBy(desc(jobSources.fetchedAt)).limit(100);
+  }
   return rows.map(toSourceDTO);
 }
 
@@ -182,5 +194,8 @@ function toSourceDTO(row: typeof jobSources.$inferSelect): JobSourceDTO {
     parseStatus: row.parseStatus as JobSourceDTO['parseStatus'],
     fetchedAt: row.fetchedAt,
     analysisId: row.analysisId,
+    relevanceScore: row.relevanceScore ?? null,
+    contentQualityScore: row.contentQualityScore ?? null,
+    dedupeKey: row.dedupeKey ?? null,
   };
 }

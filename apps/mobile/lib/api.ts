@@ -1,7 +1,7 @@
 // 统一 API 客户端（移动端）：服务器地址可配置（默认模拟器 10.0.2.2），token 存 AsyncStorage
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const DEFAULT_BASE = 'http://192.168.123.74:3000'; // 最终版硬编码服务器地址
+export const DEFAULT_BASE = 'https://pathpilot.070320.xyz';
 const KEY_TOKEN = 'pp_token';
 const KEY_BASE = 'pp_api_base';
 const KEY_NICKNAME = 'pp_nickname';
@@ -96,6 +96,7 @@ export async function pollRun(runId: number, timeoutMs = 180000): Promise<{ run:
     const data = await api<{ run: { status: string; errorCode: string | null; errorDetail: string | null } }>(`/api/agent/runs/${runId}`);
     if (data.run.status === 'succeeded') return data;
     if (data.run.status === 'failed') throw new ApiError(data.run.errorCode ?? 'RUN_FAILED', data.run.errorDetail ?? '任务失败');
+    if (data.run.status === 'canceled') throw new ApiError('CANCELED', '任务已取消');
     await new Promise((r) => setTimeout(r, 1500));
   }
 }

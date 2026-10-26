@@ -34,6 +34,7 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
+  const [motto, setMotto] = useState('向着热爱深处，慢慢长成自己的答案。');
 
   function load() {
     setLoading(true);
@@ -46,6 +47,7 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }
   useEffect(load, []);
+  useEffect(() => { api<{ text: string }>('/api/motto').then((x) => setMotto(x.text)).catch(() => {}); }, []);
 
   if (loading) return <Loading />;
   const d = data;
@@ -63,6 +65,7 @@ export default function DashboardPage() {
             <div className="eyebrow mb-2">01 · DASHBOARD</div>
             <h1 className="font-display text-[26px] font-bold leading-tight">{greeting()},{d?.profile?.nickname ?? '同学'}</h1>
             <p className="mt-2 text-[13px] leading-6 text-white/60">
+              {motto}<br />
               {d?.profile ? `${GRADE_LABELS[d.profile.grade]} · 目标 ${d.profile.targetRole || '未设定'} · 每周可投入 ${d.profile.weeklyHours}h` : '先完善个人资料,开始你的成长规划'}
             </p>
           </div>

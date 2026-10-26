@@ -86,6 +86,9 @@ export interface JobSourceDTO {
   parseStatus: ParseStatus;
   fetchedAt: string;
   analysisId: number | null;
+  relevanceScore: number | null;
+  contentQualityScore: number | null;
+  dedupeKey: string | null;
 }
 
 export interface JobAnalysisDTO {
@@ -102,6 +105,15 @@ export interface JobAnalysisDTO {
 export interface RoadmapTaskDTO {
   id: number;
   roadmapId: number;
+  parentTaskId: number | null;
+  taskType: 'goal' | 'milestone' | 'task' | 'subtask';
+  sortOrder: number;
+  dueDate: string | null;
+  dependencyIds: number[];
+  completionRule: 'manual' | 'all_children' | 'percentage';
+  childCount?: number;
+  completedChildCount?: number;
+  progressPercent?: number;
   semester: number;
   title: string;
   description: string;
@@ -155,6 +167,8 @@ export interface AgentRunDTO {
   inputSummary: string | null;
   startedAt: string;
   finishedAt: string | null;
+  progress: number;
+  progressMessage: string | null;
 }
 
 export interface ChatMessageDTO {
@@ -166,6 +180,15 @@ export interface ChatMessageDTO {
   /** 工具调用链路（LLM 通道）：[{name, summary}] */
   toolCalls: { name: string; summary: string }[];
   createdAt: string;
+}
+
+export type AgentFlowState = 'profile_check' | 'profile_collect' | 'advice_intent_select' | 'intent_confirm' | 'tool_execution' | 'result_review' | 'next_action';
+export type AdviceIntent = 'job_insight' | 'skill_gap' | 'roadmap' | 'task_breakdown' | 'resume' | 'interview';
+export interface AgentFlowDTO {
+  state: AgentFlowState;
+  missingProfileFields: string[];
+  selectedIntent: AdviceIntent | null;
+  nextActions: { id: AdviceIntent | 'profile'; label: string }[];
 }
 
 /** 前端可选模型目录 */
@@ -181,6 +204,8 @@ export interface ChatSessionSummaryDTO {
   title: string;
   messageCount: number;
   updatedAt: string;
+  flowState?: string;
+  selectedIntent?: string | null;
 }
 
 export interface DashboardData {

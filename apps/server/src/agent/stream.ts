@@ -11,6 +11,7 @@ import { buildUserContext } from './context.js';
 import { isLlmConfigured, getLlmSettings } from './settings.js';
 import { skillGroupOf } from '@pathpilot/shared';
 import type { AgentEvent } from '@earendil-works/pi-agent-core';
+import { flowPrompt, flowToolsEnabled, markFlowResult, prepareFlow } from './flow.js';
 
 export interface StreamEvent {
   type: 'thinking' | 'tool_start' | 'tool_end' | 'text' | 'done' | 'error';
@@ -45,7 +46,7 @@ async function ensureSession(userId: number, sessionId?: number): Promise<number
  */
 export async function streamChat(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   const userId = getUserId(req);
-  const input = (req.body ?? {}) as { sessionId?: number; message?: string; model?: string };
+  const input = (req.body ?? {}) as { sessionId?: number; message?: string; model?: string; answerStyle?: 'concise' | 'detailed' };
   const message = (input.message ?? '').trim();
   if (!message) {
     reply.status(400).send({ error: { code: 'VALIDATION_ERROR', message: '消息不能为空' } });
@@ -54,6 +55,7 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
 
   const sid = await ensureSession(userId, input.sessionId);
   await db.insert(agentChatMessages).values({ sessionId: sid, role: 'user', content: message });
+  const flow = await prepareFlow(userId, sid, message);
 
   // 直接写 raw 响应会绕过 fastify 生命周期，@fastify/cors 的 hook 不会执行，
   // 必须手动补上 CORS 头，否则浏览器跨域读取 SSE 时报 "Failed to fetch"
@@ -151,9 +153,9 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
     const { models, model } = await resolveModel(modelId);
     const agent = new Agent({
       initialState: {
-        systemPrompt: ADVISOR_PROMPT(ctxSummary),
+        systemPrompt: ADVISOR_PROMPT(ctxSummary, input.answerStyle, flow),
         model,
-        tools: tracedTools(buildAgentTools(userId), trace),
+        tools: flowToolsEnabled(flow) ? tracedTools(buildAgentTools(userId), trace) : [],
         messages: recent as never[],
         thinkingLevel: 'off',
       },
@@ -251,9 +253,11 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
     toolCalls: trace.length ? trace : null,
   });
   await db.update(agentChatSessions).set({ updatedAt: new Date().toISOString() }).where(eq(agentChatSessions.id, sid));
+  if (flowToolsEnabled(flow)) await markFlowResult(sid);
   finish({ type: 'done', engine, model: usedModel, fallbackReason: stopped ? '已停止生成（保留已输出部分）' : fallbackReason || undefined } as never);
 }
 
-function ADVISOR_PROMPT(ctxSummary: string): string {
-  return `你是 PathPilot AI 职业顾问，服务对象是计算机专业大学生。\n回答规范：\n1. 基于用户真实数据作答，可调用工具操作各模块（档案/任务/规划/岗位分析/简历）。需要细节或执行操作时调用工具。\n2. 回答应基于真实数据、言之有据，但无需在回复中显式标注【事实】【推断】【建议】等分类标签，自然表述即可。\n3. 工具操作即真实生效；执行后告知结果。\n4. 中文回答，用 Markdown 排版（列表/加粗/小标题）。\n5. 技能建议区分「专业能力」（岗位技术栈）与「通用能力」（沟通表达、协作、学习习惯），通用能力落到具体场景任务而非空泛要求。\n6. 若用户档案含 MBTI，可结合性格特质给出更贴合的建议（如任务形式、协作与表达方式），但不因性格限制能力目标。\n\n用户数据摘要（授权范围）：\n${ctxSummary}`;
+function ADVISOR_PROMPT(ctxSummary: string, answerStyle: 'concise' | 'detailed' | undefined, flow: import('@pathpilot/shared').AgentFlowDTO): string {
+  const style = answerStyle === 'concise' ? '回答控制在重点要点内，优先给出下一步操作。' : '回答保持清晰完整，按需给出步骤和依据。';
+  return `你是 PathPilot AI 职业顾问，服务对象是计算机专业大学生。${flowPrompt(flow)}\n${style} 遇到几十小时以上的大目标，先保留一个父任务，再用 roadmap_add_task 创建 2-8 个带 parent_task_id 的子任务，并为每个子任务设置产出、验收标准和预计时长。基于用户真实数据作答，中文回答，用 Markdown 排版。\n\n用户数据摘要（授权范围）：\n${ctxSummary}`;
 }

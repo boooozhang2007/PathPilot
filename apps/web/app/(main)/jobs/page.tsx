@@ -90,7 +90,7 @@ export default function JobsPage() {
     setErr('');
     setBusy('正在联网搜索真实招聘信息…');
     try {
-      const res = await api<{ run_id: number }>('/api/jobs/analyze', { method: 'POST', json: { targetRole: role, city: city || undefined, employmentType: type, sampleLimit: 10 } });
+      const res = await api<{ run_id: number }>('/api/jobs/analyze', { method: 'POST', json: { targetRole: role, city: city || undefined, employmentType: type, sampleLimit: 18 } });
       setBusy('采集岗位样本并抽取技能要求…');
       await pollRun(res.run_id, (s) => setBusy(s === 'running' ? '采集岗位样本并抽取技能要求…' : s));
       await load();

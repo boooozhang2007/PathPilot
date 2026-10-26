@@ -47,6 +47,9 @@ export const profileInput = z.object({
   avatar: z.string().max(760_000).nullable().optional(),
 });
 export type ProfileInput = z.infer<typeof profileInput>;
+/** 局部资料更新：头像、昵称等可以独立保存，不要求同时填写其它资料。 */
+export const profilePatchInput = profileInput.partial();
+export type ProfilePatchInput = z.infer<typeof profilePatchInput>;
 
 // ---------- 技能档案（PRD 8.3） ----------
 export const profileSkillInput = z.object({
@@ -79,7 +82,7 @@ export const jobAnalyzeInput = z.object({
   employmentType: z.enum(EMPLOYMENT_TYPES).default('internship'),
   educationFilter: z.string().max(20).optional(),
   /** 期望采集样本数上限 */
-  sampleLimit: z.number().int().min(3).max(30).default(12),
+  sampleLimit: z.number().int().min(3).max(30).default(18),
 });
 export type JobAnalyzeInput = z.infer<typeof jobAnalyzeInput>;
 
@@ -106,6 +109,9 @@ export const jobSampleSchema = z.object({
   source_url: z.string().nullable(),
   fetched_at: z.string(),
   source_type: z.enum(SOURCE_TYPES),
+  relevance_score: z.number().min(0).max(100).optional(),
+  content_quality_score: z.number().min(0).max(100).optional(),
+  dedupe_key: z.string().optional(),
 });
 export type JobSample = z.infer<typeof jobSampleSchema>;
 
@@ -132,6 +138,8 @@ export const jobAnalysisResult = z.object({
       source_type: z.enum(SOURCE_TYPES),
       parse_status: z.string(),
       fetched_at: z.string(),
+      relevance_score: z.number().nullable().optional(),
+      content_quality_score: z.number().nullable().optional(),
     })
   ),
   limitations: z.array(z.string()).default([]),
@@ -153,6 +161,7 @@ export type SemesterPlan = z.infer<typeof semesterSchema>;
 
 export const roadmapTaskSchema = z.object({
   title: z.string().min(1),
+  parent_task_id: z.number().int().positive().nullable().optional(),
   semester: z.number().int().min(1).max(12),
   description: z.string().min(1),
   estimated_hours: z.number().min(0.5),
@@ -212,6 +221,11 @@ export const taskUpdateInput = z.object({
   estimatedHours: z.number().min(0.5).max(300).optional(),
   deliverable: z.string().max(500).optional(),
   acceptanceCriteria: z.string().max(500).optional(),
+  parentTaskId: z.number().int().positive().nullable().optional(),
+  taskType: z.enum(['goal', 'milestone', 'task', 'subtask']).optional(),
+  dueDate: dateString.nullable().optional(),
+  dependencyIds: z.array(z.number().int().positive()).max(30).optional(),
+  completionRule: z.enum(['manual', 'all_children', 'percentage']).optional(),
 });
 export type TaskUpdateInput = z.infer<typeof taskUpdateInput>;
 
@@ -232,6 +246,7 @@ export const agentChatInput = z.object({
   message: z.string().min(1).max(2000),
   /** 前端选择的模型 id（模型目录见 GET /api/agent/models） */
   model: z.string().max(100).optional(),
+  answerStyle: z.enum(['concise', 'detailed']).optional(),
 });
 export type AgentChatInput = z.infer<typeof agentChatInput>;
 

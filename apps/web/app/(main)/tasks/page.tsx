@@ -218,7 +218,8 @@ export default function TasksPage() {
                               <span className="text-[10px] text-slate-2">{picked ? '已选' : '选择'}</span>
                             </div>
                           )}
-                          <div className="text-xs font-bold leading-5">{t.title}</div>
+                          <div className="text-xs font-bold leading-5">{t.parentTaskId ? '↳ ' : ''}{t.title}</div>
+                          {t.parentTaskId && <div className="mt-1 text-[10px] text-accent-deep">子任务 · 跟随父任务推进</div>}
                           <div className="num mt-2 flex items-center justify-between text-[11px] text-slate-2">
                             <span>
                               {t.estimatedHours}h · {PRIORITY_LABELS[t.priority]}

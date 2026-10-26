@@ -1,6 +1,7 @@
 // AI 顾问（DeepSeek 式聊天）：侧栏历史（分组/重命名/批量删除）+ 新建对话 + 完整输入框
 // 回复消息下方带 复制 / 重新生成；停止生成会真正中止服务端推理（SSE 断开即 abort）
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'expo-router';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, Modal, Pressable, type ScrollViewInstance } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { api, getApiBase, getToken } from '../../lib/api';
@@ -35,6 +36,7 @@ function groupOf(iso: string): 'today' | 'yesterday' | 'earlier' {
 }
 
 export default function AdvisorTab() {
+  const router = useRouter();
   const { settings, update, fs, lang } = useSettings();
   const t = makeT(lang);
 
@@ -53,6 +55,8 @@ export default function AdvisorTab() {
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [guideStep, setGuideStep] = useState<'profile' | 'choice' | 'done'>('profile');
+  const [guideReady, setGuideReady] = useState(false);
   const listRef = useRef<ScrollViewInstance | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -89,6 +93,13 @@ export default function AdvisorTab() {
       })
       .catch(() => {});
   }, [loadSessions]);
+
+  useEffect(() => {
+    api<{ targetRole?: string; weeklyHours?: number; grade?: string } | null>('/api/profile')
+      .then((p) => setGuideStep(p?.targetRole && p.weeklyHours && p.grade ? 'choice' : 'profile'))
+      .catch(() => setGuideStep('choice'))
+      .finally(() => setGuideReady(true));
+  }, []);
 
   function newChat() {
     abortRef.current?.abort();
@@ -142,8 +153,6 @@ export default function AdvisorTab() {
   async function send(text?: string, opts?: { regenerate?: boolean }) {
     const message = (text ?? input).trim();
     if (!message || busy) return;
-    // 回答风格偏好：简洁模式附加提示词
-    const finalMessage = settings.answerStyle === 'concise' && !opts?.regenerate ? `${message}\n（请简明扼要回答）` : message;
     setInput('');
     setErr('');
     setBusy(true);
@@ -161,7 +170,7 @@ export default function AdvisorTab() {
       const res = await fetch(`${base}/api/agent/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ sessionId, message: finalMessage }),
+        body: JSON.stringify({ sessionId, message, answerStyle: settings.answerStyle }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) throw new Error(`请求失败(${res.status})`);
@@ -294,14 +303,28 @@ export default function AdvisorTab() {
               <LogoMark size={30} bg="transparent" fg="#FFFFFF" />
             </View>
             <Text style={{ fontSize: fs(20), fontWeight: '800', color: C.ink, marginBottom: 6 }}>{t('welcomeTitle')}</Text>
-            <Text style={{ fontSize: fs(13), color: C.slate, marginBottom: 24, textAlign: 'center' }}>{t('welcomeSubtitle')}</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
-              {SUGGESTIONS.map((s2) => (
-                <TouchableOpacity key={s2} style={{ ...SF.raised, borderRadius: 999, paddingHorizontal: 13, paddingVertical: 8 }} onPress={() => send(s2)}>
-                  <Text style={{ fontSize: fs(12), color: C.ink }}>{s2}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <Text style={{ fontSize: fs(13), color: C.slate, marginBottom: 24, textAlign: 'center' }}>{guideStep === 'profile' ? '先完善目标岗位、年级和每周时间，再选择想要的就业建议。' : '你想先从哪一件事开始？'}</Text>
+            {guideReady && guideStep === 'profile' ? (
+              <View style={{ ...SF.card, width: '100%', padding: 16 }}>
+                <Text style={{ fontSize: fs(14), fontWeight: '800', color: C.ink }}>先完善 3 项信息</Text>
+                <Text style={{ fontSize: fs(12), color: C.slate, lineHeight: 19, marginTop: 6 }}>这些信息会影响岗位检索关键词与规划节奏。</Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                  <TouchableOpacity style={{ ...SF.chip, flex: 1, backgroundColor: C.accent, borderWidth: 0, paddingVertical: 10, alignItems: 'center' }} onPress={() => router.push('/profile-edit')}><Text style={{ color: C.onAccent, fontWeight: '700', fontSize: fs(12) }}>去填写资料</Text></TouchableOpacity>
+                  <TouchableOpacity style={{ ...SF.raised, flex: 1, paddingVertical: 10, alignItems: 'center' }} onPress={() => setGuideStep('choice')}><Text style={{ color: C.ink, fontWeight: '700', fontSize: fs(12) }}>继续</Text></TouchableOpacity>
+                </View>
+              </View>
+            ) : guideReady && guideStep === 'choice' ? (
+              <View style={{ width: '100%', gap: 8 }}>
+                {[
+                  ['岗位洞察', '分析真实招聘要求', '帮我搜索并分析目标岗位的真实招聘要求'],
+                  ['能力差距', '找到当前技能缺口', '请结合我的档案做一次能力差距分析'],
+                  ['成长路线', '生成分阶段路线', '请根据我的情况生成成长路线'],
+                  ['任务拆解', '把大目标拆成子任务', '请把我当前最重要的目标拆成可跟踪的子任务'],
+                  ['简历准备', '整理真实经历', '请帮我整理简历'],
+                  ['面试模拟', '开始一轮模拟面试', '请开始一轮针对我目标岗位的模拟面试'],
+                ].map(([title, desc, prompt]) => <TouchableOpacity key={title} style={{ ...SF.raised, padding: 12, borderRadius: 12 }} onPress={() => { setGuideStep('done'); send(prompt); }}><Text style={{ color: C.ink, fontWeight: '700', fontSize: fs(13) }}>{title}</Text><Text style={{ color: C.slate, fontSize: fs(11), marginTop: 3 }}>{desc}</Text></TouchableOpacity>)}
+              </View>
+            ) : null}
           </View>
         )}
 

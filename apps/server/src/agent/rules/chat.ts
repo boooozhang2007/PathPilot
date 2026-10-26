@@ -62,6 +62,6 @@ export function analyzeGapByRules(ctx: UserContext): SkillGapResult {
       projects.length > 0
         ? projects.slice(0, 3).map((p) => `完善既有项目「${p.title}」：补充 README、测试与部署证据`)
         : ['完成一个包含增删改查的小型项目并部署', '为项目补充 README 与技术选型说明', '将项目与岗位高频技能对应并加入简历'],
-    rationale: `匹配度 = Σ(要求权重 × 满足系数) / Σ(要求权重)，基于 ${analysis.sampleCount} 条真实岗位样本统计；已有证据=1.0、待验证=0.5、需要提升=0.2、未评估=0。该数值仅为辅助参考，不代表就业成功概率。`,
+    rationale: `匹配度 = Σ(要求权重 × 满足系数) / Σ(要求权重)，基于 ${analysis.sampleCount} 条真实岗位样本统计；已有证据=1.0、待验证=0.5、需要提升=0.2、未评估=0。`,
   };
 }

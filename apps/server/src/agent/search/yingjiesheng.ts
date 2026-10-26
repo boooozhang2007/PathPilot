@@ -119,7 +119,7 @@ export async function yjsSearchJobs(input: { keyword: string; city?: string; emp
     const html = await headlessDump(url);
     // 风控页检测（阿里云滑块）：如实报告，不绕过
     if (/滑动验证|AliyunCaptcha|captcha-frontend/.test(html)) {
-      return { samples: [], ok: false, note: `应届生求职网当前对该网络返回滑块验证（不绕过验证码）。可让用户从浏览器打开 ${url} 复制接口数据后用 parse_yjs_jobs 解析。` };
+      return { samples: [], ok: false, note: `应届生求职网当前需要页面验证。打开 ${url} 复制接口数据后可用 parse_yjs_jobs 解析。` };
     }
     const samples = parseYjsCards(html, input.employmentType)
       .filter((s) => (input.city ? (s.location ?? '').includes(input.city) : true))

@@ -221,12 +221,13 @@ export default function TasksTab() {
                 )}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: C.ink }} numberOfLines={2}>
-                    {t.title}
+                    {t.parentTaskId ? '↳ ' : ''}{t.title}
                   </Text>
                   <Tag tone={t.status === 'done' ? 'teal' : t.status === 'in_progress' ? 'accent' : t.status === 'deferred' ? 'amber' : 'slate'}>
                     {TASK_STATUS_LABELS[t.status]}
                   </Tag>
                 </View>
+                {t.parentTaskId ? <Text style={{ fontSize: fs(10), color: C.accent, marginTop: 4 }}>子任务 · 跟随父任务推进</Text> : null}
                 {/* 详细说明板块 */}
                 {t.description ? (
                   <Text style={{ fontSize: 12, color: C.slate, lineHeight: 18, marginTop: 6 }} numberOfLines={2}>
