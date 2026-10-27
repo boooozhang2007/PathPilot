@@ -14,12 +14,9 @@ const INTENTS: { id: AdviceIntent; label: string; words: string[] }[] = [
 ];
 
 function missingProfile(profile: Awaited<ReturnType<typeof getProfile>>): string[] {
-  if (!profile) return ['昵称', '学校', '专业', '年级', '目标岗位', '发展路径', '每周可投入时间'];
+  if (!profile) return ['目标岗位', '当前年级', '每周可投入时间'];
   const missing: string[] = [];
-  if (!profile.school) missing.push('学校');
-  if (!profile.major) missing.push('专业');
   if (!profile.targetRole) missing.push('目标岗位');
-  if (!profile.careerPath) missing.push('发展路径');
   if (!profile.grade) missing.push('当前年级');
   if (!profile.weeklyHours || profile.weeklyHours < 1) missing.push('每周可投入时间');
   return missing;
@@ -38,11 +35,11 @@ export async function prepareFlow(userId: number, sessionId: number, message: st
   const detected = detectIntent(message);
   let state = session?.flowState as AgentFlowState | undefined;
   let selected = (session?.selectedIntent as AdviceIntent | null) ?? null;
-  if (missing.length) {
-    state = 'profile_collect';
-  } else if (detected) {
+  if (detected) {
     selected = detected;
     state = 'tool_execution';
+  } else if (missing.length) {
+    state = 'profile_collect';
   } else if (!selected) {
     state = 'advice_intent_select';
   } else if (state === 'result_review' || state === 'next_action') {
@@ -55,7 +52,7 @@ export async function prepareFlow(userId: number, sessionId: number, message: st
     state,
     missingProfileFields: missing,
     selectedIntent: selected,
-    nextActions: missing.length ? [{ id: 'profile', label: '完善资料' }] : INTENTS.map(({ id, label }) => ({ id, label })),
+    nextActions: INTENTS.map(({ id, label }) => ({ id, label })),
   };
 }
 

@@ -64,6 +64,7 @@ export default function TabLayout() {
         tabBarStyle: { ...SF.tabBar, height: 56, paddingBottom: 4 },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
         sceneStyle: { backgroundColor: C.paper },
+        tabBarHideOnKeyboard: true,
       }}
     >
       <Tabs.Screen name="index" options={{ title: '首页', tabBarIcon: ({ color, focused }) => <TabIcon name="index" color={String(color) || C.ink} focused={focused} /> }} />

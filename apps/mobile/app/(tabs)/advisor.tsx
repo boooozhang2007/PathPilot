@@ -1,8 +1,8 @@
 // AI 顾问（DeepSeek 式聊天）：侧栏历史（分组/重命名/批量删除）+ 新建对话 + 完整输入框
 // 回复消息下方带 复制 / 重新生成；停止生成会真正中止服务端推理（SSE 断开即 abort）
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'expo-router';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, Modal, Pressable, type ScrollViewInstance } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, Modal, Pressable, Keyboard, type ScrollViewInstance } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { api, getApiBase, getToken } from '../../lib/api';
 import { createUtf8StreamDecoder } from '../../lib/utf8';
@@ -58,6 +58,7 @@ export default function AdvisorTab() {
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [guideStep, setGuideStep] = useState<'profile' | 'choice' | 'done'>('profile');
   const [guideReady, setGuideReady] = useState(false);
+  const [autoWrite, setAutoWrite] = useState(false);
   const listRef = useRef<ScrollViewInstance | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   // 导航类中止（新建对话/删除会话）标记：AbortError catch 据此跳过本地消息追加，避免旧流半截回复污染新会话
@@ -87,6 +88,15 @@ export default function AdvisorTab() {
   );
 
   useEffect(() => {
+    const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => {
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+    });
+    return () => {
+      showSub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
     loadSessions();
     api<{ sessionId: number; messages: ChatMessageDTO[] } | null>('/api/agent/session')
       .then((s) => {
@@ -99,12 +109,14 @@ export default function AdvisorTab() {
       .catch(() => {});
   }, [loadSessions]);
 
-  useEffect(() => {
-    api<{ targetRole?: string; weeklyHours?: number; grade?: string } | null>('/api/profile')
-      .then((p) => setGuideStep(p?.targetRole && p.weeklyHours && p.grade ? 'choice' : 'profile'))
-      .catch(() => setGuideStep('choice'))
-      .finally(() => setGuideReady(true));
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      api<{ targetRole?: string; weeklyHours?: number; grade?: string } | null>('/api/profile')
+        .then((p) => setGuideStep(p?.targetRole && p.weeklyHours && p.grade ? 'choice' : 'profile'))
+        .catch(() => setGuideStep('choice'))
+        .finally(() => setGuideReady(true));
+    }, [])
+  );
 
   function newChat() {
     if (abortRef.current) navigatingRef.current = true; // 仅在确有进行中的流时标记，避免残留标记误伤后续中止
@@ -196,6 +208,7 @@ export default function AdvisorTab() {
           message,
           answerStyle: settings.answerStyle,
           thinking: settings.showThinking,
+          autoWrite,
           ...(opts?.regenerateFrom ? { regenerateFrom: opts.regenerateFrom } : {}),
         }),
         signal: controller.signal,
@@ -275,6 +288,7 @@ export default function AdvisorTab() {
               role: 'assistant',
               content: st.text.trim() || '（无内容）',
               engine: (doneEngine as never) ?? null,
+              thinking: st.thinking.trim() || null,
               toolCalls: st.tools.filter((x) => x.status === 'done').map((x) => ({ name: x.name, summary: x.summary ?? '' })),
               createdAt: new Date().toISOString(),
             },
@@ -290,10 +304,19 @@ export default function AdvisorTab() {
           setStream(null);
         } else {
           setStream((st) => {
-            if (st && st.text.trim()) {
+            if (st && (st.text.trim() || st.thinking.trim())) {
               setMessages((prev) => [
                 ...prev,
-                { id: Date.now() + 1, sessionId: activeSessionId ?? 0, role: 'assistant', content: st.text, engine: null, toolCalls: [], createdAt: new Date().toISOString() },
+                {
+                  id: Date.now() + 1,
+                  sessionId: activeSessionId ?? 0,
+                  role: 'assistant',
+                  content: st.text.trim() || '已停止生成',
+                  engine: null,
+                  thinking: st.thinking.trim() || null,
+                  toolCalls: st.tools.filter((x) => x.status === 'done').map((x) => ({ name: x.name, summary: x.summary ?? '' })),
+                  createdAt: new Date().toISOString(),
+                },
               ]);
             }
             return null;
@@ -340,7 +363,11 @@ export default function AdvisorTab() {
   const currentTitle = sessions.find((s) => s.id === sessionId)?.title ?? 'PathPilot';
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, ...SF.page }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      style={{ flex: 1, ...SF.page }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+    >
       {/* 顶栏：侧栏开关 / 标题 / 新建对话 */}
       <View style={{ paddingTop: 54, paddingHorizontal: 12, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderBottomColor: C.line }}>
         <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setSidebarOpen(true)}>
@@ -361,6 +388,7 @@ export default function AdvisorTab() {
         ref={listRef}
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
+        keyboardShouldPersistTaps="handled"
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
       >
         {messages.length === 0 && !stream && !busy && (
@@ -413,8 +441,15 @@ export default function AdvisorTab() {
                   <Text style={{ fontSize: fs(11), fontWeight: '600', color: C.amber }}>本次回复未完成</Text>
                 </View>
               ) : null}
+              {/* DeepSeek 式思考过程与工具调用链路展示（置于回答内容上方） */}
+              {(m.thinking || (m.toolCalls && m.toolCalls.length > 0)) && (
+                <DeepSeekThinkingBlock
+                  thinking={m.thinking}
+                  tools={m.toolCalls?.map((tc) => ({ name: tc.name, status: 'done' as const, summary: tc.summary }))}
+                  initiallyOpen={false}
+                />
+              )}
               <Markdown text={m.content} />
-              {settings.showTools && m.toolCalls && m.toolCalls.length > 0 && <ToolList tools={m.toolCalls.map((tc: { name: string; summary: string }) => ({ ...tc, status: 'done' as const }))} />}
               {/* 回复操作：复制 + 重新生成（每条回复下方） */}
               <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
                 <MsgAction
@@ -447,6 +482,9 @@ export default function AdvisorTab() {
             placeholderTextColor={C.slate2}
             value={input}
             onChangeText={setInput}
+            onFocus={() => {
+              setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 150);
+            }}
             multiline
           />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
@@ -464,6 +502,15 @@ export default function AdvisorTab() {
               <Icon name="pen" size={14} color={settings.answerStyle === 'concise' ? C.accent : C.slate} />
               <Text style={{ fontSize: fs(12), fontWeight: '600', color: settings.answerStyle === 'concise' ? C.accent : C.slate }}>
                 {settings.answerStyle === 'concise' ? t('concise') : t('detailed')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5, backgroundColor: autoWrite ? C.accentSoft : 'transparent', borderWidth: 1, borderColor: autoWrite ? C.accent : C.line, boxShadow: autoWrite ? SF.chip.boxShadow : undefined }}
+              onPress={() => setAutoWrite((v) => !v)}
+            >
+              <Icon name="checkCircle" size={14} color={autoWrite ? C.accent : C.slate} />
+              <Text style={{ fontSize: fs(12), fontWeight: '600', color: autoWrite ? C.accent : C.slate }}>
+                自动写入
               </Text>
             </TouchableOpacity>
             <View style={{ flex: 1 }} />
@@ -644,46 +691,161 @@ function MsgAction({ icon, label, onPress }: { icon: 'copy' | 'check' | 'refresh
   );
 }
 
-/** 工具调用链（可折叠，按个性化设置展示） */
-function ToolList({ tools }: { tools: ToolState[] }) {
+const TOOL_LABELS: Record<string, string> = {
+  get_user_profile: '获取能力档案',
+  upsert_skill: '更新技能评分',
+  create_experience: '创建经历凭证',
+  get_tasks: '查询待办任务',
+  update_task_status: '更新任务状态',
+  get_current_roadmap: '获取成长路线',
+  get_roadmap_versions: '查询路线历史',
+  generate_roadmap: '生成成长路线',
+  create_roadmap_revision: '修订成长路线',
+  roadmap_add_task: '路线添加任务',
+  roadmap_update_task: '更新路线任务',
+  roadmap_remove_task: '移除路线任务',
+  get_job_analysis: '查询岗位洞察',
+  analyze_jobs: '分析招聘需求',
+  analyze_skill_gap: '评估技能差距',
+  search_jobs: '搜索招聘市场',
+  fetch_job_page: '获取岗位详情',
+  extract_requirements: '提取任职要求',
+  normalize_skills: '匹配标准化技能',
+  generate_resume_draft: '生成简历草稿',
+};
+
+/** DeepSeek 式思考流程与工具调用链路展示组件（工具调用结果内嵌展示） */
+function DeepSeekThinkingBlock({
+  thinking,
+  tools = [],
+  isStreaming = false,
+  elapsedSeconds,
+  initiallyOpen = false,
+}: {
+  thinking?: string | null;
+  tools?: ToolState[];
+  isStreaming?: boolean;
+  elapsedSeconds?: number;
+  initiallyOpen?: boolean;
+}) {
   const { fs, settings, lang } = useSettings();
   const t = makeT(lang);
-  const [open, setOpen] = useState(false);
-  if (!settings.showTools || tools.length === 0) return null;
-  const running = tools.some((x) => x.status === 'running');
+  const [open, setOpen] = useState(initiallyOpen);
+
+  if (!settings.showThinking && !settings.showTools) return null;
+  const hasThinking = settings.showThinking && !!thinking?.trim();
+  const hasTools = settings.showTools && tools.length > 0;
+  if (!hasThinking && !hasTools) return null;
+
+  const runningTool = tools.find((x) => x.status === 'running');
+
+  let headerLabel = '';
+  if (isStreaming) {
+    if (runningTool) {
+      headerLabel = `正在调用工具：${TOOL_LABELS[runningTool.name] || runningTool.name}…`;
+    } else {
+      headerLabel = elapsedSeconds !== undefined ? `${t('thinking')}… ${elapsedSeconds}${t('seconds')}` : `${t('thinking')}…`;
+    }
+  } else {
+    const timeText = elapsedSeconds ? ` (用时 ${elapsedSeconds}${t('seconds')})` : '';
+    const toolText = hasTools ? ` · 调用了 ${tools.length} 个工具` : '';
+    headerLabel = `已深度思考${timeText}${toolText}`;
+  }
+
   return (
-    <TouchableOpacity style={{ ...SF.inset, borderRadius: 10, padding: 9, marginTop: 8 }} onPress={() => setOpen((v) => !v)} activeOpacity={0.7}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        {running ? <Icon name="clock" size={13} color={C.slate} /> : <Icon name="wrench" size={13} color={C.slate} />}
-        <Text style={{ fontSize: fs(11), color: C.slate }}>
-          {tools.length} {t('usedTools')}
+    <View style={{ marginBottom: 10 }}>
+      {/* 头部可折叠卡条 */}
+      <TouchableOpacity
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+          paddingVertical: 7,
+          paddingHorizontal: 10,
+          borderRadius: 8,
+          backgroundColor: isStreaming ? C.accentSoft : C.group,
+          borderWidth: 1,
+          borderColor: isStreaming ? C.accent + '40' : C.line,
+        }}
+        onPress={() => setOpen((v) => !v)}
+        activeOpacity={0.7}
+      >
+        <Icon name="brain" size={13} color={isStreaming ? C.accent : C.slate} />
+        <Text style={{ flex: 1, fontSize: fs(11), fontWeight: '600', color: isStreaming ? C.accent : C.slate }}>
+          {headerLabel}
         </Text>
-        <Icon name={open ? 'chevronUp' : 'chevronDown'} size={12} color={C.slate2} />
-      </View>
-      {open &&
-        tools.map((x, i) => (
-          <View key={i} style={{ marginTop: 7, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 6 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-              <Icon name={x.status === 'running' ? 'clock' : 'checkCircle'} size={12} color={x.status === 'running' ? C.slate : C.teal} />
-              <Text style={{ fontSize: fs(11), fontWeight: '700', color: C.ink }}>{x.name}</Text>
+        <Icon name={open ? 'chevronUp' : 'chevronDown'} size={12} color={isStreaming ? C.accent : C.slate2} />
+      </TouchableOpacity>
+
+      {/* 展开的思考过程与工具调用 */}
+      {open && (
+        <View
+          style={{
+            marginTop: 6,
+            marginLeft: 6,
+            paddingLeft: 12,
+            borderLeftWidth: 2,
+            borderLeftColor: isStreaming ? C.accent : C.line,
+          }}
+        >
+          {/* 工具调用作为思考链的一环内嵌展示 */}
+          {hasTools && (
+            <View style={{ gap: 6, marginBottom: hasThinking ? 8 : 0 }}>
+              {tools.map((x, i) => {
+                const label = TOOL_LABELS[x.name] || x.name;
+                const isRunning = x.status === 'running';
+                return (
+                  <View
+                    key={i}
+                    style={{
+                      backgroundColor: C.group,
+                      borderRadius: 8,
+                      padding: 8,
+                      borderWidth: 1,
+                      borderColor: isRunning ? C.accent + '40' : C.line,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Icon name={isRunning ? 'clock' : 'checkCircle'} size={12} color={isRunning ? C.accent : C.teal} />
+                        <Text style={{ fontSize: fs(11), fontWeight: '700', color: C.ink }}>{label}</Text>
+                        <Text style={{ fontSize: fs(10), color: C.slate2 }}>({x.name})</Text>
+                      </View>
+                      <Text style={{ fontSize: fs(10), color: isRunning ? C.accent : C.teal, fontWeight: '600' }}>
+                        {isRunning ? '执行中…' : '调用成功'}
+                      </Text>
+                    </View>
+                    {x.summary ? (
+                      <View style={{ marginTop: 5, padding: 6, backgroundColor: C.paper, borderRadius: 6, borderWidth: 1, borderColor: C.line + '70' }}>
+                        <Text style={{ fontSize: fs(10), color: C.slate, lineHeight: fs(15) }}>
+                          {x.summary}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                );
+              })}
             </View>
-            {x.summary ? (
-              <Text style={{ fontSize: fs(10), color: C.slate, marginTop: 2 }} numberOfLines={4}>
-                {x.summary}
+          )}
+
+          {/* 完整思考文本：支持完整展示，无行数限制 */}
+          {hasThinking && (
+            <View style={{ marginTop: 2 }}>
+              <Text style={{ fontSize: fs(11), color: C.slate, lineHeight: fs(18) }}>
+                {thinking}
               </Text>
-            ) : null}
-          </View>
-        ))}
-    </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
+    </View>
   );
 }
 
-/** 流式气泡：思考过程（个性化开关）→ 工具 → 增量文本 */
+/** 流式气泡：DeepSeek 思考链（含工具调用）→ 增量文本 */
 function StreamBubble({ s }: { s: StreamState }) {
-  const { fs, settings, lang } = useSettings();
-  const t = makeT(lang);
+  const { fs } = useSettings();
   const [elapsed, setElapsed] = useState(0);
-  const [thinkOpen, setThinkOpen] = useState(true);
   useEffect(() => {
     const id = setInterval(() => setElapsed(Math.floor((Date.now() - s.startedAt) / 1000)), 1000);
     return () => clearInterval(id);
@@ -695,23 +857,15 @@ function StreamBubble({ s }: { s: StreamState }) {
         <LogoMark size={20} bg={C.accent} fg="#FFFFFF" />
         <Text style={{ fontSize: fs(12), fontWeight: '700', color: C.ink }}>PathPilot</Text>
       </View>
-      {settings.showThinking && s.thinking ? (
-        <TouchableOpacity style={{ ...SF.inset, borderRadius: 10, padding: 9, marginBottom: 8 }} onPress={() => setThinkOpen((v) => !v)} activeOpacity={0.7}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Icon name="brain" size={13} color={thinkingActive ? C.accent : C.slate} />
-            <Text style={{ fontSize: fs(11), color: thinkingActive ? C.accent : C.slate, fontWeight: '600' }}>
-              {thinkingActive ? `${t('thinking')}… ${elapsed}${t('seconds')}` : `${t('thoughtFor')} ${elapsed}${t('seconds')}`}
-            </Text>
-            <Icon name={thinkOpen ? 'chevronUp' : 'chevronDown'} size={12} color={C.slate2} />
-          </View>
-          {thinkOpen ? (
-            <Text style={{ fontSize: fs(10), color: C.slate, lineHeight: fs(16), marginTop: 6 }} numberOfLines={thinkingActive ? 12 : 8}>
-              {s.thinking}
-            </Text>
-          ) : null}
-        </TouchableOpacity>
-      ) : null}
-      {settings.showTools && <ToolList tools={s.tools} />}
+      {(s.thinking || s.tools.length > 0) && (
+        <DeepSeekThinkingBlock
+          thinking={s.thinking}
+          tools={s.tools}
+          isStreaming={thinkingActive}
+          elapsedSeconds={elapsed}
+          initiallyOpen={true}
+        />
+      )}
       {s.text ? (
         <Markdown text={s.text} />
       ) : (

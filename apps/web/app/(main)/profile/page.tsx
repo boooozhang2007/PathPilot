@@ -101,7 +101,8 @@ export default function ProfilePage() {
         }
         return merged;
       });
-      setMsg('资料已保存');
+      setMsg('资料已自动保存');
+      setTimeout(() => setMsg(''), 2500);
     } catch (e) {
       setErr(e instanceof Error ? e.message : '保存失败');
     } finally {
@@ -224,6 +225,23 @@ export default function ProfilePage() {
 
   return (
     <div>
+      {/* 顶部浮动保存状态 */}
+      {(saving || msg) && (
+        <div className="fixed top-6 right-8 z-50 flex items-center gap-2 rounded-full bg-slate-900/90 text-white px-4 py-2 text-xs font-semibold shadow-xl backdrop-blur transition-all pointer-events-none">
+          {saving ? (
+            <>
+              <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+              <span>正在保存…</span>
+            </>
+          ) : (
+            <>
+              <Ic name="checkCircle" size={15} className="text-teal" />
+              <span>{msg}</span>
+            </>
+          )}
+        </div>
+      )}
+
       <PageHeader
         eyebrow="07 · PROFILE"
         title="能力档案"
@@ -245,7 +263,10 @@ export default function ProfilePage() {
       <div className="grid grid-cols-12 gap-5">
         {/* 基础资料 */}
         <div className="pp-card reveal col-span-12 p-6 lg:col-span-5">
-          <SectionTitle>个人资料</SectionTitle>
+          <div className="flex items-center justify-between mb-4">
+            <SectionTitle>个人资料</SectionTitle>
+            {saving && <span className="text-xs text-accent font-medium">正在保存…</span>}
+          </div>
 
           {/* 头像 */}
           <div className="mb-5 flex items-center gap-4">
@@ -281,92 +302,137 @@ export default function ProfilePage() {
           </div>
 
           <div className="space-y-3 text-sm">
-            <div className="flex items-end gap-2">
-              <div className="min-w-0 flex-1">
-                <label className="pp-label">昵称</label>
-                <input className="pp-input" value={profile?.nickname ?? ''} onChange={(e) => setProfile(profile ? { ...profile, nickname: e.target.value } : profile)} />
-              </div>
-              <button className="pp-btn pp-btn-ghost shrink-0 px-2.5 py-2 text-[11px]" onClick={() => saveProfile({ nickname: profile?.nickname ?? '' })} disabled={saving}>保存</button>
+            <div>
+              <label className="pp-label">昵称</label>
+              <input
+                className="pp-input"
+                value={profile?.nickname ?? ''}
+                onChange={(e) => setProfile(profile ? { ...profile, nickname: e.target.value } : profile)}
+                onBlur={(e) => saveProfile({ nickname: e.target.value })}
+                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+              />
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="flex items-end gap-2">
-                <div className="min-w-0 flex-1">
-                  <label className="pp-label">学校</label>
-                  <input className="pp-input" value={profile?.school ?? ''} onChange={(e) => setProfile(profile ? { ...profile, school: e.target.value } : profile)} />
-                </div>
-                <button className="pp-btn pp-btn-ghost shrink-0 px-2 py-2 text-[11px]" onClick={() => saveProfile({ school: profile?.school ?? '' })} disabled={saving}>保存</button>
+              <div>
+                <label className="pp-label">学校</label>
+                <input
+                  className="pp-input"
+                  value={profile?.school ?? ''}
+                  onChange={(e) => setProfile(profile ? { ...profile, school: e.target.value } : profile)}
+                  onBlur={(e) => saveProfile({ school: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                  placeholder="填写就读学校"
+                />
               </div>
-              <div className="flex items-end gap-2">
-                <div className="min-w-0 flex-1">
-                  <label className="pp-label">专业</label>
-                  <input className="pp-input" value={profile?.major ?? ''} onChange={(e) => setProfile(profile ? { ...profile, major: e.target.value } : profile)} />
-                </div>
-                <button className="pp-btn pp-btn-ghost shrink-0 px-2 py-2 text-[11px]" onClick={() => saveProfile({ major: profile?.major ?? '' })} disabled={saving}>保存</button>
+              <div>
+                <label className="pp-label">专业</label>
+                <input
+                  className="pp-input"
+                  value={profile?.major ?? ''}
+                  onChange={(e) => setProfile(profile ? { ...profile, major: e.target.value } : profile)}
+                  onBlur={(e) => saveProfile({ major: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                  placeholder="填写主修专业"
+                />
               </div>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="flex items-end gap-2">
-                <div className="min-w-0 flex-1">
-                  <label className="pp-label">当前年级</label>
-                  <select className="pp-input" value={profile?.grade ?? 'sophomore'} onChange={(e) => setProfile(profile ? { ...profile, grade: e.target.value as never } : profile)}>
-                    {GRADES.map((g) => (
-                      <option key={g} value={g}>
-                        {GRADE_LABELS[g]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <button className="pp-btn pp-btn-ghost shrink-0 px-2 py-2 text-[11px]" onClick={() => profile && saveProfile({ grade: profile.grade })} disabled={saving}>保存</button>
+              <div>
+                <label className="pp-label">当前年级</label>
+                <select
+                  className="pp-input"
+                  value={profile?.grade ?? 'sophomore'}
+                  onChange={(e) => {
+                    const val = e.target.value as never;
+                    setProfile(profile ? { ...profile, grade: val } : profile);
+                    saveProfile({ grade: val });
+                  }}
+                >
+                  {GRADES.map((g) => (
+                    <option key={g} value={g}>
+                      {GRADE_LABELS[g]}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="flex items-end gap-2">
-                <div className="min-w-0 flex-1">
-                  <label className="pp-label">预计毕业(年月)</label>
-                  <input className="pp-input" type="month" value={gradYM} onChange={(e) => setProfile(profile ? { ...profile, graduationDate: e.target.value ? `${e.target.value}-01` : profile.graduationDate } : profile)} />
-                </div>
-                <button className="pp-btn pp-btn-ghost shrink-0 px-2 py-2 text-[11px]" onClick={() => profile && saveProfile({ graduationDate: profile.graduationDate })} disabled={saving}>保存</button>
+              <div>
+                <label className="pp-label">预计毕业(年月)</label>
+                <input
+                  className="pp-input"
+                  type="month"
+                  value={gradYM}
+                  onChange={(e) => {
+                    const ym = e.target.value ? `${e.target.value}-01` : (profile?.graduationDate ?? '');
+                    setProfile(profile ? { ...profile, graduationDate: ym } : profile);
+                    if (ym) saveProfile({ graduationDate: ym });
+                  }}
+                />
               </div>
             </div>
-            <div className="flex items-end gap-2">
-              <div className="min-w-0 flex-1">
-                <label className="pp-label">目标岗位</label>
-                <input className="pp-input" value={profile?.targetRole ?? ''} onChange={(e) => setProfile(profile ? { ...profile, targetRole: e.target.value } : profile)} placeholder="Java 后端开发" />
-              </div>
-              <button className="pp-btn pp-btn-ghost shrink-0 px-2.5 py-2 text-[11px]" onClick={() => saveProfile({ targetRole: profile?.targetRole ?? '' })} disabled={saving}>保存</button>
+            <div>
+              <label className="pp-label">目标岗位</label>
+              <input
+                className="pp-input"
+                value={profile?.targetRole ?? ''}
+                onChange={(e) => setProfile(profile ? { ...profile, targetRole: e.target.value } : profile)}
+                onBlur={(e) => saveProfile({ targetRole: e.target.value })}
+                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                placeholder="Java 后端开发"
+              />
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="flex items-end gap-2">
-                <div className="min-w-0 flex-1">
-                  <label className="pp-label">发展路径</label>
-                  <select className="pp-input" value={profile?.careerPath ?? 'undecided'} onChange={(e) => setProfile(profile ? { ...profile, careerPath: e.target.value as never } : profile)}>
-                    {CAREER_PATHS.map((p) => (
-                      <option key={p} value={p}>
-                        {CAREER_PATH_LABELS[p]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <button className="pp-btn pp-btn-ghost shrink-0 px-2 py-2 text-[11px]" onClick={() => profile && saveProfile({ careerPath: profile.careerPath })} disabled={saving}>保存</button>
+              <div>
+                <label className="pp-label">发展路径</label>
+                <select
+                  className="pp-input"
+                  value={profile?.careerPath ?? 'undecided'}
+                  onChange={(e) => {
+                    const val = e.target.value as never;
+                    setProfile(profile ? { ...profile, careerPath: val } : profile);
+                    saveProfile({ careerPath: val });
+                  }}
+                >
+                  {CAREER_PATHS.map((p) => (
+                    <option key={p} value={p}>
+                      {CAREER_PATH_LABELS[p]}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="flex items-end gap-2">
-                <div className="min-w-0 flex-1">
-                  <label className="pp-label">MBTI</label>
-                  <select className="pp-input" value={profile?.mbti ?? ''} onChange={(e) => setProfile(profile ? { ...profile, mbti: e.target.value || null } : profile)}>
-                    <option value="">未测</option>
-                    {MBTI_OPTIONS.filter(Boolean).map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <button className="pp-btn pp-btn-ghost shrink-0 px-2 py-2 text-[11px]" onClick={() => saveProfile({ mbti: profile?.mbti ?? null })} disabled={saving}>保存</button>
+              <div>
+                <label className="pp-label">MBTI</label>
+                <select
+                  className="pp-input"
+                  value={profile?.mbti ?? ''}
+                  onChange={(e) => {
+                    const val = e.target.value || null;
+                    setProfile(profile ? { ...profile, mbti: val } : profile);
+                    saveProfile({ mbti: val });
+                  }}
+                >
+                  <option value="">未测</option>
+                  {MBTI_OPTIONS.filter(Boolean).map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="col-span-1 flex items-end gap-2 sm:col-span-2">
-                <div className="min-w-0 flex-1">
-                  <label className="pp-label">每周(小时)</label>
-                  <input className="pp-input" type="number" min={1} max={80} value={profile?.weeklyHours ?? 8} onChange={(e) => setProfile(profile ? { ...profile, weeklyHours: Number(e.target.value) } : profile)} />
-                </div>
-                <button className="pp-btn pp-btn-ghost shrink-0 px-2 py-2 text-[11px]" onClick={() => profile && saveProfile({ weeklyHours: profile.weeklyHours })} disabled={saving}>保存</button>
+              <div className="col-span-1 sm:col-span-2">
+                <label className="pp-label">每周可投入时间 (小时)</label>
+                <input
+                  className="pp-input"
+                  type="number"
+                  min={1}
+                  max={80}
+                  value={profile?.weeklyHours ?? 8}
+                  onChange={(e) => setProfile(profile ? { ...profile, weeklyHours: Number(e.target.value) } : profile)}
+                  onBlur={(e) => {
+                    const val = Number(e.target.value);
+                    if (val >= 1 && val <= 80) saveProfile({ weeklyHours: val });
+                  }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                />
               </div>
             </div>
           </div>

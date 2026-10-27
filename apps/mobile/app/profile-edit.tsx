@@ -1,6 +1,6 @@
 // 个人信息修改：头像上传 / 年级两排（含博士、博士后）/ 年月选择器 / MBTI / 目标与路径
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, View, Text, TextInput, TouchableOpacity, Modal, Pressable, Image, Alert } from 'react-native';
+import { ScrollView, View, Text, TextInput, TouchableOpacity, Modal, Pressable, Image, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
@@ -89,8 +89,15 @@ export default function ProfileEdit() {
   const [loading, setLoading] = useState(true);
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [weeklyHoursDraft, setWeeklyHoursDraft] = useState('');
+  const debounceTimersRef = useRef<Record<string, NodeJS.Timeout>>({});
   // MBTI 逐维选择状态（独立于 profile.mbti：选到一半也能保持高亮，凑齐 4 位才入库）
   const [mbtiSel, setMbtiSel] = useState<[string | null, string | null, string | null, string | null]>([null, null, null, null]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(debounceTimersRef.current).forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   useEffect(() => {
     api<ProfileDTO | null>('/api/profile')
@@ -113,8 +120,8 @@ export default function ProfileEdit() {
   }
 
   function flashSaved() {
-    setMsg('已自动保存（Web 与手机端同步）');
-    setTimeout(() => setMsg(''), 1800);
+    setMsg('已自动保存');
+    setTimeout(() => setMsg(''), 2500);
   }
 
   /** 每个资料项独立保存；请求只提交当前字段，不带上其它未保存的编辑。 */
@@ -193,13 +200,39 @@ export default function ProfileEdit() {
     if (full) savePatch({ mbti: full });
   }
 
-  function saveWeeklyHours() {
-    const value = Number(weeklyHoursDraft);
-    if (!Number.isInteger(value) || value < 1 || value > 80) {
-      setErr('每周时长需为 1-80 小时');
+  function debounceSave(key: string, patch: Partial<ProfileDTO>, delay = 800) {
+    if (debounceTimersRef.current[key]) {
+      clearTimeout(debounceTimersRef.current[key]);
+    }
+    debounceTimersRef.current[key] = setTimeout(() => {
+      delete debounceTimersRef.current[key];
+      savePatch(patch);
+    }, delay);
+  }
+
+  function commitField(key: string, patch: Partial<ProfileDTO>) {
+    if (debounceTimersRef.current[key]) {
+      clearTimeout(debounceTimersRef.current[key]);
+      delete debounceTimersRef.current[key];
+    }
+    savePatch(patch);
+  }
+
+  function handleWeeklyHoursChange(val: string) {
+    setWeeklyHoursDraft(val);
+    const num = Number(val);
+    if (Number.isInteger(num) && num >= 1 && num <= 80) {
+      debounceSave('weeklyHours', { weeklyHours: num });
+    }
+  }
+
+  function commitWeeklyHours() {
+    const num = Number(weeklyHoursDraft);
+    if (!Number.isInteger(num) || num < 1 || num > 80) {
+      if (weeklyHoursDraft.trim()) setErr('每周时长需为 1-80 小时');
       return;
     }
-    savePatch({ weeklyHours: value });
+    commitField('weeklyHours', { weeklyHours: num });
   }
 
   if (loading) return <Loading />;
@@ -216,15 +249,67 @@ export default function ProfileEdit() {
   const inputSt = { ...SF.input, paddingHorizontal: 12, paddingVertical: 10, fontSize: fs(13), color: C.ink };
 
   return (
-    <ScrollView style={{ flex: 1, ...SF.page }} contentContainerStyle={{ padding: 16, paddingTop: 54, paddingBottom: 40 }}>
+    <View style={{ flex: 1, ...SF.page }}>
+      {/* 顶部浮动保存状态条：滚动时依然可见 */}
+      {busy || msg ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 48,
+            alignSelf: 'center',
+            zIndex: 9999,
+            backgroundColor: busy ? '#1E293B' : '#059669',
+            paddingHorizontal: 16,
+            paddingVertical: 7,
+            borderRadius: 999,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 7,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.18,
+            shadowRadius: 6,
+            elevation: 8,
+          }}
+        >
+          {busy ? (
+            <>
+              <ActivityIndicator size="small" color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontSize: fs(12), fontWeight: '700' }}>正在保存…</Text>
+            </>
+          ) : (
+            <>
+              <Text style={{ color: '#FFFFFF', fontSize: fs(13), fontWeight: '800' }}>✓</Text>
+              <Text style={{ color: '#FFFFFF', fontSize: fs(12), fontWeight: '700' }}>已自动保存</Text>
+            </>
+          )}
+        </View>
+      ) : null}
+
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingTop: 54, paddingBottom: 40 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Text style={{ fontSize: 20, fontWeight: '800', color: C.ink }}>个人信息</Text>
-        <TouchableOpacity onPress={() => router.back()}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 20, fontWeight: '800', color: C.ink }}>个人信息</Text>
+          {busy ? (
+            <Text style={{ fontSize: fs(11), color: C.accent, fontWeight: '600' }}>正在保存…</Text>
+          ) : msg ? (
+            <Text style={{ fontSize: fs(11), color: C.teal, fontWeight: '600' }}>✓ 已保存</Text>
+          ) : null}
+        </View>
+        <TouchableOpacity
+          onPress={() => {
+            Object.entries(debounceTimersRef.current).forEach(([k, t]) => {
+              clearTimeout(t);
+              delete debounceTimersRef.current[k];
+            });
+            router.back();
+          }}
+        >
           <Text style={{ fontSize: 13, color: C.accent, fontWeight: '700' }}>完成</Text>
         </TouchableOpacity>
       </View>
 
-      {msg ? <View style={{ backgroundColor: C.tealSoft, borderRadius: 10, padding: 10, marginBottom: 12 }}><Text style={{ color: C.teal, fontSize: 12 }}>{msg}</Text></View> : null}
       {err ? <View style={{ backgroundColor: C.amberSoft, borderRadius: 10, padding: 10, marginBottom: 12 }}><Text style={{ color: C.amber, fontSize: 12 }}>{err}</Text></View> : null}
 
       {/* 头像 */}
@@ -241,7 +326,7 @@ export default function ProfileEdit() {
             <Icon name="pen" size={13} color="#FFFFFF" />
           </View>
         </TouchableOpacity>
-        <Text style={{ fontSize: fs(11), color: C.slate2, marginTop: 8 }}>点击更换头像（立即保存）</Text>
+        <Text style={{ fontSize: fs(11), color: C.slate2, marginTop: 8 }}>点击更换头像（自动保存）</Text>
         {profile.avatar ? (
           <TouchableOpacity onPress={() => savePatch({ avatar: null })} style={{ marginTop: 4 }}>
             <Text style={{ fontSize: fs(11), color: '#E5484D' }}>移除头像</Text>
@@ -252,27 +337,43 @@ export default function ProfileEdit() {
       <View style={{ ...SF.card, padding: 16, gap: 12 }}>
         <View>
           <Text style={s.label}>昵称</Text>
-          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-            <TextInput style={[inputSt, { flex: 1 }]} value={profile.nickname} onChangeText={(v) => applyProfile({ ...profile, nickname: v })} maxLength={30} />
-            <TouchableOpacity style={saveChip} onPress={() => savePatch({ nickname: profile.nickname })} disabled={busy}>
-              <Text style={saveChipText}>保存</Text>
-            </TouchableOpacity>
-          </View>
+          <TextInput
+            style={inputSt}
+            value={profile.nickname}
+            onChangeText={(v) => { applyProfile({ ...profile, nickname: v }); debounceSave('nickname', { nickname: v }); }}
+            onBlur={() => commitField('nickname', { nickname: profile.nickname })}
+            onSubmitEditing={() => commitField('nickname', { nickname: profile.nickname })}
+            maxLength={30}
+            returnKeyType="done"
+          />
         </View>
+
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <View style={{ flex: 1 }}>
             <Text style={s.label}>学校</Text>
-            <TextInput style={inputSt} value={profile.school ?? ''} onChangeText={(v) => applyProfile({ ...profile, school: v })} />
-            <TouchableOpacity style={saveChipBlock} onPress={() => savePatch({ school: profile.school ?? '' })} disabled={busy}>
-              <Text style={saveChipText}>保存学校</Text>
-            </TouchableOpacity>
+            <TextInput
+              style={inputSt}
+              value={profile.school ?? ''}
+              onChangeText={(v) => { applyProfile({ ...profile, school: v }); debounceSave('school', { school: v }); }}
+              onBlur={() => commitField('school', { school: profile.school ?? '' })}
+              onSubmitEditing={() => commitField('school', { school: profile.school ?? '' })}
+              placeholder="填写就读学校"
+              placeholderTextColor={C.slate2}
+              returnKeyType="done"
+            />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={s.label}>专业</Text>
-            <TextInput style={inputSt} value={profile.major ?? ''} onChangeText={(v) => applyProfile({ ...profile, major: v })} />
-            <TouchableOpacity style={saveChipBlock} onPress={() => savePatch({ major: profile.major ?? '' })} disabled={busy}>
-              <Text style={saveChipText}>保存专业</Text>
-            </TouchableOpacity>
+            <TextInput
+              style={inputSt}
+              value={profile.major ?? ''}
+              onChangeText={(v) => { applyProfile({ ...profile, major: v }); debounceSave('major', { major: v }); }}
+              onBlur={() => commitField('major', { major: profile.major ?? '' })}
+              onSubmitEditing={() => commitField('major', { major: profile.major ?? '' })}
+              placeholder="填写主修专业"
+              placeholderTextColor={C.slate2}
+              returnKeyType="done"
+            />
           </View>
         </View>
 
@@ -345,13 +446,18 @@ export default function ProfileEdit() {
 
         <View>
           <Text style={s.label}>目标岗位</Text>
-          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-            <TextInput style={[inputSt, { flex: 1 }]} value={profile.targetRole} onChangeText={(v) => applyProfile({ ...profile, targetRole: v })} placeholder="Java 后端开发" placeholderTextColor={C.slate2} />
-            <TouchableOpacity style={saveChip} onPress={() => savePatch({ targetRole: profile.targetRole })} disabled={busy}>
-              <Text style={saveChipText}>保存</Text>
-            </TouchableOpacity>
-          </View>
+          <TextInput
+            style={inputSt}
+            value={profile.targetRole}
+            onChangeText={(v) => { applyProfile({ ...profile, targetRole: v }); debounceSave('targetRole', { targetRole: v }); }}
+            onBlur={() => commitField('targetRole', { targetRole: profile.targetRole })}
+            onSubmitEditing={() => commitField('targetRole', { targetRole: profile.targetRole })}
+            placeholder="Java 后端开发"
+            placeholderTextColor={C.slate2}
+            returnKeyType="done"
+          />
         </View>
+
         <View>
           <Text style={s.label}>发展路径</Text>
           <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -362,22 +468,21 @@ export default function ProfileEdit() {
             ))}
           </View>
         </View>
+
         <View>
           <Text style={s.label}>每周可投入时间（小时）</Text>
-          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-            <TextInput
-              style={[inputSt, { flex: 1 }]}
-              value={weeklyHoursDraft}
-              onChangeText={setWeeklyHoursDraft}
-              keyboardType="number-pad"
-              maxLength={2}
-              placeholder="例如 8"
-              placeholderTextColor={C.slate2}
-            />
-            <TouchableOpacity style={saveChip} onPress={saveWeeklyHours} disabled={busy}>
-              <Text style={saveChipText}>保存</Text>
-            </TouchableOpacity>
-          </View>
+          <TextInput
+            style={inputSt}
+            value={weeklyHoursDraft}
+            onChangeText={handleWeeklyHoursChange}
+            onBlur={commitWeeklyHours}
+            onSubmitEditing={commitWeeklyHours}
+            keyboardType="number-pad"
+            maxLength={2}
+            placeholder="例如 8"
+            placeholderTextColor={C.slate2}
+            returnKeyType="done"
+          />
         </View>
       </View>
 
@@ -388,29 +493,10 @@ export default function ProfileEdit() {
         onPick={(ym) => savePatch({ graduationDate: `${ym}-01` })}
       />
     </ScrollView>
-  );
+  </View>
+);
 }
 
 const s = {
   label: { fontSize: 12, fontWeight: '600', color: C.slate, marginBottom: 6 },
 } as const;
-
-const saveChip = {
-  backgroundColor: C.accent,
-  borderRadius: 9,
-  paddingHorizontal: 11,
-  paddingVertical: 9,
-  minWidth: 48,
-  alignItems: 'center',
-} as const;
-
-const saveChipBlock = {
-  alignSelf: 'flex-start',
-  backgroundColor: C.accent,
-  borderRadius: 8,
-  paddingHorizontal: 9,
-  paddingVertical: 6,
-  marginTop: 6,
-} as const;
-
-const saveChipText = { color: C.onAccent, fontSize: 11, fontWeight: '700' } as const;

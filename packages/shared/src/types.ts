@@ -179,6 +179,8 @@ export interface ChatMessageDTO {
   role: 'user' | 'assistant';
   content: string;
   engine: Engine | null;
+  /** 思考过程内容（DeepSeek 思考链） */
+  thinking?: string | null;
   /** 本次回复失败/被停止时的错误码（正常回复为 null） */
   errorCode?: string | null;
   /** 工具调用链路（LLM 通道）：[{name, summary}] */

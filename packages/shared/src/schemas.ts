@@ -259,6 +259,8 @@ export const agentChatInput = z.object({
   answerStyle: z.enum(['concise', 'detailed']).optional(),
   /** 开启模型思考过程（需要模型支持 reasoning） */
   thinking: z.boolean().optional(),
+  /** 自动写入开关（允许 Agent 直接创建/修改任务和技能档案） */
+  autoWrite: z.boolean().optional(),
   /** 重新生成：以该 assistant 消息为起点截断后重答 */
   regenerateFrom: z.number().int().positive().optional(),
 });

@@ -21,7 +21,7 @@ import { config } from '../config.js';
 import { agentChatInput, skillGroupOf } from '@pathpilot/shared';
 import type { AgentEvent, AgentTurnDecision } from '@earendil-works/pi-agent-core';
 import { markFlowResult, prepareFlow } from './flow.js';
-import { isSessionAutoWriteEnabled } from './autoWrite.js';
+import { isSessionAutoWriteEnabled, setSessionAutoWrite } from './autoWrite.js';
 
 export interface StreamEvent {
   type: 'session' | 'thinking' | 'tool_start' | 'tool_progress' | 'tool_end' | 'text' | 'done' | 'error';
@@ -81,6 +81,12 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
   }
 
   const sid = await ensureSession(userId, input.sessionId);
+  if (typeof input.autoWrite === 'boolean') {
+    setSessionAutoWrite(sid, input.autoWrite);
+  } else if (/开启自动写入|允许自动写入|开启写入|帮我写入任务|写入规划/i.test(message)) {
+    setSessionAutoWrite(sid, true);
+  }
+  const autoWriteActive = isSessionAutoWriteEnabled(sid);
   if (input.regenerateFrom) {
     try {
       await truncateForRegenerate(sid, input.regenerateFrom);
@@ -221,6 +227,7 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
       : '';
   };
 
+  let thinkingText = '';
   const attempt = async (): Promise<string> => {
     if (clientGone) return '';
     const { Agent } = await import('@earendil-works/pi-agent-core');
@@ -233,12 +240,12 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
     timedOut = false;
     const agent = new Agent({
       initialState: {
-        systemPrompt: buildAdvisorSystemPrompt(ctxSummary, flow, input.answerStyle),
+        systemPrompt: buildAdvisorSystemPrompt(ctxSummary, flow, input.answerStyle, autoWriteActive),
         model,
         tools: tracedTools(
           buildAgentTools(userId, {
             onProgress: (name, messageText) => send({ type: 'tool_progress', name, summary: messageText }),
-            autoWrite: isSessionAutoWriteEnabled(sid),
+            autoWrite: autoWriteActive,
           }),
           trace,
           () => {
@@ -268,7 +275,10 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
       if (event.type === 'message_update') {
         const ev = (event as { assistantMessageEvent?: { type?: string; delta?: string } }).assistantMessageEvent;
         if (ev?.delta) {
-          if (ev.type === 'thinking_delta') send({ type: 'thinking', delta: ev.delta });
+          if (ev.type === 'thinking_delta') {
+            thinkingText += ev.delta;
+            send({ type: 'thinking', delta: ev.delta });
+          }
           if (ev.type === 'text_delta') send({ type: 'text', delta: ev.delta });
         }
       }
@@ -384,6 +394,7 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
       role: 'assistant',
       content: text,
       engine: 'pi-llm',
+      thinking: thinkingText.trim() || null,
       toolCalls: trace.length ? trace : null,
     })
     .returning();

@@ -103,6 +103,7 @@ export function AgentChat({
   const [guideProfile, setGuideProfile] = useState<ProfileDTO | null>(null);
   const [guideReady, setGuideReady] = useState(false);
   const [guideStep, setGuideStep] = useState<'profile' | 'choice' | 'done'>('profile');
+  const [autoWrite, setAutoWrite] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
   const loadSessions = useCallback(() => {
@@ -254,7 +255,7 @@ export function AgentChat({
       const res = await fetch(`${API_BASE}/api/agent/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ sessionId: activeSessionId, message, ...(opts?.regenerateFrom ? { regenerateFrom: opts.regenerateFrom } : {}) }),
+        body: JSON.stringify({ sessionId: activeSessionId, message, autoWrite, ...(opts?.regenerateFrom ? { regenerateFrom: opts.regenerateFrom } : {}) }),
         signal: controller.signal,
       });
       if (res.status === 401 && typeof window !== 'undefined') {
@@ -337,6 +338,7 @@ export function AgentChat({
             role: 'assistant',
             content: st.text.trim() || '（模型未返回内容）',
             engine: doneEngine ?? null,
+            thinking: st.thinking.trim() || null,
             toolCalls: st.tools.filter((t) => t.status === 'done').map((t) => ({ name: t.name, summary: t.summary ?? '' })),
             createdAt: new Date().toISOString(),
           };
@@ -350,13 +352,14 @@ export function AgentChat({
         // 用户停止:保留已生成的部分
         let partialMessage: ChatMessageDTO | null = null;
         setStreaming((st) => {
-          if (st && st.text.trim()) {
+          if (st && (st.text.trim() || st.thinking.trim())) {
             partialMessage = {
               id: Date.now(),
               sessionId: activeSessionId ?? 0,
               role: 'assistant',
-              content: st.text,
+              content: st.text || '已停止生成',
               engine: null,
+              thinking: st.thinking.trim() || null,
               toolCalls: st.tools.filter((t) => t.status === 'done').map((t) => ({ name: t.name, summary: t.summary ?? '' })),
               createdAt: new Date().toISOString(),
             };
@@ -525,6 +528,14 @@ export function AgentChat({
                         <AgentMark size={22} />
                         <span className="text-xs font-bold text-ink">PathPilot</span>
                       </div>
+                      {/* DeepSeek 式思考过程与内嵌工具调用 */}
+                      {(m.thinking || m.toolCalls.length > 0) && (
+                        <DeepSeekReasoning
+                          thinking={m.thinking}
+                          tools={m.toolCalls.map((t) => ({ ...t, status: 'done' as const }))}
+                          initiallyOpen={false}
+                        />
+                      )}
                       <div className={`pp-card rounded-lg rounded-tl-sm px-4 py-3 ${m.errorCode ? 'border-[#f0d3cf] bg-[#fdf8f7]' : ''}`}>
                         {m.errorCode && (
                           <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-[#b3271d]">
@@ -533,7 +544,6 @@ export function AgentChat({
                         )}
                         <Markdown text={m.content} />
                       </div>
-                      {m.toolCalls.length > 0 && <ToolChain tools={m.toolCalls.map((t) => ({ ...t, status: 'done' as const }))} />}
                       {/* 操作条:复制 / 重新生成(每条回复) */}
                       <div className="mt-1.5 flex items-center gap-1">
                         <ActionBtn onClick={() => copyMessage(m)} label={copiedId === m.id ? '已复制' : '复制'}>
@@ -638,6 +648,17 @@ export function AgentChat({
                 }
               }}
             />
+            <button
+              type="button"
+              className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition ${
+                autoWrite ? 'bg-accent/15 text-accent border border-accent/40 shadow-xs' : 'bg-paper-2 text-slate-2 border border-line hover:text-ink'
+              }`}
+              onClick={() => setAutoWrite((v) => !v)}
+              title="开启后允许 Agent 直接创建与修改任务/规划/档案"
+            >
+              <Ic name="checkCircle" size={13} className={autoWrite ? 'text-accent' : 'text-slate-2'} />
+              <span>自动写入</span>
+            </button>
             {busy ? (
               <button
                 type="button"
@@ -674,34 +695,110 @@ function ActionBtn({ children, label, onClick }: { children: React.ReactNode; la
   );
 }
 
-/** 工具调用链(可折叠)——历史消息与流式共用 */
-function ToolChain({ tools }: { tools: ToolState[] }) {
-  if (!tools.length) return null;
-  const running = tools.some((t) => t.status === 'running');
+const TOOL_LABELS: Record<string, string> = {
+  get_user_profile: '获取能力档案',
+  upsert_skill: '更新技能评分',
+  create_experience: '创建经历凭证',
+  get_tasks: '查询待办任务',
+  update_task_status: '更新任务状态',
+  get_current_roadmap: '获取成长路线',
+  get_roadmap_versions: '查询路线历史',
+  generate_roadmap: '生成成长路线',
+  create_roadmap_revision: '修订成长路线',
+  roadmap_add_task: '路线添加任务',
+  roadmap_update_task: '更新路线任务',
+  roadmap_remove_task: '移除路线任务',
+  get_job_analysis: '查询岗位洞察',
+  analyze_jobs: '分析招聘需求',
+  analyze_skill_gap: '评估技能差距',
+  search_jobs: '搜索招聘市场',
+  fetch_job_page: '获取岗位详情',
+  extract_requirements: '提取任职要求',
+  normalize_skills: '匹配标准化技能',
+  generate_resume_draft: '生成简历草稿',
+};
+
+/** DeepSeek 式思考过程与内嵌工具调用组件（Web 端） */
+function DeepSeekReasoning({
+  thinking,
+  tools = [],
+  isStreaming = false,
+  elapsedSeconds,
+  initiallyOpen = false,
+}: {
+  thinking?: string | null;
+  tools?: ToolState[];
+  isStreaming?: boolean;
+  elapsedSeconds?: number;
+  initiallyOpen?: boolean;
+}) {
+  const hasThinking = !!thinking?.trim();
+  const hasTools = tools.length > 0;
+  if (!hasThinking && !hasTools) return null;
+
+  const runningTool = tools.find((t) => t.status === 'running');
+  let headerLabel = '';
+  if (isStreaming) {
+    if (runningTool) {
+      headerLabel = `正在调用工具：${TOOL_LABELS[runningTool.name] || runningTool.name}…`;
+    } else {
+      headerLabel = elapsedSeconds !== undefined ? `思考中… ${elapsedSeconds}s` : '思考中…';
+    }
+  } else {
+    const timeText = elapsedSeconds ? ` (${elapsedSeconds}s)` : '';
+    const toolText = hasTools ? ` · 调用了 ${tools.length} 个工具` : '';
+    headerLabel = `已深度思考${timeText}${toolText}`;
+  }
+
   return (
-    <details className="group mt-2 rounded-lg border border-line bg-paper-2/40">
+    <details className="group mb-2 rounded-lg border border-line bg-paper-2/40" open={initiallyOpen}>
       <summary className="flex cursor-pointer select-none list-none items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-1">
-        <Ic name="wrench" size={13} className={running ? 'animate-spin' : ''} />
-        {running ? `正在调用工具(${tools.filter((t) => t.status === 'running').length} 个)` : `使用了 ${tools.length} 个工具`}
+        <Ic name="brain" size={13} className={isStreaming ? 'text-accent' : 'text-slate-2'} />
+        <span className={isStreaming ? 'text-accent' : 'text-slate-1'}>{headerLabel}</span>
         <Ic name="chevronDown" size={12} className="ml-auto text-slate-2 transition group-open:rotate-180" />
       </summary>
-      <div className="space-y-1.5 border-t border-line/70 px-3 py-2">
-        {tools.map((t, i) => (
-          <details key={i} className="rounded-md bg-white/80">
-            <summary className="flex cursor-pointer select-none list-none items-center gap-2 px-2.5 py-1.5 text-[11px]">
-              {t.status === 'running' ? <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" /> : <Ic name="checkCircle" size={12} className="shrink-0 text-teal" />}
-              <span className="num text-ink">{t.name}</span>
-              {t.summary && <span className="min-w-0 flex-1 truncate text-slate-2">{t.summary.slice(0, 60)}</span>}
-            </summary>
-            {t.summary && <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all px-3 pb-2 text-[11px] leading-4 text-slate-1">{t.summary}</pre>}
-          </details>
-        ))}
+      <div className="space-y-2 border-t border-line/70 px-3 py-2.5">
+        {hasTools && (
+          <div className="space-y-1.5">
+            {tools.map((t, i) => {
+              const label = TOOL_LABELS[t.name] || t.name;
+              return (
+                <div key={i} className="rounded-md border border-line/60 bg-white/80 p-2 text-[11px]">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 font-semibold text-ink">
+                      {t.status === 'running' ? (
+                        <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                      ) : (
+                        <Ic name="checkCircle" size={12} className="shrink-0 text-teal" />
+                      )}
+                      <span>{label}</span>
+                      <span className="text-[10px] font-normal text-slate-2">({t.name})</span>
+                    </span>
+                    <span className={`text-[10px] font-semibold ${t.status === 'running' ? 'text-accent' : 'text-teal'}`}>
+                      {t.status === 'running' ? '执行中…' : '调用成功'}
+                    </span>
+                  </div>
+                  {t.summary && (
+                    <div className="mt-1.5 rounded bg-paper-2/70 p-2 text-[11px] leading-relaxed text-slate-1 whitespace-pre-wrap break-all">
+                      {t.summary}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {hasThinking && (
+          <pre className="overflow-auto whitespace-pre-wrap text-[11px] leading-5 text-slate-2 font-sans">
+            {thinking}
+          </pre>
+        )}
       </div>
     </details>
   );
 }
 
-/** 流式中的 assistant 消息:思考(可折叠+计时)→ 工具 → 增量文本 + 光标 */
+/** 流式中的 assistant 消息:思考(可折叠+计时+内嵌工具)→ 增量文本 + 光标 */
 function StreamingMessage({ s }: { s: Streaming }) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -714,18 +811,15 @@ function StreamingMessage({ s }: { s: Streaming }) {
     <div className="mb-6 flex items-start gap-2">
       <AgentMark size={22} />
       <div className="min-w-0 flex-1">
-        {/* 思考过程 */}
-        {s.thinking && (
-          <details className="mb-2 rounded-lg border border-line bg-paper-2/40" open={thinkingActive}>
-            <summary className="flex cursor-pointer select-none list-none items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-1">
-              <Ic name="brain" size={13} className={thinkingActive ? 'text-accent' : ''} />
-              <span className={thinkingActive ? 'text-accent' : ''}>{thinkingActive ? `思考中… ${elapsed}s` : `已思考 ${elapsed}s`}</span>
-              <span className="num ml-auto text-[10px] text-slate-2">REASONING</span>
-            </summary>
-            <pre className="max-h-48 overflow-auto whitespace-pre-wrap border-t border-line/70 px-3 py-2 text-[11px] leading-4 text-slate-2">{s.thinking}</pre>
-          </details>
+        {(s.thinking || s.tools.length > 0) && (
+          <DeepSeekReasoning
+            thinking={s.thinking}
+            tools={s.tools}
+            isStreaming={thinkingActive}
+            elapsedSeconds={elapsed}
+            initiallyOpen={true}
+          />
         )}
-        <ToolChain tools={s.tools} />
         <div className="pp-card rounded-lg rounded-tl-sm px-4 py-3">
           {s.text ? (
             <>

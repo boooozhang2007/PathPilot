@@ -12,8 +12,9 @@ export interface DbHandle {
 
 export function createDb(dbPath = config.dbPath): DbHandle {
   mkdirSync(dirname(dbPath), { recursive: true });
-  const sqlite = new Database(dbPath);
+  const sqlite = new Database(dbPath, { timeout: 5000 });
   sqlite.pragma('journal_mode = WAL');
+  sqlite.pragma('busy_timeout = 5000');
   sqlite.pragma('foreign_keys = ON');
   const db = drizzle(sqlite, { schema });
   return { db, sqlite };
