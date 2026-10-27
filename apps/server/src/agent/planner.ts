@@ -13,19 +13,26 @@ import {
   skillGroupOf,
 } from '@pathpilot/shared';
 import { getProfile, listProfileSkills } from '../services/profileService.js';
-import { getActiveRoadmap, getTasksOfRoadmap, saveRoadmapVersion } from '../services/roadmapService.js';
+import { getActiveRoadmap, getRoadmap, getTasksOfRoadmap, saveRoadmapVersion } from '../services/roadmapService.js';
 import { validateRoadmap } from '../services/roadmapValidate.js';
 import { remainingSemesters, semesterBudget, semesterLabel } from '../services/semester.js';
 import { isLlmConfigured } from './settings.js';
 import { runStructuredAgent } from './pi/runtime.js';
 import { badRequest, outputInvalid, modelCallFailed } from '../services/errors.js';
-import { userLatestAnalysis } from './jobs.js';
+import { latestAnalysisFor } from '../services/analysisService.js';
 import type { RoadmapDTO } from '@pathpilot/shared';
 
 export interface PlannerOutcome {
   roadmap: RoadmapDTO | null;
   validation: { ok: boolean; errors: string[]; warnings: string[] };
   engine: 'pi-llm' | 'rules';
+}
+
+export interface PlannerOptions {
+  signal?: AbortSignal;
+  onProgress?: (progress: number, message: string) => void;
+  /** 重规划基线版本；缺省为当前 active 版本 */
+  baseRoadmapId?: number;
 }
 
 interface PlannerContext {
@@ -36,21 +43,24 @@ interface PlannerContext {
   currentTasks: RoadmapTaskDTO[];
 }
 
-async function loadContext(userId: number, jobAnalysisId?: number): Promise<PlannerContext> {
-  const [profile, skills, analysis, currentRoadmap] = await Promise.all([
-    getProfile(userId),
-    listProfileSkills(userId),
-    jobAnalysisId ? import('../services/analysisService.js').then((m) => m.getAnalysis(userId, jobAnalysisId)) : userLatestAnalysis(userId),
-    getActiveRoadmap(userId),
-  ]);
+async function loadContext(userId: number, jobAnalysisId?: number, targetRole?: string, baseRoadmapId?: number): Promise<PlannerContext> {
+  const profile = await getProfile(userId);
   if (!profile) throw badRequest('请先完善个人资料（目标岗位、年级、每周时间）再生成规划');
+  const [skills, analysis, currentRoadmap] = await Promise.all([
+    listProfileSkills(userId),
+    jobAnalysisId
+      ? import('../services/analysisService.js').then((m) => m.getAnalysis(userId, jobAnalysisId))
+      : latestAnalysisFor(userId, targetRole ?? profile.targetRole),
+    baseRoadmapId ? getRoadmap(userId, baseRoadmapId) : getActiveRoadmap(userId),
+  ]);
   const currentTasks = currentRoadmap ? await getTasksOfRoadmap(currentRoadmap.id) : [];
   return { profile, skills, analysis, currentRoadmap, currentTasks };
 }
 
 /** 生成新规划（首个版本） */
-export async function generateRoadmap(userId: number, input: GenerateRoadmapInput): Promise<PlannerOutcome> {
-  const ctx = await loadContext(userId, input.jobAnalysisId);
+export async function generateRoadmap(userId: number, input: GenerateRoadmapInput, opts: PlannerOptions = {}): Promise<PlannerOutcome> {
+  opts.onProgress?.(5, '读取档案与岗位数据');
+  const ctx = await loadContext(userId, input.jobAnalysisId, input.targetRole);
   const weeklyHours = input.weeklyHours ?? ctx.profile.weeklyHours;
   const targetRole = input.targetRole ?? ctx.profile.targetRole;
   const careerPath = (input.careerPath ?? ctx.profile.careerPath) as CareerPath;
@@ -63,7 +73,7 @@ export async function generateRoadmap(userId: number, input: GenerateRoadmapInpu
   let warnings: string[] = [];
   let candidate: unknown;
   try {
-    const llmResult = await llmRoadmap({ ...ctx, weeklyHours, targetRole, careerPath }, false);
+    const llmResult = await llmRoadmap({ ...ctx, weeklyHours, targetRole, careerPath }, false, opts);
     candidate = llmResult.roadmap;
     warnings = llmResult.warnings;
   } catch (err) {
@@ -71,18 +81,21 @@ export async function generateRoadmap(userId: number, input: GenerateRoadmapInpu
   }
 
   // 终校验（结构/依赖/预算），不合法直接报错——不落库，不影响现有规划
+  opts.onProgress?.(85, '校验规划结构、依赖与时间预算');
   const { result, validation } = validateRoadmap(candidate, { grade: ctx.profile.grade, weeklyHours });
   if (!result || !validation.ok) {
     throw outputInvalid(`AI 输出未通过时间预算/依赖校验：${validation.errors.join('; ')}（请重试，现有规划不受影响）`);
   }
   const engine = 'pi-llm' as const;
+  opts.onProgress?.(95, '保存规划版本');
   return persist({ userId, ctx, content: result, engine, weeklyHours, targetRole, careerPath, reason: '首次规划', warnings: [...warnings, ...validation.warnings] });
 }
 
 /** 重规划（条件变化 → 新版本，保留已完成任务） */
-export async function reviseRoadmap(userId: number, input: ReviseRoadmapInput): Promise<PlannerOutcome> {
-  const ctx = await loadContext(userId);
-  if (!ctx.currentRoadmap) throw badRequest('当前没有生效的规划，请先生成规划');
+export async function reviseRoadmap(userId: number, input: ReviseRoadmapInput, opts: PlannerOptions = {}): Promise<PlannerOutcome> {
+  opts.onProgress?.(5, '读取当前规划');
+  const ctx = await loadContext(userId, undefined, input.targetRole, opts.baseRoadmapId);
+  if (!ctx.currentRoadmap) throw badRequest('当前没有可调整的规划，请先生成规划');
   const weeklyHours = input.weeklyHours ?? ctx.profile.weeklyHours;
   const targetRole = input.targetRole ?? ctx.profile.targetRole;
   const careerPath = (input.careerPath ?? ctx.profile.careerPath) as CareerPath;
@@ -105,25 +118,30 @@ export async function reviseRoadmap(userId: number, input: ReviseRoadmapInput): 
   let warnings: string[] = [];
   let candidate: unknown;
   try {
-    const llmResult = await llmRoadmap({ ...ctx, weeklyHours, targetRole, careerPath }, true);
+    const llmResult = await llmRoadmap({ ...ctx, weeklyHours, targetRole, careerPath }, true, opts);
     candidate = llmResult.roadmap;
     warnings = llmResult.warnings;
   } catch (err) {
     throw modelCallFailed(`重规划失败：${err instanceof Error ? err.message : '未知错误'}（现有规划不受影响）`);
   }
-  const { result, validation } = validateRoadmap(candidate, { grade: ctx.profile.grade, weeklyHours });
+  opts.onProgress?.(85, '校验规划结构、依赖与时间预算');
+  const allowedDone = new Set(ctx.currentTasks.filter((t) => t.status === 'done').map((t) => t.title));
+  const { result, validation } = validateRoadmap(candidate, { grade: ctx.profile.grade, weeklyHours }, { allowedCompletedTitles: allowedDone });
   if (!result || !validation.ok) {
     throw outputInvalid(`AI 输出未通过时间预算/依赖校验：${validation.errors.join('; ')}（请重试，现有规划不受影响）`);
   }
   const engine = 'pi-llm' as const;
+  opts.onProgress?.(95, '保存规划版本');
   return persist({ userId, ctx, content: result, engine, weeklyHours, targetRole, careerPath, reason, warnings: [...warnings, ...validation.warnings], revise: true });
 }
 
 // ---------- LLM 通道 ----------
 async function llmRoadmap(
   ctx: PlannerContext & { weeklyHours: number; targetRole: string; careerPath: CareerPath },
-  isRevise: boolean
+  isRevise: boolean,
+  opts: PlannerOptions
 ): Promise<{ roadmap: unknown; warnings: string[] }> {
+  opts.onProgress?.(15, isRevise ? 'AI 正在基于最新条件重新规划…' : 'AI 正在生成成长规划…');
   const sems = remainingSemesters(ctx.profile.grade);
   const budgetPerSem = semesterBudget(ctx.weeklyHours);
   const mastered = ctx.skills.filter((s) => s.level >= 3 && s.evidenceStatus === 'evidenced').map((s) => s.name);
@@ -166,9 +184,11 @@ async function llmRoadmap(
       prompt: `用户数据（真实业务数据）：\n${JSON.stringify(userContext, null, 2)}\n\n请生成分学期成长规划并调用 submit_result 提交（data 即规划 JSON，字段：goal, assumptions, weekly_hours=${ctx.weeklyHours}, semesters, tasks, total_estimated_hours, risks, evidence_refs）。`,
       schema: roadmapResult,
       wallClockMs: 240_000,
+      signal: opts.signal,
     },
     (_calls, captured) => (captured.length ? captured[captured.length - 1] : undefined)
   );
+  opts.onProgress?.(80, '规划内容已生成，准备校验');
   return { roadmap: data, warnings: [] };
 }
 

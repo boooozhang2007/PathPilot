@@ -113,6 +113,44 @@ describe('规划 JSON 校验（PRD 6.4 / 13.8.3）', () => {
     expect(validation.errors.join()).toContain('超出剩余学期范围');
   });
 
+  it('研究生/博士后的学期 13-14 可通过校验（学期上限 14）', () => {
+    expect(remainingSemesters('postdoc')).toEqual([13, 14]);
+    const postdoc = {
+      goal: '博士后成长规划',
+      assumptions: [],
+      weekly_hours: 10,
+      semesters: [13, 14].map((i) => ({
+        index: i,
+        label: `学期${i}`,
+        goal: 'g',
+        focus_skills: [],
+        recommended_courses: [],
+        milestone: 'm',
+        estimated_hours: 20,
+      })),
+      tasks: [
+        {
+          title: '任务A',
+          semester: 13,
+          description: 'd',
+          estimated_hours: 20,
+          priority: 'high',
+          prerequisites: [],
+          deliverable: '产出',
+          acceptance_criteria: '验收',
+          related_skills: [],
+          status: 'not_started',
+        },
+      ],
+      total_estimated_hours: 20,
+      risks: [],
+      evidence_refs: [],
+    };
+    const { result, validation } = validateRoadmap(postdoc, { grade: 'postdoc', weeklyHours: 10 });
+    expect(validation.ok).toBe(true);
+    expect(result?.tasks[0].semester).toBe(13);
+  });
+
   it('前置安排在更晚学期被拒绝', () => {
     const late = structuredClone(base);
     late.tasks[0].semester = 4; // 任务二(学期3)的前置任务一在学期4

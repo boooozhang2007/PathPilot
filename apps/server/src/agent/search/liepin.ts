@@ -48,9 +48,10 @@ interface RawLiepinJob {
   jobDetailUrl?: string;
 }
 
-function runCli(args: string[], timeoutMs: number): Promise<string> {
+function runCli(args: string[], timeoutMs: number, signal?: AbortSignal): Promise<string> {
   const exe = cliPath()!;
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error('已取消'));
     const child = spawn(exe, args, {
       env: {
         ...process.env,
@@ -61,18 +62,30 @@ function runCli(args: string[], timeoutMs: number): Promise<string> {
     });
     let out = '';
     let err = '';
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const onAbort = () => {
+      child.kill();
+      cleanup();
+      reject(new Error('已取消'));
+    };
     const timer = setTimeout(() => {
       child.kill();
+      cleanup();
       reject(new Error(`liepin-cli 超时(${timeoutMs}ms)`));
     }, timeoutMs);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort(); // 监听注册前已取消的竞态
     child.stdout.on('data', (d) => (out += d.toString('utf-8')));
     child.stderr.on('data', (d) => (err += d.toString('utf-8')));
     child.on('error', (e) => {
-      clearTimeout(timer);
+      cleanup();
       reject(e);
     });
     child.on('close', (code) => {
-      clearTimeout(timer);
+      cleanup();
       if (code === 0 && out.trim()) resolve(out);
       else reject(new Error(`liepin-cli 退出码 ${code}: ${(err || out).slice(0, 300)}`));
     });
@@ -83,12 +96,16 @@ function runCli(args: string[], timeoutMs: number): Promise<string> {
  * 猎聘岗位搜索（官方 CLI）。返回统一 JobSample：
  * 搜索结果字段 + 详情页 JD 正文（供技能抽取）；失败如实返回 ok:false（上层降级其他通道）。
  */
-export async function liepinSearchJobs(input: {
-  targetRole: string;
-  city?: string;
-  employmentType: EmploymentType;
-  sampleLimit: number;
-}): Promise<LiepinSearchOutcome> {
+export async function liepinSearchJobs(
+  input: {
+    targetRole: string;
+    city?: string;
+    employmentType: EmploymentType;
+    sampleLimit: number;
+  },
+  opts: { signal?: AbortSignal } = {}
+): Promise<LiepinSearchOutcome> {
+  const signal = opts.signal;
   if (!process.env.LIEPIN_USER_TOKEN) {
     return { samples: [], ok: false, note: '未配置 LIEPIN_USER_TOKEN（猎聘官方通道未启用）。' };
   }
@@ -106,11 +123,13 @@ export async function liepinSearchJobs(input: {
     fromCache = true;
   } else {
     for (let attempt = 0; attempt < 3 && raw.length === 0; attempt++) {
+      if (signal?.aborted) throw new Error('已取消');
       if (attempt > 0) await new Promise((r) => setTimeout(r, 3000));
       try {
         const stdout = await runCli(
           ['job', 'search', '--job-name', input.targetRole, ...(input.city ? ['--address', input.city] : []), '--page', '0', '--output', 'json'],
-          30_000
+          30_000,
+          signal
         );
         const parsed = JSON.parse(stdout.replace(/^[^{[]*/, '')) as { data?: { list?: RawLiepinJob[] } };
         raw = parsed.data?.list ?? [];
@@ -129,11 +148,12 @@ export async function liepinSearchJobs(input: {
   const samples: JobSample[] = [];
   let fetched = 0;
   for (const job of raw.slice(0, input.sampleLimit)) {
+    if (signal?.aborted) throw new Error('已取消');
     // 详情页正文（供技能抽取；抓取失败时用结构化字段，如实可用）
     let description = '';
     if (job.jobDetailUrl) {
       try {
-        const html = await fetchText(job.jobDetailUrl, 12000);
+        const html = await fetchText(job.jobDetailUrl, 12000, undefined, { signal, allowedHosts: ['liepin.com'] });
         const jd = extractJdFromHtml(html);
         if (jd) {
           description = jd.description;

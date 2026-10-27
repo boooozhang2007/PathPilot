@@ -89,11 +89,16 @@ export async function api<T = unknown>(path: string, init?: { method?: string; j
 }
 
 /** 轮询异步 agent run（岗位分析/规划生成） */
-export async function pollRun(runId: number, timeoutMs = 180000): Promise<{ run: { status: string; errorCode: string | null; errorDetail: string | null } }> {
+export async function pollRun(
+  runId: number,
+  onTick?: (status: string, progress?: number, progressMessage?: string) => void,
+  timeoutMs = 300000
+): Promise<{ run: { status: string; errorCode: string | null; errorDetail: string | null } }> {
   const start = Date.now();
   for (;;) {
     if (Date.now() - start > timeoutMs) throw new ApiError('TIMEOUT', '任务执行超时');
-    const data = await api<{ run: { status: string; errorCode: string | null; errorDetail: string | null } }>(`/api/agent/runs/${runId}`);
+    const data = await api<{ run: { status: string; errorCode: string | null; errorDetail: string | null; progress?: number; progressMessage?: string } }>(`/api/agent/runs/${runId}`);
+    onTick?.(data.run.status, data.run.progress, data.run.progressMessage ?? undefined);
     if (data.run.status === 'succeeded') return data;
     if (data.run.status === 'failed') throw new ApiError(data.run.errorCode ?? 'RUN_FAILED', data.run.errorDetail ?? '任务失败');
     if (data.run.status === 'canceled') throw new ApiError('CANCELED', '任务已取消');

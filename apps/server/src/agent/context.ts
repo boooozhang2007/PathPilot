@@ -2,7 +2,7 @@
 import type { ProfileDTO, ProfileSkillDTO, ExperienceDTO, RoadmapTaskDTO, JobAnalysisDTO } from '@pathpilot/shared';
 import { getProfile, listProfileSkills, listExperiences } from '../services/profileService.js';
 import { getActiveRoadmap, listRoadmapTasks } from '../services/roadmapService.js';
-import { userLatestAnalysis } from './jobs.js';
+import { latestAnalysisFor } from '../services/analysisService.js';
 
 export interface UserContext {
   profile: ProfileDTO | null;
@@ -13,12 +13,8 @@ export interface UserContext {
 }
 
 export async function buildUserContext(userId: number): Promise<UserContext> {
-  const [profile, skills, analysis, roadmap] = await Promise.all([
-    getProfile(userId),
-    listProfileSkills(userId),
-    userLatestAnalysis(userId),
-    getActiveRoadmap(userId),
-  ]);
+  const [profile, skills, roadmap] = await Promise.all([getProfile(userId), listProfileSkills(userId), getActiveRoadmap(userId)]);
+  const analysis = await latestAnalysisFor(userId, profile?.targetRole);
   const tasks = roadmap ? await listRoadmapTasks(userId, roadmap.id) : [];
   const experiences = await listExperiences(userId);
   return { profile, skills, experiences, analysis, activeTasks: tasks };

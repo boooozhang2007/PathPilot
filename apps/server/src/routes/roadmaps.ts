@@ -33,7 +33,7 @@ import { buildUserContext } from '../agent/context.js';
 import { badRequest } from '../services/errors.js';
 import { currentSemesterOf, semesterLabel } from '../services/semester.js';
 import { getProfile, listExperiences, listProfileSkills } from '../services/profileService.js';
-import { latestAnalysis } from '../services/analysisService.js';
+import { latestAnalysisFor } from '../services/analysisService.js';
 import type { DashboardData, GrowthStats } from '@pathpilot/shared';
 
 export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
@@ -44,8 +44,8 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
     const userId = getUserId(req);
     const input = generateRoadmapInput.parse(req.body);
     const runId = await createRun(userId, 'generate_roadmap', `生成规划·${input.targetRole ?? '当前目标'}`);
-    executeRun(runId, 'generate_roadmap', async () => {
-      const outcome = await generateRoadmap(userId, input);
+    executeRun(runId, 'generate_roadmap', async ({ onProgress, signal }) => {
+      const outcome = await generateRoadmap(userId, input, { onProgress, signal });
       return { resultType: 'roadmap', resultId: outcome.roadmap!.id };
     });
     reply.code(202);
@@ -74,12 +74,11 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
     const current = await getRoadmap(userId, Number(id));
     const input = reviseRoadmapInput.parse(req.body);
     const runId = await createRun(userId, 'revise_roadmap', `重规划·${input.reason ?? '条件调整'}`);
-    executeRun(runId, 'revise_roadmap', async () => {
+    executeRun(runId, 'revise_roadmap', async ({ onProgress, signal }) => {
       // 以指定版本为基线重规划
-      const outcome = await reviseRoadmap(userId, input);
+      const outcome = await reviseRoadmap(userId, input, { onProgress, signal, baseRoadmapId: current.id });
       return { resultType: 'roadmap', resultId: outcome.roadmap!.id };
     });
-    void current;
     reply.code(202);
     return { run_id: runId, status: 'running' };
   });
@@ -190,7 +189,6 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/agent/config', { preHandler: [auth] }, async () => agentConfigSummary());
-
   // ---------- 能力差距 & 简历 ----------
   app.get('/api/skills/gap', { preHandler: [auth] }, async (req) => {
     const ctx = await buildUserContext(getUserId(req));
@@ -257,7 +255,7 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
     ]);
     const currentSem = profile ? currentSemesterOf(profile.grade) : null;
     const semTasks = tasks.filter((t) => t.semester === currentSem);
-    const analysis = await latestAnalysis(userId);
+    const analysis = await latestAnalysisFor(userId, profile?.targetRole);
     const coreSkillNames = new Set(analysis?.result.skills.filter((s) => s.required).map((s) => s.name) ?? []);
     const stats: GrowthStats = {
       semesterCompletionRate: semTasks.length ? Math.round((semTasks.filter((t) => t.status === 'done').length / semTasks.length) * 100) : 0,

@@ -23,14 +23,25 @@ const SOFT_PATTERNS: [RegExp, string][] = [
   [/主动[性权]/, '主动性'],
 ];
 
+/** 英文缩写/词条按词边界匹配，避免 ML/HTML、Go/MongoDB、OS/position 这类子串误判 */
+function containsTerm(text: string, term: string): boolean {
+  const needle = term.trim().toLowerCase();
+  if (!needle) return false;
+  if (/^[\x00-\x7F]+$/.test(needle)) {
+    const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(?:^|[^a-z0-9+#.])${escaped}(?:$|[^a-z0-9+#.])`, 'i').test(text.toLowerCase());
+  }
+  return text.toLowerCase().includes(needle);
+}
+
 /** 规则引擎通道：基于技能词典的关键词匹配抽取（保留证据上下文） */
 export function extractRequirementsByKeywords(sample: JobSample, normalize: SkillNormalizer, catalogTerms: string[]): ExtractedJob {
   const text = `${sample.description}`;
   const found = new Map<string, string>(); // canonical → original term
   for (const term of catalogTerms) {
-    const needle = term.toLowerCase();
+    const needle = term.trim();
     if (needle.length < 2) continue;
-    if (text.toLowerCase().includes(needle)) {
+    if (containsTerm(text, needle)) {
       const n = normalize(term);
       if (!found.has(n.canonical)) found.set(n.canonical, term);
     }
@@ -63,7 +74,7 @@ const llmExtractionSchema = z.object({
   ),
 });
 
-export async function extractRequirementsByLlm(samples: JobSample[]): Promise<Map<number, ExtractedJob>> {
+export async function extractRequirementsByLlm(samples: JobSample[], signal?: AbortSignal): Promise<Map<number, ExtractedJob>> {
   const { runStructuredAgent } = await import('../pi/runtime.js');
   const listing = samples
     .map((s, i) => `【样本${i}】标题: ${s.title}\n描述: ${s.description.slice(0, 1200)}`)
@@ -75,6 +86,7 @@ export async function extractRequirementsByLlm(samples: JobSample[]): Promise<Ma
       prompt: `抽取以下 ${samples.length} 条岗位描述的要求，返回 jobs 数组，每条含 index（对应样本序号）、skills、education、experience、bonus、soft。\n\n${listing}`,
       schema: llmExtractionSchema,
       wallClockMs: 120_000,
+      signal,
     },
     (_toolCalls, captured) => (captured.length ? captured[captured.length - 1] : undefined)
   ).catch((err) => {

@@ -18,8 +18,8 @@ export interface WebSearchOutcome {
   note: string;
 }
 
-/** 允许抓取的招聘相关域名白名单 */
-const ALLOWED_HOSTS = [
+/** 允许抓取的招聘相关域名白名单（fetch_job_page 等工具共用同一份） */
+export const ALLOWED_HOSTS = [
   'zhipin.com',
   'shixiseng.com',
   'liepin.com',
@@ -32,6 +32,7 @@ const ALLOWED_HOSTS = [
   'hire.bigmodel.com',
   'careers.tencent.com',
   'job.bytedance.com',
+  'jobs.bytedance.com',
   'talent.aliyun.com',
   'campus.alibaba.com',
   'ncss.cn',
@@ -40,36 +41,81 @@ const ALLOWED_HOSTS = [
   'wondercv.com',
 ];
 
+export function isAllowedJobHost(hostname: string): boolean {
+  return ALLOWED_HOSTS.some((d) => hostname === d || hostname.endsWith(`.${d}`));
+}
+
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
-export async function fetchText(url: string, timeoutMs: number, maxBytes = 800_000): Promise<string> {
+async function readResponseBody(res: Response, maxBytes: number): Promise<string> {
+  const reader = res.body?.getReader();
+  if (!reader) return await res.text();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      break;
+    }
+    chunks.push(value);
+  }
+  return new TextDecoder('utf-8').decode(concat(chunks));
+}
+
+export async function fetchText(
+  url: string,
+  timeoutMs: number,
+  maxBytes = 800_000,
+  opts: { signal?: AbortSignal; allowedHosts?: string[] } = {}
+): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const onAbort = () => controller.abort();
+  if (opts.signal) {
+    if (opts.signal.aborted) controller.abort();
+    else opts.signal.addEventListener('abort', onAbort, { once: true });
+  }
   try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: { 'User-Agent': UA, 'Accept-Language': 'zh-CN,zh;q=0.9', Accept: 'text/html,application/xhtml+xml' },
-      redirect: 'follow',
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const reader = res.body?.getReader();
-    if (!reader) return await res.text();
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > maxBytes) {
-        await reader.cancel();
-        break;
+    let current = url;
+    for (let redirects = 0; redirects <= 5; redirects++) {
+      if (opts.allowedHosts) {
+        let host = '';
+        try {
+          host = new URL(current).hostname;
+        } catch {
+          throw new Error('URL 格式不正确');
+        }
+        if (!opts.allowedHosts.some((d) => host === d || host.endsWith(`.${d}`))) {
+          throw new Error(`域名 ${host} 不在允许的招聘站点白名单内`);
+        }
       }
-      chunks.push(value);
+      const res = await fetch(current, {
+        signal: controller.signal,
+        headers: { 'User-Agent': UA, 'Accept-Language': 'zh-CN,zh;q=0.9', Accept: 'text/html,application/xhtml+xml' },
+        redirect: opts.allowedHosts ? 'manual' : 'follow',
+      });
+      if (opts.allowedHosts && res.status >= 300 && res.status < 400) {
+        const location = res.headers.get('location');
+        try {
+          await res.body?.cancel();
+        } catch {
+          /* ignore */
+        }
+        if (!location) throw new Error(`HTTP ${res.status}`);
+        current = new URL(location, current).toString();
+        continue;
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await readResponseBody(res, maxBytes);
     }
-    return new TextDecoder('utf-8').decode(concat(chunks));
+    throw new Error('重定向次数过多');
   } finally {
     clearTimeout(timer);
+    if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
   }
 }
 
@@ -110,9 +156,14 @@ interface SearchHit {
 }
 
 /** Tavily 搜索 API（配置 TAVILY_API_KEY 时启用），返回白名单域名结果 */
-async function tavilySearch(query: string, limit: number, timeoutMs: number): Promise<SearchHit[]> {
+async function tavilySearch(query: string, limit: number, timeoutMs: number, signal?: AbortSignal): Promise<SearchHit[]> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const onAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  }
   try {
     const res = await fetch('https://api.tavily.com/search', {
       method: 'POST',
@@ -129,7 +180,7 @@ async function tavilySearch(query: string, limit: number, timeoutMs: number): Pr
     for (const r of data.results ?? []) {
       try {
         const host = new URL(r.url).hostname;
-        if (!ALLOWED_HOSTS.some((d) => host === d || host.endsWith(`.${d}`))) continue;
+        if (!isAllowedJobHost(host)) continue;
       } catch {
         continue;
       }
@@ -139,13 +190,14 @@ async function tavilySearch(query: string, limit: number, timeoutMs: number): Pr
     return hits;
   } finally {
     clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', onAbort);
   }
 }
 
 /** 通过必应网页搜索发现招聘页链接 */
-export async function searchJobPages(query: string, limit: number, timeoutMs: number): Promise<SearchHit[]> {
+export async function searchJobPages(query: string, limit: number, timeoutMs: number, signal?: AbortSignal): Promise<SearchHit[]> {
   const url = `https://cn.bing.com/search?q=${encodeURIComponent(query)}&count=${Math.min(limit * 2, 30)}`;
-  const html = await fetchText(url, timeoutMs);
+  const html = await fetchText(url, timeoutMs, undefined, { signal });
   const hits: SearchHit[] = [];
   // 解析 b_algo 结果块中的 <h2><a href>
   const re = /<li\b[^>]*class\s*=\s*["'][^"']*\bb_algo\b[^"']*["'][\s\S]*?<h2[^>]*>\s*<a[^>]+href\s*=\s*["'](https?:\/\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
@@ -155,7 +207,7 @@ export async function searchJobPages(query: string, limit: number, timeoutMs: nu
     const title = stripTags(m[2]).trim();
     try {
       const host = new URL(href).hostname;
-      if (!ALLOWED_HOSTS.some((d) => host === d || host.endsWith(`.${d}`))) continue;
+      if (!isAllowedJobHost(host)) continue;
     } catch {
       continue;
     }
@@ -168,7 +220,7 @@ export async function searchJobPages(query: string, limit: number, timeoutMs: nu
       const title = stripTags(m[2]).trim();
       try {
         const host = new URL(href).hostname;
-        if (!ALLOWED_HOSTS.some((d) => host === d || host.endsWith(`.${d}`))) continue;
+        if (!isAllowedJobHost(host)) continue;
       } catch {
         continue;
       }
@@ -197,18 +249,25 @@ export function extractJdFromHtml(html: string): { description: string; educatio
  * 真实联网搜索岗位样本。任何一步失败都如实记录在 attempts 里，绝不填充虚构样本。
  * 通道优先级：猎聘官方 MCP（配置 LIEPIN_MCP_TOKEN 时）→ Tavily 搜索 API → 必应 HTML（尽力而为）→ 如实报告失败。
  */
-export async function webSearchJobs(input: {
-  targetRole: string;
-  city?: string;
-  employmentType: EmploymentType;
-  sampleLimit: number;
-}): Promise<WebSearchOutcome> {
+export async function webSearchJobs(
+  input: {
+    targetRole: string;
+    city?: string;
+    employmentType: EmploymentType;
+    sampleLimit: number;
+  },
+  opts: { signal?: AbortSignal; onProgress?: (message: string) => void } = {}
+): Promise<WebSearchOutcome> {
   const timeout = config.search.timeoutMs;
+  const signal = opts.signal;
   const attempts: SearchAttempt[] = [];
   const samples: JobSample[] = [];
   let searchError = '';
   let hits: SearchHit[] = [];
   const seenUrls = new Set<string>();
+  const checkAborted = () => {
+    if (signal?.aborted) throw new Error('已取消');
+  };
 
   const role = input.targetRole.trim().replace(/\s+/g, ' ');
   const typeTerms = input.employmentType === 'internship' ? ['实习', '在校生'] : ['校招', '应届'];
@@ -236,32 +295,37 @@ export async function webSearchJobs(input: {
   // 通道 0：猎聘官方 MCP（岗位数据 + 来源链接，最高优先）
   let liepinNote = '';
   if (liepinConfigured()) {
-    const liepin = await liepinSearchJobs(input);
+    opts.onProgress?.('正在通过猎聘官方通道搜索…');
+    const liepin = await liepinSearchJobs(input, { signal });
     if (liepin.ok && liepin.samples.length) {
       return { samples: liepin.samples, attempts: [], failedCount: 0, note: liepin.note };
     }
     liepinNote = liepin.note;
   }
+  checkAborted();
 
   // 通道 1：Tavily 搜索 API（可选）
   if (process.env.TAVILY_API_KEY) {
+    opts.onProgress?.('正在通过 Tavily 搜索招聘页…');
     try {
       const rounds = await Promise.allSettled(
-        roleTerms.map((term) => tavilySearch(`${term} ${input.city ?? ''} ${typeTerms.join(' ')}`.trim(), input.sampleLimit, timeout))
+        roleTerms.map((term) => tavilySearch(`${term} ${input.city ?? ''} ${typeTerms.join(' ')}`.trim(), input.sampleLimit, timeout, signal))
       );
       for (const round of rounds) if (round.status === 'fulfilled') addHits(round.value);
       if (rounds.some((round) => round.status === 'rejected')) searchError = 'Tavily: 部分关键词搜索失败';
     } catch (err) {
       searchError = `Tavily: ${err instanceof Error ? err.message : '失败'}`;
     }
+    checkAborted();
   }
 
   // 通道 2：必应 HTML（尽力而为，可能被反爬拦截）
   if (hits.length < input.sampleLimit) {
+    opts.onProgress?.('正在通过必应搜索招聘页…');
     const queries = roleTerms.map((term, i) =>
       `${term} ${input.city ?? ''} ${typeTerms[i % typeTerms.length]} 岗位 招聘 职位详情`.trim()
     );
-    const rounds = await Promise.allSettled(queries.map((q) => searchJobPages(q, input.sampleLimit, timeout)));
+    const rounds = await Promise.allSettled(queries.map((q) => searchJobPages(q, input.sampleLimit, timeout, signal)));
     for (const round of rounds) {
       if (round.status === 'fulfilled') addHits(round.value);
       else searchError = `Bing: ${round.reason instanceof Error ? round.reason.message : '部分关键词搜索失败'}`;
@@ -269,13 +333,14 @@ export async function webSearchJobs(input: {
     if (!hits.length && !searchError) {
       for (const q of queries) {
         try {
-          addHits(await searchJobPages(q, input.sampleLimit, timeout));
+          addHits(await searchJobPages(q, input.sampleLimit, timeout, signal));
           if (hits.length >= input.sampleLimit) break;
         } catch (err) {
           searchError = `Bing: ${err instanceof Error ? err.message : '失败'}`;
         }
       }
     }
+    checkAborted();
   }
 
   if (!hits.length) {
@@ -288,10 +353,11 @@ export async function webSearchJobs(input: {
   }
   const now = new Date().toISOString();
   const candidates = hits.slice(0, Math.min(input.sampleLimit, 30));
+  opts.onProgress?.(`正在抓取 ${candidates.length} 个岗位页面…`);
   const parsed = await Promise.all(
     candidates.map(async (hit): Promise<{ sample?: JobSample; attempt: SearchAttempt }> => {
       try {
-        const html = await fetchText(hit.url, timeout);
+        const html = await fetchText(hit.url, timeout, undefined, { signal, allowedHosts: ALLOWED_HOSTS });
         const jd = extractJdFromHtml(html);
         if (!jd) return { attempt: { title: hit.title, url: hit.url, parse_status: 'failed', note: '正文提取不足（可能需要登录或 JS 渲染）' } };
         return {
@@ -315,6 +381,7 @@ export async function webSearchJobs(input: {
       }
     })
   );
+  checkAborted();
   for (const item of parsed) {
     attempts.push(item.attempt);
     if (item.sample) samples.push(item.sample);

@@ -92,7 +92,13 @@ export default function JobsPage() {
     try {
       const res = await api<{ run_id: number }>('/api/jobs/analyze', { method: 'POST', json: { targetRole: role, city: city || undefined, employmentType: type, sampleLimit: 18 } });
       setBusy('采集岗位样本并抽取技能要求…');
-      await pollRun(res.run_id, (s) => setBusy(s === 'running' ? '采集岗位样本并抽取技能要求…' : s));
+      await pollRun(
+        res.run_id,
+        (s, _p, msg) => {
+          if (s === 'running') setBusy(msg || '采集岗位样本并抽取技能要求…');
+        },
+        600_000
+      );
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : '分析失败');
@@ -109,7 +115,13 @@ export default function JobsPage() {
         method: 'POST',
         json: { targetRole: role, title: manual.title, company: manual.company || undefined, location: city || undefined, employmentType: type, description: manual.description },
       });
-      await pollRun(res.run_id);
+      await pollRun(
+        res.run_id,
+        (s, _p, msg) => {
+          if (s === 'running') setBusy(msg || '解析岗位描述…');
+        },
+        600_000
+      );
       setManualOpen(false);
       setManual({ title: '', company: '', description: '' });
       await load();

@@ -1,6 +1,7 @@
 // Zod schema：API 输入校验 + Agent 输出校验（PRD §6.4）
 // 所有用于前端展示的核心业务结果必须是结构化 JSON，经这些 schema 校验后方可落库/返回
 import { z } from 'zod';
+import { MAX_SEMESTER } from './semester';
 import {
   CAREER_PATHS,
   EVIDENCE_STATUSES,
@@ -83,7 +84,6 @@ export const jobAnalyzeInput = z.object({
   targetRole: z.string().min(1).max(50),
   city: z.string().max(30).optional(),
   employmentType: z.enum(EMPLOYMENT_TYPES).default('internship'),
-  educationFilter: z.string().max(20).optional(),
   /** 期望采集样本数上限 */
   sampleLimit: z.number().int().min(3).max(30).default(18),
 });
@@ -151,8 +151,8 @@ export type JobAnalysisResult = z.infer<typeof jobAnalysisResult>;
 
 // ---------- 成长规划（PRD 4.5 / 6.4） ----------
 export const semesterSchema = z.object({
-  /** 学期序号：1=大一上 … 8=大四下；剩余学期从当前年级起 */
-  index: z.number().int().min(1).max(12),
+  /** 学期序号：1=大一上 … 14=博士后；剩余学期从当前年级起 */
+  index: z.number().int().min(1).max(MAX_SEMESTER),
   label: z.string(),
   goal: z.string(),
   focus_skills: z.array(z.string()).default([]),
@@ -165,7 +165,7 @@ export type SemesterPlan = z.infer<typeof semesterSchema>;
 export const roadmapTaskSchema = z.object({
   title: z.string().min(1),
   parent_task_id: z.number().int().positive().nullable().optional(),
-  semester: z.number().int().min(1).max(12),
+  semester: z.number().int().min(1).max(MAX_SEMESTER),
   description: z.string().min(1),
   estimated_hours: z.number().min(0.5),
   priority: z.enum(PRIORITIES),
@@ -248,6 +248,10 @@ export const agentChatInput = z.object({
   sessionId: z.number().int().positive().optional(),
   message: z.string().min(1).max(2000),
   answerStyle: z.enum(['concise', 'detailed']).optional(),
+  /** 开启模型思考过程（需要模型支持 reasoning） */
+  thinking: z.boolean().optional(),
+  /** 重新生成：以该 assistant 消息为起点截断后重答 */
+  regenerateFrom: z.number().int().positive().optional(),
 });
 export type AgentChatInput = z.infer<typeof agentChatInput>;
 
@@ -283,7 +287,8 @@ export type SkillGapResult = z.infer<typeof skillGapResult>;
 
 // ---------- 简历草稿（PRD 4.9，P1） ----------
 export const resumeDraftInput = z.object({
-  targetRole: z.string().min(1).max(50),
+  /** 缺省使用个人资料中的目标岗位 */
+  targetRole: z.string().min(1).max(50).optional(),
   experienceIds: z.array(z.number().int().positive()).default([]),
 });
 export const resumeDraftResult = z.object({

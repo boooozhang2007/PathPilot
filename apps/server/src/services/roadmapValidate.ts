@@ -11,7 +11,8 @@ export interface ValidationResult {
 
 export function validateRoadmap(
   candidate: unknown,
-  ctx: { grade: Grade; weeklyHours: number }
+  ctx: { grade: Grade; weeklyHours: number },
+  opts: { allowedCompletedTitles?: Set<string> } = {}
 ): { result?: RoadmapResult; validation: ValidationResult } {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -28,6 +29,15 @@ export function validateRoadmap(
     };
   }
   const roadmap = parsed.data;
+
+  // 模型不能凭空把任务标记为已完成；仅重规划时可延续真实已完成任务
+  const allowedDone = opts.allowedCompletedTitles ?? new Set<string>();
+  for (const t of roadmap.tasks) {
+    if (t.status === 'done' && !allowedDone.has(t.title)) {
+      t.status = 'not_started';
+      warnings.push(`任务「${t.title}」没有历史完成记录，状态已重置为未开始`);
+    }
+  }
 
   // 2) 学期范围（已完成任务为历史记录，跳过范围与依赖检查）
   const allowed = new Set(remainingSemesters(ctx.grade));

@@ -4,7 +4,7 @@ import type { JobAnalysisDTO, JobAnalysisResult, JobSample } from '@pathpilot/sh
 import { getSkillCatalog, listProfileSkills } from '../services/profileService.js';
 import { buildNormalizer } from '../services/normalize.js';
 import { computeJobStats } from '../services/frequency.js';
-import { saveSamples, attachAnalysisToSamples, saveRequirements, saveAnalysis, presetSamplesFor, latestAnalysis } from '../services/analysisService.js';
+import { saveSamples, attachAnalysisToSamples, saveRequirements, saveAnalysis, presetSamplesFor } from '../services/analysisService.js';
 import { webSearchJobs } from './search/webSearch.js';
 import { extractRequirementsByKeywords, extractRequirementsByLlm, type ExtractedJob } from './search/extract.js';
 import { currentEngine } from './core.js';
@@ -18,10 +18,25 @@ export interface AnalyzeJobsInput {
   sampleLimit: number;
 }
 
-export async function analyzeJobs(userId: number, input: AnalyzeJobsInput): Promise<JobAnalysisDTO> {
+export interface JobWorkOptions {
+  signal?: AbortSignal;
+  onProgress?: (progress: number, message: string) => void;
+}
+
+function checkAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new Error('已取消');
+}
+
+export async function analyzeJobs(userId: number, input: AnalyzeJobsInput, opts: JobWorkOptions = {}): Promise<JobAnalysisDTO> {
   const limitations: string[] = [];
+  checkAborted(opts.signal);
   // 1) 真实联网搜索
-  const web = await webSearchJobs(input);
+  opts.onProgress?.(10, '正在联网搜索真实招聘信息…');
+  const web = await webSearchJobs(input, {
+    signal: opts.signal,
+    onProgress: (message) => opts.onProgress?.(25, message),
+  });
+  checkAborted(opts.signal);
   if (web.note) limitations.push(web.note);
   const samples: JobSample[] = dedupeSamples([...web.samples]);
 
@@ -44,19 +59,23 @@ export async function analyzeJobs(userId: number, input: AnalyzeJobsInput): Prom
       education: [],
       experience: [],
     }, [], limitations);
-    return saveAnalysis(userId, { ...input, engine: currentEngine() }, empty);
+    opts.onProgress?.(90, '保存分析结果…');
+    return saveAnalysis(userId, { ...input, engine: await currentEngine() }, empty);
   }
 
   // 3) 技能抽取（LLM 通道 / 词典关键词通道）
+  checkAborted(opts.signal);
   const catalog = await getSkillCatalog();
   const normalize = buildNormalizer(catalog);
   const catalogTerms = catalog.flatMap((c) => [c.name, ...(c.aliases ?? [])]);
   let extracted: Map<number, ExtractedJob>;
   if (await isLlmConfigured()) {
+    opts.onProgress?.(55, `正在用 AI 抽取 ${samples.length} 条样本的技能要求…`);
     try {
-      extracted = await extractRequirementsByLlm(samples);
+      extracted = await extractRequirementsByLlm(samples, opts.signal);
       limitations.push('技能抽取由 AI 模型完成（仅从真实岗位文本抽取，未推断）。');
     } catch (err) {
+      checkAborted(opts.signal);
       limitations.push(`AI 抽取失败（${err instanceof Error ? err.message : '未知'}），已回退词典关键词抽取。`);
       extracted = keywordExtract(samples, normalize, catalogTerms);
     }
@@ -64,6 +83,7 @@ export async function analyzeJobs(userId: number, input: AnalyzeJobsInput): Prom
     extracted = keywordExtract(samples, normalize, catalogTerms);
     limitations.push('技能抽取由技能词典关键词匹配完成（未配置 AI 模型 Key）。');
   }
+  checkAborted(opts.signal);
 
   // 4) 回填技能到样本 + 频次统计（只统计成功样本）
   const filled: JobSample[] = samples.map((s, i) => {
@@ -90,8 +110,9 @@ export async function analyzeJobs(userId: number, input: AnalyzeJobsInput): Prom
   );
 
   // 5) 落库：样本 + 要求明细 + 分析快照
+  opts.onProgress?.(85, '保存岗位样本与分析结果…');
   const sourceIds = await saveSamples(userId, filled, 'ok');
-  const analysis = await saveAnalysis(userId, { ...input, engine: currentEngine() }, result);
+  const analysis = await saveAnalysis(userId, { ...input, engine: await currentEngine() }, result);
   await attachAnalysisToSamples(analysis.id, sourceIds);
   const requirementRows = sourceIds.flatMap((sid, i) => {
     const ex = extracted.get(i);
@@ -118,7 +139,8 @@ export async function analyzeJobs(userId: number, input: AnalyzeJobsInput): Prom
 /** 手动粘贴 JD 分析（PRD 4.2：搜索失败时允许手动输入，标明来源类型） */
 export async function analyzeManualJob(
   userId: number,
-  input: { targetRole: string; title: string; company?: string; location?: string; employmentType: 'internship' | 'full_time'; description: string; sourceUrl?: string }
+  input: { targetRole: string; title: string; company?: string; location?: string; employmentType: 'internship' | 'full_time'; description: string; sourceUrl?: string },
+  opts: JobWorkOptions = {}
 ): Promise<JobAnalysisDTO> {
   const sample: JobSample = {
     title: input.title,
@@ -138,30 +160,30 @@ export async function analyzeManualJob(
   const catalogTerms = catalog.flatMap((c) => [c.name, ...(c.aliases ?? [])]);
   let extracted: ExtractedJob;
   if (await isLlmConfigured()) {
+    opts.onProgress?.(40, '正在用 AI 抽取岗位要求…');
     try {
-      extracted = (await extractRequirementsByLlm([sample])).get(0) ?? keywordForOne(sample, normalize, catalogTerms);
+      extracted = (await extractRequirementsByLlm([sample], opts.signal)).get(0) ?? keywordForOne(sample, normalize, catalogTerms);
     } catch {
+      checkAborted(opts.signal);
       extracted = keywordForOne(sample, normalize, catalogTerms);
     }
   } else {
     extracted = keywordForOne(sample, normalize, catalogTerms);
   }
+  checkAborted(opts.signal);
   sample.skills = extracted.skills;
   const stats = computeJobStats([sample], 0, normalize);
   const result = buildResult(input.targetRole, [sample], stats, [], [
     '本结果基于你手动粘贴的 1 条岗位描述（来源类型=manual）。',
   ]);
+  opts.onProgress?.(85, '保存岗位分析结果…');
   const [sid] = await saveSamples(userId, [sample], 'ok');
-  const analysis = await saveAnalysis(userId, { targetRole: input.targetRole, employmentType: input.employmentType, city: input.location, engine: currentEngine() }, result);
+  const analysis = await saveAnalysis(userId, { targetRole: input.targetRole, employmentType: input.employmentType, city: input.location, engine: await currentEngine() }, result);
   await attachAnalysisToSamples(analysis.id, [sid]);
   await saveRequirements(
     sample.skills.map((skill) => ({ jobSourceId: sid, originalText: skill, requirementType: 'skill', importance: 'medium', evidenceText: input.description.slice(0, 200) }))
   );
   return analysis;
-}
-
-export async function userLatestAnalysis(userId: number): Promise<JobAnalysisDTO | null> {
-  return latestAnalysis(userId);
 }
 
 export { sampleInsufficient };

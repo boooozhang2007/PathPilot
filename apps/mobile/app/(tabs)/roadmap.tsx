@@ -40,7 +40,9 @@ export default function RoadmapTab() {
       if (!profile?.targetRole) throw new Error('请先在「我的」→ 个人信息中填写目标岗位');
       const run = await api<{ run_id: number }>('/api/roadmaps', { method: 'POST', json: {} });
       setBusyText('AI 正在按学期拆解任务，约 1-2 分钟…');
-      await pollRun(run.run_id, 300000);
+      await pollRun(run.run_id, (s, _p, message) => {
+        if (s === 'running' && message) setBusyText(message);
+      }, 900000);
       load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : '生成失败');
@@ -57,7 +59,9 @@ export default function RoadmapTab() {
       if (!data) return;
       const run = await api<{ run_id: number }>(`/api/roadmaps/${data.roadmap.id}/revise`, { method: 'POST', json: {} });
       setBusyText('AI 正在生成新版本…');
-      await pollRun(run.run_id, 300000);
+      await pollRun(run.run_id, (s, _p, message) => {
+        if (s === 'running' && message) setBusyText(message);
+      }, 900000);
       load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : '重规划失败（原规划不受影响）');

@@ -27,6 +27,8 @@ export const config = {
   /** Agent 运行限制（PRD 6.6） */
   agentLimits: {
     wallClockMs: Number(process.env.AGENT_TIMEOUT_MS ?? 180_000),
+    /** 流式聊天允许更长时间，覆盖聊天内的规划/岗位分析工具 */
+    chatWallClockMs: Number(process.env.AGENT_CHAT_TIMEOUT_MS ?? 300_000),
     maxToolCalls: Number(process.env.AGENT_MAX_TOOL_CALLS ?? 40),
     maxRetries: 2, // 结构化输出校验失败重试次数（PRD 6.4 有限次数重试）
   },

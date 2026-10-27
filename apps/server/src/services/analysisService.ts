@@ -111,6 +111,20 @@ export async function latestAnalysis(userId: number): Promise<JobAnalysisDTO | n
   return getAnalysis(userId, rows[0].id);
 }
 
+/** 当前目标岗位对应的最近一次分析；没有匹配岗位时返回 null，避免用旧岗位结果算差距 */
+export async function latestAnalysisFor(userId: number, targetRole?: string | null): Promise<JobAnalysisDTO | null> {
+  const role = targetRole?.trim();
+  if (!role) return latestAnalysis(userId);
+  const rows = await db
+    .select()
+    .from(jobAnalyses)
+    .where(and(eq(jobAnalyses.userId, userId), eq(jobAnalyses.targetRole, role)))
+    .orderBy(desc(jobAnalyses.id))
+    .limit(1);
+  if (!rows[0]) return null;
+  return getAnalysis(userId, rows[0].id);
+}
+
 /** 历史分析摘要列表(岗位对比用):最近 N 条 */
 export interface AnalysisSummary {
   id: number;
@@ -154,7 +168,8 @@ export async function presetSamplesFor(targetRole: string, employmentType: strin
     const typeHit = !r.employmentType || r.employmentType === employmentType;
     return titleHit && typeHit;
   });
-  const pool = (matched.length >= 3 ? matched : all.filter((r) => !r.employmentType || r.employmentType === employmentType)).slice(0, limit);
+  // 只补充与目标岗位匹配的预置样本；没有匹配时如实返回空，绝不混入其它岗位
+  const pool = matched.slice(0, limit);
   if (!pool.length) return [];
   const reqRows = await db
     .select()

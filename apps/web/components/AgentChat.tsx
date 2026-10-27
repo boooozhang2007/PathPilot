@@ -81,6 +81,7 @@ export function AgentChat({
 }) {
   // 会话与消息
   const [sessionId, setSessionId] = useState<number | undefined>();
+  const sessionIdRef = useRef<number | undefined>(undefined);
   const [messages, setMessages] = useState<ChatMessageDTO[]>([]);
   const [sessions, setSessions] = useState<ChatSessionSummaryDTO[]>([]);
   // 流式状态
@@ -113,6 +114,7 @@ export function AgentChat({
       api<{ sessionId: number; messages: ChatMessageDTO[] } | null>('/api/agent/session')
         .then((s) => {
           if (s) {
+            sessionIdRef.current = s.sessionId;
             setSessionId(s.sessionId);
             setMessages(s.messages);
           }
@@ -154,6 +156,7 @@ export function AgentChat({
 
   function newChat() {
     abortRef.current?.abort();
+    sessionIdRef.current = undefined;
     setSessionId(undefined);
     setMessages([]);
     setStreaming(null);
@@ -169,6 +172,7 @@ export function AgentChat({
     if (id === sessionId) return;
     try {
       const msgs = await api<ChatMessageDTO[]>(`/api/agent/session/${id}`);
+      sessionIdRef.current = id;
       setSessionId(id);
       setMessages(msgs);
       setErr('');
@@ -194,7 +198,8 @@ export function AgentChat({
     try {
       const res = await api<{ draft: { summary: string; sections: { heading: string; items: string[] }[] } }>('/api/resume/draft', { method: 'POST', json: {} });
       const text = `## 简历草稿\n\n${res.draft.summary}\n\n${res.draft.sections.map((s) => `**${s.heading}**\n${s.items.map((i) => `- ${i}`).join('\n')}`).join('\n\n')}`;
-      setMessages((prev) => [...prev, { id: Date.now(), sessionId: sessionId ?? 0, role: 'assistant', content: text, engine: null, toolCalls: [], createdAt: new Date().toISOString() }]);
+      // 草稿仅存在于当前页面（未入库），用负数 id 标识并禁用重新生成
+      setMessages((prev) => [...prev, { id: -Date.now(), sessionId: sessionIdRef.current ?? 0, role: 'assistant', content: text, engine: null, toolCalls: [], createdAt: new Date().toISOString() }]);
     } catch (e) {
       setErr(e instanceof Error ? e.message : '生成失败');
     } finally {
@@ -202,8 +207,8 @@ export function AgentChat({
     }
   }
 
-  /** 流式发送;regenerate=true 时去掉末尾的 assistant 消息重答 */
-  async function send(text?: string, opts?: { regenerate?: boolean }) {
+  /** 流式发送;regenerateFrom 时由服务端截断该回复及其后的消息后重答，避免用户消息重复入库 */
+  async function send(text?: string, opts?: { regenerateFrom?: number; truncateTo?: number }) {
     const message = (text ?? input).trim();
     if (!message || busy) return;
     setInput('');
@@ -215,18 +220,29 @@ export function AgentChat({
     setBusy(true);
     setAtBottom(true);
     setStreaming({ text: '', thinking: '', tools: [], startedAt: Date.now() });
+    let activeSessionId = sessionIdRef.current;
     setMessages((prev) => {
-      const base = opts?.regenerate && prev.length && prev[prev.length - 1].role === 'assistant' ? prev.slice(0, -1) : prev;
-      return [...base, { id: Date.now(), sessionId: sessionId ?? 0, role: 'user', content: message, engine: null, toolCalls: [], createdAt: new Date().toISOString() }];
+      const base = opts && opts.truncateTo !== undefined ? prev.slice(0, opts.truncateTo) : prev;
+      return [...base, { id: Date.now(), sessionId: activeSessionId ?? 0, role: 'user', content: message, engine: null, toolCalls: [], createdAt: new Date().toISOString() }];
     });
     const controller = new AbortController();
     abortRef.current = controller;
+    /** 从服务端恢复消息（请求失败/中断后对齐真实 id 与内容） */
+    const syncSession = async () => {
+      if (!activeSessionId) return;
+      try {
+        const msgs = await api<ChatMessageDTO[]>(`/api/agent/session/${activeSessionId}`);
+        if (sessionIdRef.current === activeSessionId) setMessages(msgs);
+      } catch {
+        /* 忽略 */
+      }
+    };
     try {
       const token = getToken() ?? '';
       const res = await fetch(`${API_BASE}/api/agent/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ sessionId, message }),
+        body: JSON.stringify({ sessionId: activeSessionId, message, ...(opts?.regenerateFrom ? { regenerateFrom: opts.regenerateFrom } : {}) }),
         signal: controller.signal,
       });
       if (res.status === 401 && typeof window !== 'undefined') {
@@ -238,7 +254,9 @@ export function AgentChat({
       const decoder = new TextDecoder();
       let buf = '';
       let doneEngine: 'pi-llm' | 'rules' | undefined;
+      let doneMessageId: number | undefined;
       let fallback = '';
+      let hadError = false;
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -248,13 +266,17 @@ export function AgentChat({
         for (const part of parts) {
           const line = part.split('\n').find((l) => l.startsWith('data: '));
           if (!line) continue;
-          let ev: { type: string; delta?: string; name?: string; summary?: string; engine?: 'pi-llm' | 'rules'; model?: string; fallbackReason?: string; sessionId?: number };
+          let ev: { type: string; delta?: string; name?: string; summary?: string; engine?: 'pi-llm' | 'rules'; model?: string; fallbackReason?: string; sessionId?: number; messageId?: number };
           try {
             ev = JSON.parse(line.slice(6));
           } catch {
             continue;
           }
-          if (ev.sessionId) setSessionId(ev.sessionId);
+          if (ev.sessionId) {
+            activeSessionId = ev.sessionId;
+            sessionIdRef.current = ev.sessionId;
+            setSessionId(ev.sessionId);
+          }
           setStreaming((st) => {
             const cur = st ?? { text: '', thinking: '', tools: [], startedAt: Date.now() };
             switch (ev.type) {
@@ -264,6 +286,16 @@ export function AgentChat({
                 return { ...cur, text: cur.text + (ev.delta ?? '') };
               case 'tool_start':
                 return { ...cur, tools: [...cur.tools, { name: ev.name ?? '', status: 'running' }] };
+              case 'tool_progress': {
+                const tools = [...cur.tools];
+                for (let i = tools.length - 1; i >= 0; i--) {
+                  if (tools[i].status === 'running' && (!ev.name || tools[i].name === ev.name)) {
+                    tools[i] = { ...tools[i], summary: ev.summary };
+                    break;
+                  }
+                }
+                return { ...cur, tools };
+              }
               case 'tool_end': {
                 const tools = cur.tools.map((t) => (t.name === ev.name && t.status === 'running' ? { ...t, status: 'done' as const, summary: ev.summary } : t));
                 return { ...cur, tools };
@@ -272,9 +304,13 @@ export function AgentChat({
                 return cur;
             }
           });
-          if (ev.type === 'error') setErr(ev.delta ?? '生成出错');
+          if (ev.type === 'error') {
+            hadError = true;
+            setErr(ev.delta ?? '生成出错');
+          }
           if (ev.type === 'done') {
             doneEngine = ev.engine;
+            doneMessageId = ev.messageId;
             if (ev.fallbackReason) fallback = ev.fallbackReason;
           }
         }
@@ -284,8 +320,8 @@ export function AgentChat({
           setMessages((prev) => [
             ...prev,
             {
-              id: Date.now(),
-              sessionId: sessionId ?? 0,
+              id: doneMessageId ?? Date.now(),
+              sessionId: activeSessionId ?? 0,
               role: 'assistant',
               content: st.text.trim() || '（模型未返回内容）',
               engine: doneEngine ?? null,
@@ -296,7 +332,7 @@ export function AgentChat({
         }
         return null;
       });
-      if (fallback && !fallback.startsWith('已停止')) setNotice(fallback);
+      if (fallback && !hadError && !fallback.startsWith('已停止')) setNotice(fallback);
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') {
         // 用户停止:保留已生成的部分
@@ -306,7 +342,7 @@ export function AgentChat({
               ...prev,
               {
                 id: Date.now(),
-                sessionId: sessionId ?? 0,
+                sessionId: activeSessionId ?? 0,
                 role: 'assistant',
                 content: st.text,
                 engine: null,
@@ -317,9 +353,15 @@ export function AgentChat({
           }
           return null;
         });
+        // 服务端也已中止并落库：稍后同步一次，用真实消息 id 替换本地临时 id（供重新生成使用）
+        setTimeout(() => {
+          if (!abortRef.current) void syncSession();
+        }, 500);
       } else {
         setErr(e instanceof Error ? e.message : '发送失败');
         setStreaming(null);
+        // 重新生成可能已被服务端拒绝（旧 id/会话不存在），恢复被乐观截断的消息
+        await syncSession();
       }
     } finally {
       abortRef.current = null;
@@ -338,12 +380,12 @@ export function AgentChat({
     }
   }
 
-  /** 任意一条 assistant 消息的重新生成:回退到它前面的用户消息重答 */
+  /** 任意一条 assistant 消息的重新生成:服务端从该回复起截断后重答 */
   function regenerateAt(index: number) {
+    const assistant = messages[index];
     for (let i = index - 1; i >= 0; i--) {
       if (messages[i].role === 'user') {
-        setMessages((prev) => prev.slice(0, i));
-        send(messages[i].content);
+        send(messages[i].content, { regenerateFrom: assistant.id, truncateTo: i });
         return;
       }
     }
@@ -429,8 +471,8 @@ export function AgentChat({
                       {guideProfile && <div className="mt-3 text-[11px] text-slate-2">已读取：{guideProfile.nickname} · {guideProfile.targetRole || '还未设置目标岗位'}</div>}
                     </div>
                   )}
-                  {guideReady && guideStep === 'choice' && (
-                    <div className={`mt-8 grid w-full max-w-xl gap-2.5 ${full ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                  {guideReady && guideStep === 'choice' && full && (
+                    <div className="mt-8 grid w-full max-w-xl grid-cols-2 gap-2.5">
                       {[
                         ['岗位洞察', '分析目标岗位的真实招聘要求', '帮我搜索并分析目标岗位的真实招聘要求'],
                         ['能力差距', '找出当前技能与岗位要求的差距', '请结合我的档案做一次能力差距分析'],
@@ -442,6 +484,15 @@ export function AgentChat({
                         <button key={title} className="group rounded-lg border border-line bg-white px-4 py-3 text-left transition hover:-translate-y-0.5 hover:border-accent hover:shadow-md" onClick={() => { setGuideStep('done'); send(prompt); }}>
                           <div className="flex items-center gap-2 text-[13px] font-semibold text-ink"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-paper-2 text-accent"><Ic name={SUGGEST_ICONS[i % SUGGEST_ICONS.length]} size={14} /></span>{title}</div>
                           <div className="mt-1 text-[11px] text-slate-2">{desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {guideReady && guideStep === 'choice' && !full && (
+                    <div className="mt-6 grid w-full max-w-xl gap-2">
+                      {suggestions.map((s) => (
+                        <button key={s} className="rounded-lg border border-line bg-white px-4 py-2.5 text-left text-[13px] font-medium text-slate-1 transition hover:border-accent hover:text-accent-deep" onClick={() => { setGuideStep('done'); send(s); }}>
+                          {s}
                         </button>
                       ))}
                     </div>
@@ -459,7 +510,12 @@ export function AgentChat({
                         <AgentMark size={22} />
                         <span className="text-xs font-bold text-ink">PathPilot</span>
                       </div>
-                      <div className="pp-card rounded-lg rounded-tl-sm px-4 py-3">
+                      <div className={`pp-card rounded-lg rounded-tl-sm px-4 py-3 ${m.errorCode ? 'border-[#f0d3cf] bg-[#fdf8f7]' : ''}`}>
+                        {m.errorCode && (
+                          <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-[#b3271d]">
+                            <Ic name="warn" size={11} /> 本次回复未完成
+                          </div>
+                        )}
                         <Markdown text={m.content} />
                       </div>
                       {m.toolCalls.length > 0 && <ToolChain tools={m.toolCalls.map((t) => ({ ...t, status: 'done' as const }))} />}
@@ -468,7 +524,7 @@ export function AgentChat({
                         <ActionBtn onClick={() => copyMessage(m)} label={copiedId === m.id ? '已复制' : '复制'}>
                           <Ic name={copiedId === m.id ? 'check' : 'copy'} size={13} />
                         </ActionBtn>
-                        {full && !busy && (
+                        {full && !busy && m.id > 0 && (
                           <ActionBtn onClick={() => regenerateAt(i)} label="重新生成">
                             <Ic name="refresh" size={13} />
                           </ActionBtn>

@@ -13,8 +13,8 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
     const userId = getUserId(req);
     const input = jobAnalyzeInput.parse(req.body);
     const runId = await createRun(userId, 'analyze_jobs', `${input.targetRole}·${input.city ?? '不限'}·${input.employmentType}`);
-    executeRun(runId, 'analyze_jobs', async () => {
-      const analysis = await analyzeJobs(userId, input);
+    executeRun(runId, 'analyze_jobs', async ({ onProgress, signal }) => {
+      const analysis = await analyzeJobs(userId, input, { onProgress, signal });
       return { resultType: 'job_analysis', resultId: analysis.id };
     });
     reply.code(202);
@@ -56,8 +56,8 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
     const userId = getUserId(req);
     const input = manualJobInput.parse(req.body);
     const runId = await createRun(userId, 'analyze_jobs', `手动输入·${input.targetRole}`);
-    executeRun(runId, 'analyze_jobs', async () => {
-      const analysis = await analyzeManualJob(userId, input);
+    executeRun(runId, 'analyze_jobs', async ({ onProgress, signal }) => {
+      const analysis = await analyzeManualJob(userId, input, { onProgress, signal });
       return { resultType: 'job_analysis', resultId: analysis.id };
     });
     reply.code(202);

@@ -83,10 +83,19 @@ export async function listRoadmaps(userId: number): Promise<RoadmapVersionSummar
 }
 
 export async function listRoadmapTasks(userId: number, roadmapId?: number): Promise<RoadmapTaskDTO[]> {
-  const where = roadmapId
-    ? and(eq(roadmapTasks.userId, userId), eq(roadmapTasks.roadmapId, roadmapId))
-    : eq(roadmapTasks.userId, userId);
-  const rows = await db.select().from(roadmapTasks).where(where).orderBy(roadmapTasks.semester, roadmapTasks.sortOrder, roadmapTasks.id);
+  // 默认只读取当前生效版本。历史版本任务必须显式传 roadmapId，
+  // 否则任务中心、Dashboard 与 Agent 工具会把重规划前的旧任务当成当前任务。
+  let targetRoadmapId = roadmapId;
+  if (!targetRoadmapId || !Number.isInteger(targetRoadmapId) || targetRoadmapId <= 0) {
+    const active = await getActiveRoadmap(userId);
+    if (!active) return [];
+    targetRoadmapId = active.id;
+  }
+  const rows = await db
+    .select()
+    .from(roadmapTasks)
+    .where(and(eq(roadmapTasks.userId, userId), eq(roadmapTasks.roadmapId, targetRoadmapId)))
+    .orderBy(roadmapTasks.semester, roadmapTasks.sortOrder, roadmapTasks.id);
   const tasks = rows.map(toTaskDTO);
   const children = new Map<number, RoadmapTaskDTO[]>();
   for (const task of tasks) if (task.parentTaskId) children.set(task.parentTaskId, [...(children.get(task.parentTaskId) ?? []), task]);
@@ -235,7 +244,12 @@ export async function updateTask(
   if (!rows[0]) throw notFound('任务不存在');
   const task = rows[0];
   if (input.status === 'in_progress' && task.dependencyIds?.length) {
-    const deps = await db.select({ id: roadmapTasks.id, status: roadmapTasks.status }).from(roadmapTasks).where(inArray(roadmapTasks.id, task.dependencyIds));
+    const depIds = [...new Set(task.dependencyIds)];
+    const deps = await db
+      .select({ id: roadmapTasks.id, status: roadmapTasks.status })
+      .from(roadmapTasks)
+      .where(and(inArray(roadmapTasks.id, depIds), eq(roadmapTasks.userId, userId)));
+    if (deps.length !== depIds.length) throw badRequest('前置任务不存在或不属于当前用户');
     if (deps.some((d) => d.status !== 'done')) throw badRequest('请先完成前置任务');
   }
   if (input.expectedUpdatedAt && input.expectedUpdatedAt !== task.updatedAt) {
@@ -318,6 +332,14 @@ export async function addRoadmapTask(
 ): Promise<RoadmapTaskDTO> {
   const roadmap = await getActiveRoadmap(userId);
   if (!roadmap) throw badRequest('当前没有生效规划，请先让 AI 生成规划');
+  if (input.parentTaskId) {
+    const parent = await db
+      .select({ id: roadmapTasks.id })
+      .from(roadmapTasks)
+      .where(and(eq(roadmapTasks.id, input.parentTaskId), eq(roadmapTasks.userId, userId), eq(roadmapTasks.roadmapId, roadmap.id)))
+      .limit(1);
+    if (!parent[0]) throw badRequest('父任务不存在或不属于当前生效规划');
+  }
   const now = new Date().toISOString();
   const inserted = await db
     .insert(roadmapTasks)
@@ -378,6 +400,12 @@ export async function updateRoadmapTaskFields(
 export async function removeRoadmapTask(userId: number, taskId: number): Promise<void> {
   const rows = await db.select().from(roadmapTasks).where(and(eq(roadmapTasks.id, taskId), eq(roadmapTasks.userId, userId))).limit(1);
   if (!rows[0]) throw notFound('任务不存在');
+  const children = await db
+    .select({ id: roadmapTasks.id })
+    .from(roadmapTasks)
+    .where(and(eq(roadmapTasks.parentTaskId, taskId), eq(roadmapTasks.userId, userId)))
+    .limit(1);
+  if (children[0]) throw badRequest('该任务下还有子任务，请先删除或调整子任务');
   // 任务完成前后均可删除（用户明确操作即生效，成果记录随任务移除）
   await db.delete(roadmapTasks).where(and(eq(roadmapTasks.id, taskId), eq(roadmapTasks.userId, userId)));
   await syncContentTasks(userId, rows[0].roadmapId);
@@ -391,6 +419,11 @@ export async function removeRoadmapTasks(userId: number, taskIds: number[]): Pro
     .from(roadmapTasks)
     .where(and(eq(roadmapTasks.userId, userId), inArray(roadmapTasks.id, taskIds)));
   if (!rows.length) return 0;
+  const selected = new Set(rows.map((r) => r.id));
+  const all = await db.select({ id: roadmapTasks.id, parentTaskId: roadmapTasks.parentTaskId }).from(roadmapTasks).where(eq(roadmapTasks.userId, userId));
+  if (all.some((t) => t.parentTaskId && selected.has(t.parentTaskId) && !selected.has(t.id))) {
+    throw badRequest('所选任务中存在未选中的子任务，请先处理子任务');
+  }
   await db.delete(roadmapTasks).where(and(eq(roadmapTasks.userId, userId), inArray(roadmapTasks.id, rows.map((r) => r.id))));
   const roadmapIds = [...new Set(rows.map((r) => r.roadmapId))];
   for (const rid of roadmapIds) await syncContentTasks(userId, rid);

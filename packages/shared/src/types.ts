@@ -162,6 +162,8 @@ export interface AgentRunDTO {
   taskType: string;
   status: AgentRunStatus;
   errorCode: string | null;
+  /** 失败详情（服务端返回，前端可直接展示） */
+  errorDetail: string | null;
   /** 结果引用（如 analysisId / roadmapId），succeeded 时有值 */
   resultRef: { type: string; id: number } | null;
   inputSummary: string | null;
@@ -177,6 +179,8 @@ export interface ChatMessageDTO {
   role: 'user' | 'assistant';
   content: string;
   engine: Engine | null;
+  /** 本次回复失败/被停止时的错误码（正常回复为 null） */
+  errorCode?: string | null;
   /** 工具调用链路（LLM 通道）：[{name, summary}] */
   toolCalls: { name: string; summary: string }[];
   createdAt: string;

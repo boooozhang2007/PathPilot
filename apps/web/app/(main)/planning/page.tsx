@@ -68,9 +68,11 @@ export default function PlanningPage() {
     }
   }
 
-  /** 生成进度条动画(轮询期间推进,营造节奏) */
-  function tickProgress() {
-    setProgress((v) => Math.min(v + 12, 92));
+  /** 轮询进度：优先使用服务端真实进度/阶段说明 */
+  function tickProgress(_status: string, p?: number, message?: string) {
+    if (typeof p === 'number' && p > 0) setProgress((v) => Math.max(v, Math.min(p, 96)));
+    else setProgress((v) => Math.min(v + 6, 92));
+    if (message) setBusy(message);
   }
 
   async function replan() {
@@ -83,7 +85,7 @@ export default function PlanningPage() {
       await api('/api/profile', { method: 'PUT', json: { ...profile, nickname: profile.nickname, grade: profile.grade, graduationDate: profile.graduationDate, targetRole: role, careerPath: path, weeklyHours: weekly } });
       const run = await api<{ run_id: number }>(`/api/roadmaps/${current!.id}/revise`, { method: 'POST', json: { weeklyHours: weekly, targetRole: role, careerPath: path } });
       setBusy('规划生成中…');
-      await pollRun(run.run_id, tickProgress, 300000);
+      await pollRun(run.run_id, tickProgress, 900_000);
       setProgress(100);
       setMsg('新版本已生成');
       await load();
@@ -102,7 +104,7 @@ export default function PlanningPage() {
     try {
       await api('/api/profile', { method: 'PUT', json: { ...profile, nickname: profile!.nickname, grade: profile!.grade, graduationDate: profile!.graduationDate, targetRole: role, careerPath: path, weeklyHours: weekly } });
       const run = await api<{ run_id: number }>('/api/roadmaps', { method: 'POST', json: {} });
-      await pollRun(run.run_id, tickProgress, 300000);
+      await pollRun(run.run_id, tickProgress, 900_000);
       setProgress(100);
       setMsg('规划已生成');
       await load();

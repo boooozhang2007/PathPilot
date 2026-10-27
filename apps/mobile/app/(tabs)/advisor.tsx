@@ -41,6 +41,7 @@ export default function AdvisorTab() {
   const t = makeT(lang);
 
   const [sessionId, setSessionId] = useState<number | undefined>();
+  const sessionIdRef = useRef<number | undefined>(undefined);
   const [messages, setMessages] = useState<ChatMessageDTO[]>([]);
   const [sessions, setSessions] = useState<ChatSessionSummaryDTO[]>([]);
   const [input, setInput] = useState('');
@@ -72,6 +73,7 @@ export default function AdvisorTab() {
       }
       api<ChatMessageDTO[]>(`/api/agent/session/${id}`)
         .then((msgs) => {
+          sessionIdRef.current = id;
           setSessionId(id);
           setMessages(msgs);
           setErr('');
@@ -87,6 +89,7 @@ export default function AdvisorTab() {
     api<{ sessionId: number; messages: ChatMessageDTO[] } | null>('/api/agent/session')
       .then((s) => {
         if (s) {
+          sessionIdRef.current = s.sessionId;
           setSessionId(s.sessionId);
           setMessages(s.messages);
         }
@@ -103,6 +106,7 @@ export default function AdvisorTab() {
 
   function newChat() {
     abortRef.current?.abort();
+    sessionIdRef.current = undefined;
     setSessionId(undefined);
     setMessages([]);
     setStream(null);
@@ -150,27 +154,45 @@ export default function AdvisorTab() {
     }
   }
 
-  async function send(text?: string, opts?: { regenerate?: boolean }) {
+  async function send(text?: string, opts?: { regenerateFrom?: number; truncateTo?: number }) {
     const message = (text ?? input).trim();
     if (!message || busy) return;
     setInput('');
     setErr('');
     setBusy(true);
     setStream({ text: '', thinking: '', tools: [], startedAt: Date.now() });
+    let activeSessionId = sessionIdRef.current;
     setMessages((prev) => {
-      const base = opts?.regenerate && prev.length && prev[prev.length - 1].role === 'assistant' ? prev.slice(0, -1) : prev;
-      return [...base, { id: Date.now(), sessionId: sessionId ?? 0, role: 'user', content: message, engine: null, toolCalls: [], createdAt: new Date().toISOString() }];
+      const base = opts && opts.truncateTo !== undefined ? prev.slice(0, opts.truncateTo) : prev;
+      return [...base, { id: Date.now(), sessionId: activeSessionId ?? 0, role: 'user', content: message, engine: null, toolCalls: [], createdAt: new Date().toISOString() }];
     });
     const controller = new AbortController();
     abortRef.current = controller;
-    const timer = setTimeout(() => controller.abort(), 300000);
+    // 略大于服务端墙钟上限(300s)：让服务端先落库并下发 done，而不是客户端先断开
+    const timer = setTimeout(() => controller.abort(), 330000);
+    /** 从服务端恢复消息（请求失败/中断后对齐真实 id 与内容） */
+    const syncSession = async () => {
+      if (!activeSessionId) return;
+      try {
+        const msgs = await api<ChatMessageDTO[]>(`/api/agent/session/${activeSessionId}`);
+        if (sessionIdRef.current === activeSessionId) setMessages(msgs);
+      } catch {
+        /* 忽略 */
+      }
+    };
     try {
       const base = await getApiBase();
       const token = (await getToken()) ?? '';
       const res = await fetch(`${base}/api/agent/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ sessionId, message, answerStyle: settings.answerStyle }),
+        body: JSON.stringify({
+          sessionId: activeSessionId,
+          message,
+          answerStyle: settings.answerStyle,
+          thinking: settings.showThinking,
+          ...(opts?.regenerateFrom ? { regenerateFrom: opts.regenerateFrom } : {}),
+        }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) throw new Error(`请求失败(${res.status})`);
@@ -179,7 +201,9 @@ export default function AdvisorTab() {
       const decode = createUtf8StreamDecoder();
       let buf = '';
       let doneEngine: string | undefined;
+      let doneMessageId: number | undefined;
       let doneFallback: string | undefined;
+      let hadError = false;
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -189,16 +213,24 @@ export default function AdvisorTab() {
         for (const part of parts) {
           const line = part.split('\n').find((l) => l.startsWith('data: '));
           if (!line) continue;
-          let ev: { type: string; delta?: string; name?: string; summary?: string; engine?: string; fallbackReason?: string; sessionId?: number };
+          let ev: { type: string; delta?: string; name?: string; summary?: string; engine?: string; fallbackReason?: string; sessionId?: number; messageId?: number };
           try {
             ev = JSON.parse(line.slice(6));
           } catch {
             continue;
           }
-          if (ev.sessionId) setSessionId(ev.sessionId);
-          if (ev.type === 'error') setErr(ev.delta ?? '生成出错');
+          if (ev.sessionId) {
+            activeSessionId = ev.sessionId;
+            sessionIdRef.current = ev.sessionId;
+            setSessionId(ev.sessionId);
+          }
+          if (ev.type === 'error') {
+            hadError = true;
+            setErr(ev.delta ?? '生成出错');
+          }
           if (ev.type === 'done') {
             doneEngine = ev.engine;
+            doneMessageId = ev.messageId;
             doneFallback = ev.fallbackReason;
           }
           setStream((st) => {
@@ -206,6 +238,16 @@ export default function AdvisorTab() {
             if (ev.type === 'thinking') return { ...cur, thinking: cur.thinking + (ev.delta ?? '') };
             if (ev.type === 'text') return { ...cur, text: cur.text + (ev.delta ?? '') };
             if (ev.type === 'tool_start') return { ...cur, tools: [...cur.tools, { name: ev.name ?? '', status: 'running' }] };
+            if (ev.type === 'tool_progress') {
+              const tools = [...cur.tools];
+              for (let i = tools.length - 1; i >= 0; i--) {
+                if (tools[i].status === 'running' && (!ev.name || tools[i].name === ev.name)) {
+                  tools[i] = { ...tools[i], summary: ev.summary };
+                  break;
+                }
+              }
+              return { ...cur, tools };
+            }
             if (ev.type === 'tool_end') {
               return { ...cur, tools: cur.tools.map((x) => (x.name === ev.name && x.status === 'running' ? { ...x, status: 'done' as const, summary: ev.summary } : x)) };
             }
@@ -213,14 +255,14 @@ export default function AdvisorTab() {
           });
         }
       }
-      if (doneFallback && doneFallback !== '已停止生成（保留已输出部分）' && doneFallback !== '已停止生成') setErr(doneFallback);
+      if (doneFallback && !hadError && doneFallback !== '已停止生成（保留已输出部分）' && doneFallback !== '已停止生成') setErr(doneFallback);
       setStream((st) => {
         if (st && (st.text.trim() || st.thinking.trim())) {
           setMessages((prev) => [
             ...prev,
             {
-              id: Date.now() + 1,
-              sessionId: sessionId ?? 0,
+              id: doneMessageId ?? Date.now() + 1,
+              sessionId: activeSessionId ?? 0,
               role: 'assistant',
               content: st.text.trim() || '（无内容）',
               engine: (doneEngine as never) ?? null,
@@ -237,14 +279,20 @@ export default function AdvisorTab() {
           if (st && st.text.trim()) {
             setMessages((prev) => [
               ...prev,
-              { id: Date.now() + 1, sessionId: sessionId ?? 0, role: 'assistant', content: st.text, engine: null, toolCalls: [], createdAt: new Date().toISOString() },
+              { id: Date.now() + 1, sessionId: activeSessionId ?? 0, role: 'assistant', content: st.text, engine: null, toolCalls: [], createdAt: new Date().toISOString() },
             ]);
           }
           return null;
         });
+        // 服务端也已中止并落库：稍后同步一次，用真实消息 id 替换本地临时 id（供重新生成使用）
+        setTimeout(() => {
+          if (!abortRef.current) void syncSession();
+        }, 500);
       } else {
         setErr(e instanceof Error ? e.message : '发送失败');
         setStream(null);
+        // 重新生成可能已被服务端拒绝（旧 id/会话不存在），恢复被乐观截断的消息
+        await syncSession();
       }
     } finally {
       clearTimeout(timer);
@@ -254,12 +302,12 @@ export default function AdvisorTab() {
     }
   }
 
-  /** 任意一条回复的重新生成：回退到它前面的用户消息重答 */
+  /** 任意一条回复的重新生成：服务端从该回复起截断后重答 */
   function regenerateAt(index: number) {
+    const assistant = messages[index];
     for (let i = index - 1; i >= 0; i--) {
       if (messages[i].role === 'user') {
-        setMessages((prev) => prev.slice(0, i));
-        send(messages[i].content);
+        send(messages[i].content, { regenerateFrom: assistant.id, truncateTo: i });
         return;
       }
     }
@@ -341,6 +389,12 @@ export default function AdvisorTab() {
                 <LogoMark size={20} bg={C.accent} fg="#FFFFFF" />
                 <Text style={{ fontSize: fs(12), fontWeight: '700', color: C.ink }}>PathPilot</Text>
               </View>
+              {m.errorCode ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+                  <Icon name="warn" size={12} color={C.amber} />
+                  <Text style={{ fontSize: fs(11), fontWeight: '600', color: C.amber }}>本次回复未完成</Text>
+                </View>
+              ) : null}
               <Markdown text={m.content} />
               {settings.showTools && m.toolCalls && m.toolCalls.length > 0 && <ToolList tools={m.toolCalls.map((tc: { name: string; summary: string }) => ({ ...tc, status: 'done' as const }))} />}
               {/* 回复操作：复制 + 重新生成（每条回复下方） */}

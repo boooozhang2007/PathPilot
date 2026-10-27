@@ -244,6 +244,14 @@ describe('规划版本与任务（PRD 13.4/13.5）', () => {
     expect(Array.isArray(diff.reasons)).toBe(true);
   });
 
+  it('/api/tasks 只返回当前生效版本的任务，不混入旧版本（回归）', async () => {
+    const tasks = (await app.inject({ method: 'GET', url: '/api/tasks', headers: { authorization: `Bearer ${tokenA}` } })).json() as { title: string }[];
+    const titles = tasks.map((t) => t.title);
+    expect(titles).toEqual(expect.arrayContaining(['任务3', '任务5']));
+    expect(titles).not.toContain('任务4');
+    expect(titles).not.toContain('任务6');
+  });
+
   it('跨端数据读取：设备2 重新登录读到设备1 的任务状态（PRD 13.6）', async () => {
     // 用 A 的凭据在“另一台设备”重新登录（新 token）
     const me = (await app.inject({ method: 'GET', url: '/api/auth/me', headers: { authorization: `Bearer ${tokenA}` } })).json();
