@@ -1,14 +1,21 @@
 // 管理路由：/api/admin/* 需要通过环境变量配置管理密钥。
+// 密钥只接受 x-admin-key 请求头（不再读取 query，避免进入日志/浏览器历史），并用常量时间比较
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { getLlmSettings, saveLlmSettings, clearSavedModel } from '../agent/settings.js';
 import { unauthorized } from '../services/errors.js';
 
 const ADMIN_KEY = process.env.ADMIN_KEY;
 
+function keyMatches(provided: string, expected: string): boolean {
+  if (provided.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(provided, 'utf8'), Buffer.from(expected, 'utf8'));
+}
+
 async function adminGuard(req: FastifyRequest, _reply: FastifyReply): Promise<void> {
-  const key = (req.headers['x-admin-key'] as string) ?? (req.query as { admin_key?: string })?.admin_key;
-  if (!ADMIN_KEY || key !== ADMIN_KEY) throw unauthorized('管理密钥不正确');
+  const key = req.headers['x-admin-key'];
+  if (!ADMIN_KEY || typeof key !== 'string' || !keyMatches(key, ADMIN_KEY)) throw unauthorized('管理密钥不正确');
 }
 
 const llmPatch = z.object({

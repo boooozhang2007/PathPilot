@@ -16,13 +16,31 @@ export default function AdminPage() {
   const [busy, setBusy] = useState('');
 
   useEffect(() => {
-    const saved = localStorage.getItem('pp_admin_key');
+    const saved = readSavedKey();
     if (saved) {
       setAdminKey(saved);
       load(saved);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** 密钥不落组件外的缓存,每次按需从 localStorage 读取 */
+  function readSavedKey(): string {
+    return localStorage.getItem('pp_admin_key') ?? '';
+  }
+
+  /** 清除密钥:抹掉 localStorage 并回到输入态 */
+  function clearKey() {
+    localStorage.removeItem('pp_admin_key');
+    setAdminKey('');
+    setBaseUrl('');
+    setApiKey('');
+    setApiKeySet(false);
+    setModel('');
+    setMsg('');
+    setErr('');
+    setAuthed(false);
+  }
 
   async function load(key: string) {
     setBusy('读取配置…');
@@ -146,6 +164,9 @@ export default function AdminPage() {
               <Ic name="trash" size={14} /> 清除模型
             </button>
           </div>
+          <button className="pp-btn pp-btn-danger w-full py-2.5 text-sm" onClick={clearKey}>
+            <Ic name="door" size={14} /> 清除密钥并退出
+          </button>
         </div>
 
         <div className="pp-card p-6 text-sm font-bold">当前模型：<span className="num text-accent-deep">{model || '未设置'}</span></div>

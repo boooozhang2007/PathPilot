@@ -306,3 +306,99 @@ describe('统一错误格式（PRD §9）', () => {
     expect(res.json().error.message).toBeTruthy();
   });
 });
+
+describe('审查修复回归', () => {
+  let token: string;
+
+  beforeAll(async () => {
+    token = await register(`fix${Date.now()}@t.cn`);
+    await putProfile(token);
+    await generateRoadmap(token);
+  });
+
+  it('组合更新（内容+状态+乐观锁）一次成功，不再必现 409', async () => {
+    const tasks = (await app.inject({ method: 'GET', url: '/api/tasks', headers: { authorization: `Bearer ${token}` } })).json();
+    const task = tasks.find((t: { status: string }) => t.status === 'not_started');
+    expect(task).toBeTruthy();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/tasks/${task.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { title: '组合更新标题', status: 'in_progress', expectedUpdatedAt: task.updatedAt },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().title).toBe('组合更新标题');
+    expect(res.json().status).toBe('in_progress');
+  });
+
+  it('延期任务迁出 deferred 时清空延期原因', async () => {
+    const tasks = (await app.inject({ method: 'GET', url: '/api/tasks', headers: { authorization: `Bearer ${token}` } })).json();
+    const task = tasks.find((t: { status: string }) => t.status === 'not_started');
+    const deferred = await app.inject({
+      method: 'PATCH',
+      url: `/api/tasks/${task.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { status: 'deferred', deferredReason: '本学期时间不够' },
+    });
+    expect(deferred.statusCode).toBe(200);
+    expect(deferred.json().deferredReason).toBe('本学期时间不够');
+    const back = await app.inject({
+      method: 'PATCH',
+      url: `/api/tasks/${task.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { status: 'not_started' },
+    });
+    expect(back.statusCode).toBe(200);
+    expect(back.json().deferredReason).toBeNull();
+  });
+
+  it('技能 PATCH 换名为别名（归一化命中同一行）不删除记录', async () => {
+    await app.inject({
+      method: 'POST',
+      url: '/api/skills',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { skillName: 'JavaScript', level: 3, evidenceStatus: 'to_verify' },
+    });
+    const before = (await app.inject({ method: 'GET', url: '/api/skills', headers: { authorization: `Bearer ${token}` } })).json();
+    const js = before.find((s: { name: string }) => s.name === 'JavaScript');
+    expect(js).toBeTruthy();
+    const renamed = await app.inject({
+      method: 'PATCH',
+      url: `/api/skills/${js.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { skillName: 'JS', level: 4 },
+    });
+    expect(renamed.statusCode).toBe(200);
+    const after = (await app.inject({ method: 'GET', url: '/api/skills', headers: { authorization: `Bearer ${token}` } })).json();
+    const kept = after.find((s: { name: string }) => s.name === 'JavaScript');
+    expect(kept).toBeTruthy(); // 记录未被误删
+    expect(kept.level).toBe(4);
+  });
+
+  it('注销账号后旧 token 立即失效（401）', async () => {
+    const t = await register(`bye${Date.now()}@t.cn`);
+    const del = await app.inject({ method: 'DELETE', url: '/api/account', headers: { authorization: `Bearer ${t}` } });
+    expect(del.statusCode).toBe(200);
+    const res = await app.inject({ method: 'GET', url: '/api/profile', headers: { authorization: `Bearer ${t}` } });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('登录连续失败 5 次后限流 30 秒', async () => {
+    const email = `rate${Date.now()}@t.cn`;
+    await register(email);
+    let last: { statusCode: number } = { statusCode: 0 };
+    for (let i = 0; i < 5; i++) {
+      last = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'wrong-password' } });
+      expect(last.statusCode).toBe(401);
+    }
+    const blocked = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'password123' } });
+    expect(blocked.statusCode).toBe(429);
+  });
+
+  it('重复注册返回 400/409 而非 500', async () => {
+    const email = `dup2-${Date.now()}@t.cn`;
+    await register(email);
+    const again = await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, password: 'password123', nickname: 'x' } });
+    expect([400, 409]).toContain(again.statusCode);
+  });
+});

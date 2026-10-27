@@ -33,11 +33,19 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     setDark(document.documentElement.classList.contains('dark'));
   }, []);
 
+  // 命令面板等其他入口切主题时,同步侧栏 dark 状态(图标即时跟随)
+  useEffect(() => {
+    const onTheme = () => setDark(document.documentElement.classList.contains('dark'));
+    window.addEventListener('pp:theme', onTheme);
+    return () => window.removeEventListener('pp:theme', onTheme);
+  }, []);
+
   function toggleTheme() {
     const next = !dark;
     setDark(next);
     document.documentElement.classList.toggle('dark', next);
     localStorage.setItem('pp_theme', next ? 'dark' : 'light');
+    window.dispatchEvent(new Event('pp:theme'));
   }
 
   useEffect(() => {

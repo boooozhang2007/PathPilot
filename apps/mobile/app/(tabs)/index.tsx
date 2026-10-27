@@ -15,6 +15,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [motto, setMotto] = useState('向着热爱深处，慢慢长成自己的答案。');
+  const [completingId, setCompletingId] = useState<number | null>(null); // 正在提交「完成」的任务，防双击并发 409
 
   const load = useCallback(() => {
     api<DashboardData>('/api/dashboard')
@@ -34,11 +35,15 @@ export default function Home() {
   useFocusEffect(useCallback(() => { api<{ text: string }>('/api/motto').then((x) => setMotto(x.text)).catch(() => {}); }, []));
 
   async function quickDone(task: RoadmapTaskDTO) {
+    if (completingId != null) return;
+    setCompletingId(task.id);
     try {
       await api(`/api/tasks/${task.id}`, { method: 'PATCH', json: { status: 'done', expectedUpdatedAt: task.updatedAt } });
       load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : '更新失败');
+    } finally {
+      setCompletingId(null);
     }
   }
 
@@ -117,7 +122,7 @@ export default function Home() {
                   </Text>
                 </View>
                 {t.status === 'in_progress' ? (
-                  <Btn title="完成" kind="teal" onPress={() => quickDone(t)} style={{ paddingVertical: 6, paddingHorizontal: 12 }} />
+                  <Btn title="完成" kind="teal" onPress={() => quickDone(t)} disabled={completingId != null} style={{ paddingVertical: 6, paddingHorizontal: 12 }} />
                 ) : (
                   <Tag tone="slate">{TASK_STATUS_LABELS[t.status]}</Tag>
                 )}

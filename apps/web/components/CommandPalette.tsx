@@ -24,6 +24,8 @@ export function CommandPalette({ onLogout }: { onLogout: () => void }) {
     const el = document.documentElement;
     const next = el.classList.toggle('dark');
     localStorage.setItem('pp_theme', next ? 'dark' : 'light');
+    // 通知主布局同步侧栏主题状态(与 MainLayout.toggleTheme 同一契约)
+    window.dispatchEvent(new Event('pp:theme'));
   }, []);
 
   const cmds = useMemo<Cmd[]>(

@@ -1,6 +1,6 @@
 'use client';
 // 动态规划:条件控制台(每周时间/岗位/路径) → 生成或重规划 → 版本对比与历史
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, pollRun } from '@/lib/api';
 import { Empty, ErrorState, Tag, PageHeader } from '@/components/ui';
 import { VersionCompare } from '@/components/charts';
@@ -21,6 +21,17 @@ export default function PlanningPage() {
   const [progress, setProgress] = useState(0);
   const [err, setErr] = useState('');
   const [msg, setMsg] = useState('');
+  // 组件卸载时取消最长 15 分钟的规划轮询
+  const mountedRef = useRef(true);
+  const pollAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      pollAbortRef.current?.abort();
+    };
+  }, []);
 
   async function load() {
     try {
@@ -70,6 +81,7 @@ export default function PlanningPage() {
 
   /** 轮询进度：优先使用服务端真实进度/阶段说明 */
   function tickProgress(_status: string, p?: number, message?: string) {
+    if (!mountedRef.current) return;
     if (typeof p === 'number' && p > 0) setProgress((v) => Math.max(v, Math.min(p, 96)));
     else setProgress((v) => Math.min(v + 6, 92));
     if (message) setBusy(message);
@@ -85,13 +97,16 @@ export default function PlanningPage() {
       await api('/api/profile', { method: 'PUT', json: { ...profile, nickname: profile.nickname, grade: profile.grade, graduationDate: profile.graduationDate, targetRole: role, careerPath: path, weeklyHours: weekly } });
       const run = await api<{ run_id: number }>(`/api/roadmaps/${current!.id}/revise`, { method: 'POST', json: { weeklyHours: weekly, targetRole: role, careerPath: path } });
       setBusy('规划生成中…');
-      await pollRun(run.run_id, tickProgress, 900_000);
+      pollAbortRef.current = new AbortController();
+      await pollRun(run.run_id, tickProgress, 900_000, pollAbortRef.current.signal);
       setProgress(100);
       setMsg('新版本已生成');
       await load();
     } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
       setErr(e instanceof Error ? e.message : '重规划失败');
     } finally {
+      if (!mountedRef.current) return;
       setBusy('');
       setTimeout(() => setProgress(0), 600);
     }
@@ -104,13 +119,16 @@ export default function PlanningPage() {
     try {
       await api('/api/profile', { method: 'PUT', json: { ...profile, nickname: profile!.nickname, grade: profile!.grade, graduationDate: profile!.graduationDate, targetRole: role, careerPath: path, weeklyHours: weekly } });
       const run = await api<{ run_id: number }>('/api/roadmaps', { method: 'POST', json: {} });
-      await pollRun(run.run_id, tickProgress, 900_000);
+      pollAbortRef.current = new AbortController();
+      await pollRun(run.run_id, tickProgress, 900_000, pollAbortRef.current.signal);
       setProgress(100);
       setMsg('规划已生成');
       await load();
     } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
       setErr(e instanceof Error ? e.message : '生成失败');
     } finally {
+      if (!mountedRef.current) return;
       setBusy('');
       setTimeout(() => setProgress(0), 600);
     }

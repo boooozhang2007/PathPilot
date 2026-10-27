@@ -90,7 +90,9 @@ export const jobSources = sqliteTable(
   'job_sources',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
-    userId: integer('user_id'), // 手动输入/实时分析归属用户；预置库为 null（全局共享）
+    // 手动输入/实时分析归属用户；预置库为 null（全局共享）。
+    // 外键级联：注销账号时一并清理，杜绝孤儿数据
+    userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }),
     analysisId: integer('analysis_id'),
     title: text('title').notNull(),
     company: text('company'),
@@ -109,7 +111,12 @@ export const jobSources = sqliteTable(
     dedupeKey: text('dedupe_key'),
     createdAt: text('created_at').notNull().$defaultFn(isoNow),
   },
-  (t) => [index('job_sources_hash_idx').on(t.contentHash), index('job_sources_analysis_idx').on(t.analysisId)]
+  (t) => [
+    index('job_sources_hash_idx').on(t.contentHash),
+    index('job_sources_analysis_idx').on(t.analysisId),
+    // 去重唯一约束：同一用户同一 dedupe_key 只保留一行，重试不重复落库（NULL 值互不影响）
+    uniqueIndex('job_sources_user_dedupe_uq').on(t.userId, t.dedupeKey),
+  ]
 );
 
 export const jobRequirements = sqliteTable(

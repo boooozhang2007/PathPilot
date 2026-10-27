@@ -43,6 +43,8 @@ beforeAll(async () => {
 
 describe('全模块 Agent 工具集', () => {
   const names = () => buildAgentTools(demoUserId).map((t) => t.name);
+  // 写工具需要会话级「自动写入」开关（默认关闭，安全审查修复）
+  const writeTools = () => buildAgentTools(demoUserId, { autoWrite: true });
 
   it('覆盖全部业务模块（20 个工具）', () => {
     const expected = [
@@ -68,8 +70,14 @@ describe('全模块 Agent 工具集', () => {
     expect(data.profile.nickname).toBe('演示同学');
   });
 
+  it('写工具默认被自动写入开关拦截（安全）', async () => {
+    const tool = buildAgentTools(demoUserId).find((t) => t.name === 'update_task_status')!;
+    const tasks = await listRoadmapTasks(demoUserId);
+    await expect(call(tool, { task_id: tasks[0].id, status: 'in_progress' })).rejects.toThrow(/自动写入/);
+  });
+
   it('档案：upsert_skill 归一化写入（JS → JavaScript）', async () => {
-    const tool = buildAgentTools(demoUserId).find((t) => t.name === 'upsert_skill')!;
+    const tool = writeTools().find((t) => t.name === 'upsert_skill')!;
     const res = await call<{ saved: string }>(tool, { skill_name: 'JS', level: 3, evidence_status: 'to_verify' });
     expect(res.saved).toBe('JavaScript'); // 词典归一化
     const skills = await listProfileSkills(demoUserId);
@@ -77,7 +85,7 @@ describe('全模块 Agent 工具集', () => {
   });
 
   it('档案：create_experience 记录真实经历', async () => {
-    const tool = buildAgentTools(demoUserId).find((t) => t.name === 'create_experience')!;
+    const tool = writeTools().find((t) => t.name === 'create_experience')!;
     const res = await call<{ saved: string }>(tool, { type: 'project', title: '课程设计：图书管理系统', technologies: ['Java', 'MySQL'] });
     expect(res.saved).toBe('课程设计：图书管理系统');
     const list = await listExperiences(demoUserId);
@@ -91,7 +99,7 @@ describe('全模块 Agent 工具集', () => {
     const list = await call<{ id: number; status: string }[]>(getTool, { status: 'not_started' });
     expect(list.length).toBeGreaterThan(0);
     const target = list[0];
-    const updTool = buildAgentTools(demoUserId).find((t) => t.name === 'update_task_status')!;
+    const updTool = writeTools().find((t) => t.name === 'update_task_status')!;
     const res = await call<{ updated: { id: number; status: string } }>(updTool, { task_id: target.id, status: 'in_progress', actual_hours: 3 });
     expect(res.updated.status).toBe('in_progress');
     // 已完成不可回退（状态机由 services 强制）
@@ -101,7 +109,7 @@ describe('全模块 Agent 工具集', () => {
 
   it('任务：其他用户的任务不可操作（归属校验）', async () => {
     const demoTasks = await listRoadmapTasks(demoUserId);
-    const otherTool = buildAgentTools(otherUserId).find((t) => t.name === 'update_task_status')!;
+    const otherTool = buildAgentTools(otherUserId, { autoWrite: true }).find((t) => t.name === 'update_task_status')!;
     await expect(call(otherTool, { task_id: demoTasks[0].id, status: 'done' })).rejects.toThrow(/不存在或不属于/);
   });
 

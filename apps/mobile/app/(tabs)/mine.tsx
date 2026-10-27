@@ -4,6 +4,7 @@ import { ScrollView, View, Text, Image, Alert, RefreshControl, TouchableOpacity 
 import { useFocusEffect, useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 import { api, clearAuth, getNickname, isGuest, setGuest } from '../../lib/api';
+import { toLocalDateStr } from '../../lib/date';
 import { C, SF, Card, Panel, Tag, Btn, Body, Loading, SettingGroup, SettingRow, useSettings } from '../../components/ui';
 import { Icon } from '../../components/icons';
 import type { ProfileDTO, ProfileSkillDTO, RoadmapVersionSummary, RoadmapTaskDTO } from '@pathpilot/shared';
@@ -181,7 +182,7 @@ export default function MineTab() {
                       v{v.version} · {v.weeklyHours}h/周{v.status === 'active' ? ' · 当前' : ''}
                     </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <Text style={{ fontSize: 11, color: C.slate2 }}>{expanded === v.id ? '' : v.createdAt.slice(0, 10) + ' '}</Text>
+                      <Text style={{ fontSize: 11, color: C.slate2 }}>{expanded === v.id ? '' : toLocalDateStr(v.createdAt) + ' '}</Text>
                       <Icon name={expanded === v.id ? 'chevronUp' : 'chevronDown'} size={13} color={C.slate2} />
                     </View>
                   </TouchableOpacity>

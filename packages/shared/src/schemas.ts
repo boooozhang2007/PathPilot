@@ -66,7 +66,7 @@ export const profileSkillInput = z.object({
 export const profileSkillUpdate = profileSkillInput.partial();
 
 // ---------- 经历档案（PRD 8.4） ----------
-export const experienceInput = z.object({
+const experienceBase = z.object({
   type: z.enum(EXPERIENCE_TYPES),
   title: z.string().min(1).max(100),
   description: z.string().max(2000).optional(),
@@ -77,7 +77,16 @@ export const experienceInput = z.object({
   result: z.string().max(500).optional(),
   evidenceUrl: z.string().url().optional(),
 });
-export const experienceUpdate = experienceInput.partial();
+
+/** 交叉校验：结束日期不能早于开始日期（YYYY-MM-DD 字典序与日期序一致） */
+const experienceDateCheck = (data: { startDate?: string; endDate?: string }, ctx: z.RefinementCtx) => {
+  if (data.startDate && data.endDate && data.endDate < data.startDate) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['endDate'], message: '结束日期不能早于开始日期' });
+  }
+};
+
+export const experienceInput = experienceBase.superRefine(experienceDateCheck);
+export const experienceUpdate = experienceBase.partial().superRefine(experienceDateCheck);
 
 // ---------- 岗位分析（PRD 4.2 / 6.4） ----------
 export const jobAnalyzeInput = z.object({

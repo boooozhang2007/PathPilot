@@ -4,7 +4,7 @@ import type { JobAnalysisDTO, JobAnalysisResult, JobSample } from '@pathpilot/sh
 import { getSkillCatalog, listProfileSkills } from '../services/profileService.js';
 import { buildNormalizer } from '../services/normalize.js';
 import { computeJobStats } from '../services/frequency.js';
-import { saveSamples, attachAnalysisToSamples, saveRequirements, saveAnalysis, presetSamplesFor } from '../services/analysisService.js';
+import { saveAnalysis, persistAnalysis, presetSamplesFor, type RequirementRow } from '../services/analysisService.js';
 import { webSearchJobs } from './search/webSearch.js';
 import { extractRequirementsByKeywords, extractRequirementsByLlm, type ExtractedJob } from './search/extract.js';
 import { currentEngine } from './core.js';
@@ -109,31 +109,34 @@ export async function analyzeJobs(userId: number, input: AnalyzeJobsInput, opts:
     limitations
   );
 
-  // 5) 落库：样本 + 要求明细 + 分析快照
+  // 5) 落库：样本 + 分析快照 + 样本关联 + 要求明细（单事务；样本插入幂等，重试不重复落库）
   opts.onProgress?.(85, '保存岗位样本与分析结果…');
-  const sourceIds = await saveSamples(userId, filled, 'ok');
-  const analysis = await saveAnalysis(userId, { ...input, engine: await currentEngine() }, result);
-  await attachAnalysisToSamples(analysis.id, sourceIds);
-  const requirementRows = sourceIds.flatMap((sid, i) => {
-    const ex = extracted.get(i);
-    const sample = filled[i];
-    const rows = sample.skills.map((skill) => ({
-      jobSourceId: sid,
-      originalText: skill,
-      requirementType: 'skill',
-      importance: stats.skills.find((s) => s.name === normalize(skill).canonical)?.required ? 'high' : 'medium',
-      evidenceText: sample.description.slice(0, 200),
-    }));
-    const extras = [
-      ...(sample.education_requirement ? [{ jobSourceId: sid, originalText: sample.education_requirement, requirementType: 'education', importance: 'medium' as const, evidenceText: null }] : []),
-      ...(sample.experience_requirement ? [{ jobSourceId: sid, originalText: sample.experience_requirement, requirementType: 'experience', importance: 'medium' as const, evidenceText: null }] : []),
-      ...(ex?.bonus ?? []).map((b) => ({ jobSourceId: sid, originalText: b, requirementType: 'bonus', importance: 'low' as const, evidenceText: null })),
-      ...(ex?.soft ?? []).map((b) => ({ jobSourceId: sid, originalText: b, requirementType: 'soft', importance: 'medium' as const, evidenceText: null })),
-    ];
-    return [...rows, ...extras];
-  });
-  await saveRequirements(requirementRows);
-  return analysis;
+  return persistAnalysis(
+    userId,
+    { ...input, engine: await currentEngine() },
+    result,
+    filled,
+    (sourceIds): RequirementRow[] =>
+      sourceIds.flatMap((sid, i) => {
+        const ex = extracted.get(i);
+        const sample = filled[i];
+        const rows: RequirementRow[] = sample.skills.map((skill) => ({
+          jobSourceId: sid,
+          originalText: skill,
+          requirementType: 'skill',
+          importance: stats.skills.find((s) => s.name === normalize(skill).canonical)?.required ? 'high' : 'medium',
+          evidenceText: sample.description.slice(0, 200),
+        }));
+        const extras: RequirementRow[] = [
+          ...(sample.education_requirement ? [{ jobSourceId: sid, originalText: sample.education_requirement, requirementType: 'education', importance: 'medium' as const, evidenceText: null }] : []),
+          ...(sample.experience_requirement ? [{ jobSourceId: sid, originalText: sample.experience_requirement, requirementType: 'experience', importance: 'medium' as const, evidenceText: null }] : []),
+          ...(ex?.bonus ?? []).map((b) => ({ jobSourceId: sid, originalText: b, requirementType: 'bonus', importance: 'low' as const, evidenceText: null })),
+          ...(ex?.soft ?? []).map((b) => ({ jobSourceId: sid, originalText: b, requirementType: 'soft', importance: 'medium' as const, evidenceText: null })),
+        ];
+        return [...rows, ...extras];
+      }),
+    'ok'
+  );
 }
 
 /** 手动粘贴 JD 分析（PRD 4.2：搜索失败时允许手动输入，标明来源类型） */
@@ -177,13 +180,15 @@ export async function analyzeManualJob(
     '本结果基于你手动粘贴的 1 条岗位描述（来源类型=manual）。',
   ]);
   opts.onProgress?.(85, '保存岗位分析结果…');
-  const [sid] = await saveSamples(userId, [sample], 'ok');
-  const analysis = await saveAnalysis(userId, { targetRole: input.targetRole, employmentType: input.employmentType, city: input.location, engine: await currentEngine() }, result);
-  await attachAnalysisToSamples(analysis.id, [sid]);
-  await saveRequirements(
-    sample.skills.map((skill) => ({ jobSourceId: sid, originalText: skill, requirementType: 'skill', importance: 'medium', evidenceText: input.description.slice(0, 200) }))
+  return persistAnalysis(
+    userId,
+    { targetRole: input.targetRole, employmentType: input.employmentType, city: input.location, engine: await currentEngine() },
+    result,
+    [sample],
+    ([sid]): RequirementRow[] =>
+      sample.skills.map((skill) => ({ jobSourceId: sid, originalText: skill, requirementType: 'skill', importance: 'medium', evidenceText: input.description.slice(0, 200) })),
+    'ok'
   );
-  return analysis;
 }
 
 export { sampleInsufficient };

@@ -77,6 +77,15 @@ export default function ProfilePage() {
 
   async function saveProfile(p: Partial<ProfileDTO>) {
     if (!Object.keys(p).length) return;
+    // 输入框清空时 Number('') 为 0,NaN 序列化为 null——保存前拦截非法小时数
+    if (p.weeklyHours !== undefined) {
+      const h = Number(p.weeklyHours);
+      if (!Number.isFinite(h) || h < 1 || h > 80) {
+        setMsg('');
+        setErr('每周可投入时间需为 1-80 小时之间的数字');
+        return;
+      }
+    }
     setSaving(true);
     setMsg('');
     setErr('');
@@ -101,15 +110,21 @@ export default function ProfilePage() {
   }
 
   async function exportProfile() {
-    const data = await api<Record<string, unknown>>('/api/profile/export');
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `pathpilot-profile-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setMsg('资料已导出为 JSON');
+    setErr('');
+    setMsg('');
+    try {
+      const data = await api<Record<string, unknown>>('/api/profile/export');
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pathpilot-profile-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setMsg('资料已导出为 JSON');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '导出失败');
+    }
   }
 
   async function addSkill() {
@@ -127,7 +142,12 @@ export default function ProfilePage() {
   }
 
   async function removeSkill(id: number) {
-    await api(`/api/skills/${id}`, { method: 'DELETE' }).catch(() => {});
+    try {
+      await api(`/api/skills/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '删除失败');
+      return;
+    }
     await load();
   }
 
@@ -157,7 +177,12 @@ export default function ProfilePage() {
   }
 
   async function removeExperience(id: number) {
-    await api(`/api/experiences/${id}`, { method: 'DELETE' }).catch(() => {});
+    try {
+      await api(`/api/experiences/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '删除失败');
+      return;
+    }
     await load();
   }
 

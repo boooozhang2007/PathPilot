@@ -83,7 +83,7 @@ export async function listProfileSkills(userId: number): Promise<ProfileSkillDTO
 export async function upsertProfileSkill(
   userId: number,
   input: { skillName: string; level: number; evidenceStatus: string; evidenceDescription?: string; evidenceUrl?: string }
-): Promise<void> {
+): Promise<number> {
   const catalog = await getSkillCatalog();
   const { buildNormalizer } = await import('./normalize.js');
   const n = buildNormalizer(catalog)(input.skillName);
@@ -110,6 +110,9 @@ export async function upsertProfileSkill(
         updatedAt: now,
       },
     });
+  // 返回实际写入行的 id（别名归一化后可能命中同一条记录，调用方按 id 判断是否需要删除旧行）
+  const rows = await db.select({ id: profileSkills.id }).from(profileSkills).where(and(eq(profileSkills.userId, userId), eq(profileSkills.skillId, skillId))).limit(1);
+  return rows[0].id;
 }
 
 export async function deleteProfileSkill(userId: number, id: number): Promise<void> {

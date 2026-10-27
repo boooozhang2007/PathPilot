@@ -93,6 +93,8 @@ export function AgentChat({
   const [input, setInput] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const syncTimerRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
   // UI 杂项
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
@@ -107,6 +109,16 @@ export function AgentChat({
     if (!full) return;
     api<ChatSessionSummaryDTO[]>('/api/agent/sessions').then(setSessions).catch(() => {});
   }, [full]);
+
+  // 组件卸载即中止未完成的流式请求并清理延时任务(离开聊天页即停止生成)
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+      if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (full) {
@@ -315,53 +327,56 @@ export function AgentChat({
           }
         }
       }
+      // 先取出最终消息到局部变量,updater 内不做 setState 副作用(StrictMode 下 updater 可能执行两次)
+      let finalMessage: ChatMessageDTO | null = null;
       setStreaming((st) => {
         if (st && (st.text.trim() || st.thinking.trim())) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: doneMessageId ?? Date.now(),
-              sessionId: activeSessionId ?? 0,
-              role: 'assistant',
-              content: st.text.trim() || '（模型未返回内容）',
-              engine: doneEngine ?? null,
-              toolCalls: st.tools.filter((t) => t.status === 'done').map((t) => ({ name: t.name, summary: t.summary ?? '' })),
-              createdAt: new Date().toISOString(),
-            },
-          ]);
+          finalMessage = {
+            id: doneMessageId ?? Date.now(),
+            sessionId: activeSessionId ?? 0,
+            role: 'assistant',
+            content: st.text.trim() || '（模型未返回内容）',
+            engine: doneEngine ?? null,
+            toolCalls: st.tools.filter((t) => t.status === 'done').map((t) => ({ name: t.name, summary: t.summary ?? '' })),
+            createdAt: new Date().toISOString(),
+          };
         }
         return null;
       });
+      if (finalMessage) setMessages((prev) => [...prev, finalMessage!]);
       if (fallback && !hadError && !fallback.startsWith('已停止')) setNotice(fallback);
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') {
         // 用户停止:保留已生成的部分
+        let partialMessage: ChatMessageDTO | null = null;
         setStreaming((st) => {
           if (st && st.text.trim()) {
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: Date.now(),
-                sessionId: activeSessionId ?? 0,
-                role: 'assistant',
-                content: st.text,
-                engine: null,
-                toolCalls: st.tools.filter((t) => t.status === 'done').map((t) => ({ name: t.name, summary: t.summary ?? '' })),
-                createdAt: new Date().toISOString(),
-              },
-            ]);
+            partialMessage = {
+              id: Date.now(),
+              sessionId: activeSessionId ?? 0,
+              role: 'assistant',
+              content: st.text,
+              engine: null,
+              toolCalls: st.tools.filter((t) => t.status === 'done').map((t) => ({ name: t.name, summary: t.summary ?? '' })),
+              createdAt: new Date().toISOString(),
+            };
           }
           return null;
         });
+        if (partialMessage) setMessages((prev) => [...prev, partialMessage!]);
         // 服务端也已中止并落库：稍后同步一次，用真实消息 id 替换本地临时 id（供重新生成使用）
-        setTimeout(() => {
-          if (!abortRef.current) void syncSession();
-        }, 500);
+        if (mountedRef.current) {
+          if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
+          syncTimerRef.current = window.setTimeout(() => {
+            syncTimerRef.current = null;
+            if (!abortRef.current) void syncSession();
+          }, 500);
+        }
       } else {
         setErr(e instanceof Error ? e.message : '发送失败');
         setStreaming(null);
         // 重新生成可能已被服务端拒绝（旧 id/会话不存在），恢复被乐观截断的消息
-        await syncSession();
+        if (mountedRef.current) await syncSession();
       }
     } finally {
       abortRef.current = null;

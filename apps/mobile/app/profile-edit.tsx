@@ -175,7 +175,13 @@ export default function ProfileEdit() {
     });
     if (res.canceled || !res.assets?.[0]?.base64) return;
     const asset = res.assets[0];
-    await savePatch({ avatar: `data:image/jpeg;base64,${asset.base64}` });
+    const avatar = `data:image/jpeg;base64,${asset.base64}`;
+    // 与服务端 schema 上限（760000 字符）对齐，超限先友好提示，避免上传才被拒
+    if (avatar.length > 760_000) {
+      Alert.alert('图片过大', '头像压缩后仍超过大小限制，请换一张更小的图片');
+      return;
+    }
+    await savePatch({ avatar });
   }
 
   /** MBTI 点击某一维度：本地保持高亮，凑齐 4 位才写入档案并保存 */

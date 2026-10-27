@@ -57,14 +57,17 @@ export async function profileRoutes(app: FastifyInstance): Promise<void> {
     // 技能名变化 → 重建条目；其余字段就地更新（走统一 upsert 语义）
     const existing = (await listProfileSkills(userId)).find((s) => s.id === Number(id));
     if (!existing) throw badRequest('技能记录不存在');
-    await upsertProfileSkill(userId, {
+    const writtenId = await upsertProfileSkill(userId, {
       skillName: input.skillName ?? existing.name,
       level: input.level ?? existing.level,
       evidenceStatus: input.evidenceStatus ?? existing.evidenceStatus,
       evidenceDescription: input.evidenceDescription ?? existing.evidenceDescription ?? undefined,
       evidenceUrl: input.evidenceUrl ?? existing.evidenceUrl ?? undefined,
     });
-    await deleteProfileSkillIfReplaced(userId, existing.id, existing.name, input.skillName);
+    // 仅当新名落到另一条记录时才删除旧行；别名归一化命中同一行时（id 相同）不能删，否则整条记录丢失
+    if (input.skillName && input.skillName !== existing.name && writtenId !== existing.id) {
+      await deleteProfileSkill(userId, existing.id);
+    }
     return { ok: true };
   });
 
@@ -96,12 +99,4 @@ export async function profileRoutes(app: FastifyInstance): Promise<void> {
     await deleteExperience(getUserId(req), Number(id));
     return { ok: true };
   });
-}
-
-/** PATCH 换名时删除旧条目（upsert 已按新名创建） */
-async function deleteProfileSkillIfReplaced(userId: number, oldId: number, oldName: string, newName?: string): Promise<void> {
-  if (newName && newName !== oldName) {
-    const { deleteProfileSkill } = await import('../services/profileService.js');
-    await deleteProfileSkill(userId, oldId);
-  }
 }

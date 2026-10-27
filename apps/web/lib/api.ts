@@ -44,10 +44,11 @@ export async function api<T = unknown>(path: string, init?: RequestInit & { json
   return data as T;
 }
 
-/** 轮询异步 agent run 直到完成（岗位分析/规划生成） */
-export async function pollRun<T>(runId: number, onTick?: (status: string, progress?: number, progressMessage?: string) => void, timeoutMs = 120000): Promise<T> {
+/** 轮询异步 agent run 直到完成（岗位分析/规划生成）；signal 用于页面卸载时取消轮询 */
+export async function pollRun<T>(runId: number, onTick?: (status: string, progress?: number, progressMessage?: string) => void, timeoutMs = 120000, signal?: AbortSignal): Promise<T> {
   const start = Date.now();
   for (;;) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     if (Date.now() - start > timeoutMs) throw new ApiError('TIMEOUT', '任务执行超时', 504);
     const data = await api<{ run: { status: string; errorCode: string | null; errorDetail: string | null; progress?: number; progressMessage?: string } } & T>(`/api/agent/runs/${runId}`);
     onTick?.(data.run.status, data.run.progress, data.run.progressMessage ?? undefined);

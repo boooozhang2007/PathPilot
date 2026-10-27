@@ -21,6 +21,7 @@ import { config } from '../config.js';
 import { agentChatInput, skillGroupOf } from '@pathpilot/shared';
 import type { AgentEvent, AgentTurnDecision } from '@earendil-works/pi-agent-core';
 import { markFlowResult, prepareFlow } from './flow.js';
+import { isSessionAutoWriteEnabled } from './autoWrite.js';
 
 export interface StreamEvent {
   type: 'session' | 'thinking' | 'tool_start' | 'tool_progress' | 'tool_end' | 'text' | 'done' | 'error';
@@ -94,14 +95,16 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
   const flow = await prepareFlow(userId, sid, message);
 
   // 直接写 raw 响应会绕过 fastify 生命周期，@fastify/cors 的 hook 不会执行，
-  // 必须手动补上 CORS 头，否则浏览器跨域读取 SSE 时报 "Failed to fetch"
+  // 必须手动补上 CORS 头，否则浏览器跨域读取 SSE 时报 "Failed to fetch"。
+  // 头值必须过白名单（与 app.ts 一致），不能反射任意 Origin
   const origin = req.headers.origin;
+  const allowedOrigin = origin && config.corsOrigins.includes(origin) ? origin : undefined;
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
     Connection: 'keep-alive',
     'X-Accel-Buffering': 'no',
-    ...(origin ? { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Credentials': 'true', Vary: 'Origin' } : {}),
+    ...(allowedOrigin ? { 'Access-Control-Allow-Origin': allowedOrigin, 'Access-Control-Allow-Credentials': 'true', Vary: 'Origin' } : {}),
   });
 
   let closed = false;
@@ -235,6 +238,7 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
         tools: tracedTools(
           buildAgentTools(userId, {
             onProgress: (name, messageText) => send({ type: 'tool_progress', name, summary: messageText }),
+            autoWrite: isSessionAutoWriteEnabled(sid),
           }),
           trace,
           () => {

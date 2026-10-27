@@ -1,5 +1,5 @@
 // 成长路线：分学期时间轴 + 任务状态 + 页内生成/重新规划（轮询 agent run）
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, View, Text, RefreshControl, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { api, pollRun } from '../../lib/api';
@@ -14,6 +14,14 @@ export default function RoadmapTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busyText, setBusyText] = useState('');
+  // 页面卸载时取消仍在进行的 run 轮询，避免后台空转 15 分钟
+  const pollAbortRef = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      pollAbortRef.current?.abort();
+    },
+    []
+  );
 
   const load = useCallback(() => {
     api<{ roadmap: RoadmapDTO; tasks: RoadmapTaskDTO[] } | null>('/api/roadmaps/current')
@@ -40,11 +48,15 @@ export default function RoadmapTab() {
       if (!profile?.targetRole) throw new Error('请先在「我的」→ 个人信息中填写目标岗位');
       const run = await api<{ run_id: number }>('/api/roadmaps', { method: 'POST', json: {} });
       setBusyText('AI 正在按学期拆解任务，约 1-2 分钟…');
+      const ac = new AbortController();
+      pollAbortRef.current = ac;
       await pollRun(run.run_id, (s, _p, message) => {
         if (s === 'running' && message) setBusyText(message);
-      }, 900000);
+      }, 900000, ac.signal);
       load();
     } catch (e) {
+      // 页面卸载触发的取消不再 setState
+      if (e instanceof Error && e.message === '任务已取消') return;
       setErr(e instanceof Error ? e.message : '生成失败');
     } finally {
       setBusyText('');
@@ -59,11 +71,15 @@ export default function RoadmapTab() {
       if (!data) return;
       const run = await api<{ run_id: number }>(`/api/roadmaps/${data.roadmap.id}/revise`, { method: 'POST', json: {} });
       setBusyText('AI 正在生成新版本…');
+      const ac = new AbortController();
+      pollAbortRef.current = ac;
       await pollRun(run.run_id, (s, _p, message) => {
         if (s === 'running' && message) setBusyText(message);
-      }, 900000);
+      }, 900000, ac.signal);
       load();
     } catch (e) {
+      // 页面卸载触发的取消不再 setState
+      if (e instanceof Error && e.message === '任务已取消') return;
       setErr(e instanceof Error ? e.message : '重规划失败（原规划不受影响）');
     } finally {
       setBusyText('');

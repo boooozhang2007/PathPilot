@@ -222,6 +222,17 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   deferred: ['deferred', 'not_started', 'in_progress', 'done'],
 };
 
+/** 乐观锁校验：合并更新前在路由层做一次，避免多次刷新 updatedAt 导致误报 409 */
+export async function assertTaskVersion(userId: number, taskId: number, expectedUpdatedAt: string): Promise<void> {
+  const rows = await db
+    .select({ updatedAt: roadmapTasks.updatedAt })
+    .from(roadmapTasks)
+    .where(and(eq(roadmapTasks.id, taskId), eq(roadmapTasks.userId, userId)))
+    .limit(1);
+  if (!rows[0]) throw notFound('任务不存在');
+  if (expectedUpdatedAt !== rows[0].updatedAt) throw conflict('任务已被其他设备修改，请刷新后重试');
+}
+
 export async function updateTask(
   userId: number,
   taskId: number,
@@ -238,6 +249,13 @@ export async function updateTask(
     dueDate?: string | null;
     dependencyIds?: number[];
     completionRule?: RoadmapTaskDTO['completionRule'];
+    // 内容编辑字段（与状态字段合并为一次更新，updatedAt 只刷新一次）
+    title?: string;
+    semester?: number;
+    description?: string;
+    estimatedHours?: number;
+    deliverable?: string;
+    acceptanceCriteria?: string;
   }
 ): Promise<RoadmapTaskDTO> {
   const rows = await db.select().from(roadmapTasks).where(and(eq(roadmapTasks.id, taskId), eq(roadmapTasks.userId, userId))).limit(1);
@@ -270,18 +288,29 @@ export async function updateTask(
       evidenceUrl: input.evidenceUrl ?? task.evidenceUrl,
       resultNote: input.resultNote ?? task.resultNote,
       priority: input.priority ?? task.priority,
-      deferredReason: input.deferredReason ?? task.deferredReason,
+      // 目标状态不是 deferred 时强制清空延期原因，避免残留
+      deferredReason: input.status !== undefined && input.status !== 'deferred' ? null : input.deferredReason ?? task.deferredReason,
       ...(input.parentTaskId !== undefined ? { parentTaskId: input.parentTaskId } : {}),
       ...(input.taskType !== undefined ? { taskType: input.taskType } : {}),
       ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
       ...(input.dependencyIds !== undefined ? { dependencyIds: input.dependencyIds } : {}),
       ...(input.completionRule !== undefined ? { completionRule: input.completionRule } : {}),
+      ...(input.title !== undefined ? { title: input.title } : {}),
+      ...(input.semester !== undefined ? { semester: input.semester } : {}),
+      ...(input.description !== undefined ? { description: input.description } : {}),
+      ...(input.estimatedHours !== undefined ? { estimatedHours: Math.round(input.estimatedHours) } : {}),
+      ...(input.deliverable !== undefined ? { deliverable: input.deliverable } : {}),
+      ...(input.acceptanceCriteria !== undefined ? { acceptanceCriteria: input.acceptanceCriteria } : {}),
       completedAt: input.status === 'done' ? (task.completedAt ?? now) : input.status ? null : task.completedAt,
       updatedAt: now,
     })
     .where(and(eq(roadmapTasks.id, taskId), eq(roadmapTasks.userId, userId)))
     .returning();
   await refreshParentTask(userId, updated[0].parentTaskId);
+  // 内容字段变化时同步进规划 content.tasks
+  if (input.title !== undefined || input.semester !== undefined || input.description !== undefined || input.estimatedHours !== undefined || input.deliverable !== undefined || input.acceptanceCriteria !== undefined) {
+    await syncContentTasks(userId, updated[0].roadmapId);
+  }
   return toTaskDTO(updated[0]);
 }
 

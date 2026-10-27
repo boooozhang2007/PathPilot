@@ -28,8 +28,9 @@ export default function TasksPage() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [descDraft, setDescDraft] = useState<string | null>(null);
 
-  async function load() {
-    setLoading(true);
+  /** silent=true 时不触发整页 Loading(错误恢复/弹层打开期间刷新用,避免关掉任务详情弹层) */
+  async function load(silent = false) {
+    if (!silent) setLoading(true);
     try {
       const [t, s, p] = await Promise.all([api<RoadmapTaskDTO[]>('/api/tasks'), api<GrowthStats>('/api/stats/growth'), api<ProfileDTO | null>('/api/profile')]);
       setTasks(t);
@@ -38,7 +39,7 @@ export default function TasksPage() {
     } catch (e) {
       setErr(e instanceof Error ? e.message : '加载失败');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
   useEffect(() => {
@@ -53,7 +54,7 @@ export default function TasksPage() {
       api<GrowthStats>('/api/stats/growth').then(setStats).catch(() => {});
     } catch (e) {
       setErr(e instanceof Error ? e.message : '更新失败');
-      await load();
+      await load(true);
     }
   }
 

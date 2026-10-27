@@ -19,13 +19,14 @@ import {
   getTasksOfRoadmap,
   diffRoadmapVersions,
   updateTask,
-  updateRoadmapTaskFields,
+  assertTaskVersion,
   removeRoadmapTask,
   removeRoadmapTasks,
   addTaskEvidence,
 } from '../services/roadmapService.js';
 import { generateRoadmap, reviseRoadmap } from '../agent/planner.js';
-import { chat, chatHistory, latestSession, listSessions, deleteSession, renameSession, clearAllSessions } from '../agent/advisor.js';
+import { chat, chatHistory, latestSession, listSessions, deleteSession, renameSession, clearAllSessions, assertSessionOwner } from '../agent/advisor.js';
+import { setSessionAutoWrite } from '../agent/autoWrite.js';
 import { resumeDraft } from '../agent/resume.js';
 import { createRun, executeRun, getRun, agentConfigSummary } from '../agent/core.js';
 import { analyzeGapByRules } from '../agent/rules/chat.js';
@@ -120,15 +121,12 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
       ...(input.dependencyIds !== undefined ? { dependencyIds: input.dependencyIds } : {}),
       ...(input.completionRule !== undefined ? { completionRule: input.completionRule } : {}),
     };
-    let updated = null as Awaited<ReturnType<typeof updateTask>> | null;
-    if (Object.keys(contentPatch).length) {
-      updated = await updateRoadmapTaskFields(userId, taskId, contentPatch as never);
-    }
-    if (Object.keys(statusPatch).length || input.expectedUpdatedAt) {
-      updated = await updateTask(userId, taskId, { ...statusPatch, expectedUpdatedAt: input.expectedUpdatedAt });
-    }
-    if (!updated) throw badRequest('未提供任何更新字段');
-    return updated;
+    const mergedPatch = { ...statusPatch, ...contentPatch };
+    if (!Object.keys(mergedPatch).length && !input.expectedUpdatedAt) throw badRequest('未提供任何更新字段');
+    // 乐观锁只校验一次：先校验锁，再把内容/状态字段合并为单次更新（updatedAt 仅刷新一次，
+    // 避免"先改字段刷新 updatedAt、再比锁"导致的组合更新必现 409）
+    if (input.expectedUpdatedAt) await assertTaskVersion(userId, taskId, input.expectedUpdatedAt);
+    return updateTask(userId, taskId, { ...mergedPatch, expectedUpdatedAt: input.expectedUpdatedAt } as never);
   });
 
   app.delete('/api/tasks/:id', { preHandler: [auth] }, async (req) => {
@@ -186,6 +184,17 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/agent/session/:id', { preHandler: [auth] }, async (req) => {
     const { id } = req.params as { id: string };
     return chatHistory(getUserId(req), Number(id));
+  });
+
+  /** 会话级「自动写入」开关：开启后 Agent 写工具（改任务/规划/档案）才会执行 */
+  app.post('/api/agent/sessions/:id/auto-write', { preHandler: [auth] }, async (req) => {
+    const { id } = req.params as { id: string };
+    const { enabled } = (req.body ?? {}) as { enabled?: boolean };
+    if (typeof enabled !== 'boolean') throw badRequest('enabled 必须为布尔值');
+    const userId = getUserId(req);
+    await assertSessionOwner(userId, Number(id)); // 校验会话归属，防止跨用户开关
+    setSessionAutoWrite(Number(id), enabled);
+    return { ok: true, autoWrite: enabled };
   });
 
   app.get('/api/agent/config', { preHandler: [auth] }, async () => agentConfigSummary());

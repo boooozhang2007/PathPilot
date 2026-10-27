@@ -74,6 +74,10 @@ export async function api<T = unknown>(path: string, init?: { method?: string; j
     if (!res.ok) {
       const err = (data as { error?: { code?: string; message?: string } }).error;
       if (res.status === 401) {
+        // 登录/注册等认证接口：透传服务端 message（如"邮箱或密码错误"），不覆盖成引导文案
+        if (path.startsWith('/api/auth/')) {
+          throw new ApiError(err?.code ?? 'UNAUTHORIZED', err?.message ?? '登录失败');
+        }
         throw new ApiError('UNAUTHORIZED', '此功能需要登录：请到「我的」页登录账号');
       }
       throw new ApiError(err?.code ?? 'HTTP_ERROR', err?.message ?? `请求失败(${res.status})`);
@@ -88,14 +92,16 @@ export async function api<T = unknown>(path: string, init?: { method?: string; j
   }
 }
 
-/** 轮询异步 agent run（岗位分析/规划生成） */
+/** 轮询异步 agent run（岗位分析/规划生成）；signal 用于页面卸载时取消轮询 */
 export async function pollRun(
   runId: number,
   onTick?: (status: string, progress?: number, progressMessage?: string) => void,
-  timeoutMs = 300000
+  timeoutMs = 300000,
+  signal?: AbortSignal
 ): Promise<{ run: { status: string; errorCode: string | null; errorDetail: string | null } }> {
   const start = Date.now();
   for (;;) {
+    if (signal?.aborted) throw new ApiError('CANCELED', '任务已取消');
     if (Date.now() - start > timeoutMs) throw new ApiError('TIMEOUT', '任务执行超时');
     const data = await api<{ run: { status: string; errorCode: string | null; errorDetail: string | null; progress?: number; progressMessage?: string } }>(`/api/agent/runs/${runId}`);
     onTick?.(data.run.status, data.run.progress, data.run.progressMessage ?? undefined);

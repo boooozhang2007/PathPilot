@@ -11,6 +11,11 @@ export const config = {
   jwtSecret: requireEnv('JWT_SECRET'),
   jwtExpiresIn: '7d',
   dbPath: process.env.DB_PATH ?? './data/pathpilot.db',
+  /** CORS 允许来源（逗号分隔的环境变量白名单；无 Origin 的同源/非浏览器请求放行） */
+  corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
 
   /** Pi Agent LLM 配置；未配置 AGENT_API_KEY 时自动降级规则引擎 */
   agent: {

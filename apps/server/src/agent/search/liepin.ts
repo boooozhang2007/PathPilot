@@ -31,9 +31,20 @@ export function liepinConfigured(): boolean {
   return !!process.env.LIEPIN_USER_TOKEN && cliPath() !== null;
 }
 
-/** 搜索结果缓存（PRD 12：对重复搜索进行合理缓存；10 分钟） */
+/** 搜索结果缓存（PRD 12：对重复搜索进行合理缓存；10 分钟；LRU 容量上限，只增不减防护） */
 const CACHE_TTL_MS = 10 * 60 * 1000;
+const CACHE_MAX_ENTRIES = 200;
 const cache = new Map<string, { at: number; jobs: RawLiepinJob[] }>();
+
+function cacheSet(key: string, value: { at: number; jobs: RawLiepinJob[] }): void {
+  cache.delete(key); // 已存在时先删再插，保持插入序（最新在最后）
+  cache.set(key, value);
+  while (cache.size > CACHE_MAX_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
+}
 
 interface RawLiepinJob {
   jobId?: number;
@@ -121,6 +132,7 @@ export async function liepinSearchJobs(
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
     raw = cached.jobs;
     fromCache = true;
+    cacheSet(cacheKey, cached); // 命中也刷新新鲜度（LRU）
   } else {
     for (let attempt = 0; attempt < 3 && raw.length === 0; attempt++) {
       if (signal?.aborted) throw new Error('已取消');
@@ -138,7 +150,7 @@ export async function liepinSearchJobs(
         lastErr = err instanceof Error ? err.message : String(err);
       }
     }
-    if (raw.length) cache.set(cacheKey, { at: Date.now(), jobs: raw });
+    if (raw.length) cacheSet(cacheKey, { at: Date.now(), jobs: raw });
   }
   if (!raw.length) {
     return { samples: [], ok: false, note: `猎聘官方搜索失败（${lastErr || '无结果'}），已回退其他通道。` };

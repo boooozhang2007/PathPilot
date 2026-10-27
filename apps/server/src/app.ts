@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import { ZodError } from 'zod';
 import { AppError } from './services/errors.js';
+import { config } from './config.js';
 import { authPreHandler } from './auth/index.js';
 import { authRoutes } from './routes/auth.js';
 import { profileRoutes } from './routes/profile.js';
@@ -14,7 +15,14 @@ import { ERROR_MESSAGES, type ErrorCode } from '@pathpilot/shared';
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' }, bodyLimit: 1_048_576 });
 
-  await app.register(cors, { origin: true, credentials: true });
+  // CORS 收敛为环境变量白名单（默认本地开发地址）；不在白名单的来源不返回 CORS 头（浏览器拦截）
+  await app.register(cors, {
+    credentials: true,
+    origin: (origin, cb) => {
+      if (!origin || config.corsOrigins.includes(origin)) cb(null, true);
+      else cb(null, false);
+    },
+  });
 
   app.decorate('authPreHandler', authPreHandler);
 

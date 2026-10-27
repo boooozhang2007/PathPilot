@@ -1,6 +1,6 @@
 'use client';
 // 岗位洞察:指令台式搜索区 + 岗位对比 + 技能频次/分布/来源证据
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, pollRun } from '@/lib/api';
 import { Loading, Empty, ErrorState, Tag, PageHeader, SectionTitle } from '@/components/ui';
 import { SkillFreqBar, CategoryPie, DistBars } from '@/components/charts';
@@ -33,6 +33,18 @@ export default function JobsPage() {
   const [cmpB, setCmpB] = useState<number | null>(null);
   const [cmpData, setCmpData] = useState<{ a: JobAnalysisDTO; b: JobAnalysisDTO } | null>(null);
   const [cmpBusy, setCmpBusy] = useState(false);
+  // 组件卸载时中止轮询;递增请求 id 丢弃过期的对比响应
+  const mountedRef = useRef(true);
+  const pollAbortRef = useRef<AbortController | null>(null);
+  const cmpReqRef = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      pollAbortRef.current?.abort();
+    };
+  }, []);
 
   async function load() {
     setLoading(true);
@@ -67,14 +79,17 @@ export default function JobsPage() {
       setCmpData(null);
       return;
     }
+    const reqId = ++cmpReqRef.current;
     setCmpBusy(true);
     try {
       const [da, db] = await Promise.all([api<JobAnalysisDTO>(`/api/jobs/analysis/${a}`), api<JobAnalysisDTO>(`/api/jobs/analysis/${b}`)]);
+      // 期间用户又切换了对比项:丢弃过期响应
+      if (reqId !== cmpReqRef.current) return;
       setCmpData({ a: da, b: db });
     } catch {
-      setCmpData(null);
+      if (reqId === cmpReqRef.current) setCmpData(null);
     } finally {
-      setCmpBusy(false);
+      if (reqId === cmpReqRef.current) setCmpBusy(false);
     }
   }
 
@@ -92,18 +107,22 @@ export default function JobsPage() {
     try {
       const res = await api<{ run_id: number }>('/api/jobs/analyze', { method: 'POST', json: { targetRole: role, city: city || undefined, employmentType: type, sampleLimit: 18 } });
       setBusy('采集岗位样本并抽取技能要求…');
+      pollAbortRef.current = new AbortController();
       await pollRun(
         res.run_id,
         (s, _p, msg) => {
+          if (!mountedRef.current) return;
           if (s === 'running') setBusy(msg || '采集岗位样本并抽取技能要求…');
         },
-        600_000
+        600_000,
+        pollAbortRef.current.signal
       );
       await load();
     } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
       setErr(e instanceof Error ? e.message : '分析失败');
     } finally {
-      setBusy('');
+      if (mountedRef.current) setBusy('');
     }
   }
 
@@ -115,20 +134,24 @@ export default function JobsPage() {
         method: 'POST',
         json: { targetRole: role, title: manual.title, company: manual.company || undefined, location: city || undefined, employmentType: type, description: manual.description },
       });
+      pollAbortRef.current = new AbortController();
       await pollRun(
         res.run_id,
         (s, _p, msg) => {
+          if (!mountedRef.current) return;
           if (s === 'running') setBusy(msg || '解析岗位描述…');
         },
-        600_000
+        600_000,
+        pollAbortRef.current.signal
       );
       setManualOpen(false);
       setManual({ title: '', company: '', description: '' });
       await load();
     } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
       setErr(e instanceof Error ? e.message : '解析失败');
     } finally {
-      setBusy('');
+      if (mountedRef.current) setBusy('');
     }
   }
 

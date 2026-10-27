@@ -63,7 +63,8 @@ export function Tour({ onClose }: { onClose: () => void }) {
   const step = STEPS[idx];
 
   const measure = useCallback(() => {
-    const el = document.querySelector(`[data-tour-anchor="${step.href}"]`);
+    // 锚点契约与侧栏一致:layout 埋点为 `nav-${href}`
+    const el = document.querySelector(`[data-tour-anchor="nav-${step.href}"]`);
     setBox(rectOf(el));
   }, [step.href]);
 

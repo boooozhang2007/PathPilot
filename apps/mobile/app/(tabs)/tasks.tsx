@@ -6,9 +6,13 @@ import { api } from '../../lib/api';
 import { C, SF, Card, Tag, Loading, ErrorBox, EmptyBox, Btn, Body, useSettings } from '../../components/ui';
 import { Icon } from '../../components/icons';
 import type { RoadmapTaskDTO } from '@pathpilot/shared';
-import { TASK_STATUS_LABELS, PRIORITY_LABELS } from '@pathpilot/shared';
+import { TASK_STATUS_LABELS, PRIORITY_LABELS, GRADE_TO_CURRENT_SEMESTER } from '@pathpilot/shared';
+import { toLocalDateStr, todayLocal } from '../../lib/date';
 
 type View2 = 'today' | 'week' | 'all';
+
+/** profile 不可用时「本学期」视图的兜底学期（与 other 年级一致） */
+const FALLBACK_SEMESTER = GRADE_TO_CURRENT_SEMESTER.other;
 
 export default function TasksTab() {
   const { fs } = useSettings();
@@ -23,7 +27,7 @@ export default function TasksTab() {
   const [evHours, setEvHours] = useState('');
   const [noteMax, setNoteMax] = useState(false); // 成果说明放大编辑
   const [syncFail, setSyncFail] = useState('');
-  const [curSemester, setCurSemester] = useState<number | null>(null);
+  const [curSemester, setCurSemester] = useState<number | null>(FALLBACK_SEMESTER);
   // 说明编辑 / 批量管理
   const [descDraft, setDescDraft] = useState<string | null>(null);
   const [manage, setManage] = useState(false);
@@ -33,10 +37,9 @@ export default function TasksTab() {
     Promise.all([api<RoadmapTaskDTO[]>('/api/tasks'), api<{ grade?: string } | null>('/api/profile').catch(() => null)])
       .then(([t, p]) => {
         setTasks(t);
-        if (p?.grade) {
-          const map: Record<string, number> = { freshman: 1, sophomore: 3, junior: 5, senior: 7, graduate: 9, phd: 11, postdoc: 13, other: 5 };
-          setCurSemester(map[p.grade] ?? 5);
-        }
+        // 共享的年级→学期映射；profile 不可用时回退到 FALLBACK_SEMESTER，避免「本学期」视图恒空
+        const grade = p?.grade as keyof typeof GRADE_TO_CURRENT_SEMESTER | undefined;
+        setCurSemester(grade ? GRADE_TO_CURRENT_SEMESTER[grade] ?? FALLBACK_SEMESTER : FALLBACK_SEMESTER);
         setErr('');
       })
       .catch((e) => setErr(e instanceof Error ? e.message : '加载失败'))
@@ -63,10 +66,20 @@ export default function TasksTab() {
 
   async function saveEvidence() {
     if (!detail) return;
+    // 实际小时：先校验再提交，挡住空白串（Number(' ')===0）与非法数字（'1.2.3'→NaN）
+    let actualHours: number | undefined;
+    if (evHours.trim() !== '') {
+      const n = Number(evHours);
+      if (!Number.isFinite(n) || n < 0 || n > 500) {
+        setSyncFail('实际小时需为 0-500 之间的数字');
+        return;
+      }
+      actualHours = n;
+    }
     await update(detail, {
       ...(evUrl ? { evidenceUrl: evUrl } : {}),
       ...(evNote ? { resultNote: evNote } : {}),
-      ...(evHours !== '' ? { actualHours: Number(evHours) } : {}),
+      ...(actualHours !== undefined ? { actualHours } : {}),
     });
   }
 
@@ -124,9 +137,9 @@ export default function TasksTab() {
 
   if (loading) return <Loading />;
   const inputSt = { ...SF.input, paddingHorizontal: 12, paddingVertical: 10, fontSize: fs(13), color: C.ink, marginBottom: 10 };
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocal();
   const visible =
-    view === 'all' ? tasks : view === 'week' ? tasks.filter((t) => t.semester === curSemester) : tasks.filter((t) => t.status === 'in_progress' || (t.completedAt ?? '').startsWith(today));
+    view === 'all' ? tasks : view === 'week' ? tasks.filter((t) => t.semester === curSemester) : tasks.filter((t) => t.status === 'in_progress' || (t.completedAt ? toLocalDateStr(t.completedAt) === today : false));
 
   return (
     <View style={{ flex: 1, ...SF.page, paddingTop: 54 }}>

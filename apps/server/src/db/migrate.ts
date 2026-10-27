@@ -1,7 +1,7 @@
 // 极简迁移执行器：按文件名序执行 drizzle/*.sql，_migrations 表记录进度（幂等）
 // PRD 7.2：数据库迁移纳入代码仓库
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 import type { Database } from 'better-sqlite3';
 
@@ -35,7 +35,9 @@ export function migrate(sqlite: Database, migrationsDir: string): string[] {
 }
 
 // CLI: npm run db:migrate
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1].replace(/\\/g, '/')) {
+// 注意：必须用 pathToFileURL 比较——fileURLToPath 在 Windows 下返回反斜杠路径，
+// 与 argv 的正斜杠形式永不相等，会导致 CLI 静默空转
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   const { getDb } = await import('./client.js');
   const { sqlite } = getDb();
   const applied = migrate(sqlite, MIGRATIONS_DIR);

@@ -60,6 +60,8 @@ export default function AdvisorTab() {
   const [guideReady, setGuideReady] = useState(false);
   const listRef = useRef<ScrollViewInstance | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // 导航类中止（新建对话/删除会话）标记：AbortError catch 据此跳过本地消息追加，避免旧流半截回复污染新会话
+  const navigatingRef = useRef(false);
 
   const loadSessions = useCallback(() => {
     api<ChatSessionSummaryDTO[]>('/api/agent/sessions').then(setSessions).catch(() => {});
@@ -105,6 +107,7 @@ export default function AdvisorTab() {
   }, []);
 
   function newChat() {
+    if (abortRef.current) navigatingRef.current = true; // 仅在确有进行中的流时标记，避免残留标记误伤后续中止
     abortRef.current?.abort();
     sessionIdRef.current = undefined;
     setSessionId(undefined);
@@ -162,6 +165,8 @@ export default function AdvisorTab() {
     setBusy(true);
     setStream({ text: '', thinking: '', tools: [], startedAt: Date.now() });
     let activeSessionId = sessionIdRef.current;
+    // 消息基线长度：非中止失败且从未获得 sessionId 时，回滚到基线以清除乐观 user 消息
+    const baseLen = opts?.truncateTo ?? messages.length;
     setMessages((prev) => {
       const base = opts && opts.truncateTo !== undefined ? prev.slice(0, opts.truncateTo) : prev;
       return [...base, { id: Date.now(), sessionId: activeSessionId ?? 0, role: 'user', content: message, engine: null, toolCalls: [], createdAt: new Date().toISOString() }];
@@ -204,57 +209,61 @@ export default function AdvisorTab() {
       let doneMessageId: number | undefined;
       let doneFallback: string | undefined;
       let hadError = false;
+      const handlePart = (part: string) => {
+        const line = part.split('\n').find((l) => l.startsWith('data: '));
+        if (!line) return;
+        let ev: { type: string; delta?: string; name?: string; summary?: string; engine?: string; fallbackReason?: string; sessionId?: number; messageId?: number };
+        try {
+          ev = JSON.parse(line.slice(6));
+        } catch {
+          return;
+        }
+        if (ev.sessionId) {
+          activeSessionId = ev.sessionId;
+          sessionIdRef.current = ev.sessionId;
+          setSessionId(ev.sessionId);
+        }
+        if (ev.type === 'error') {
+          hadError = true;
+          setErr(ev.delta ?? '生成出错');
+        }
+        if (ev.type === 'done') {
+          doneEngine = ev.engine;
+          doneMessageId = ev.messageId;
+          doneFallback = ev.fallbackReason;
+        }
+        setStream((st) => {
+          const cur = st ?? { text: '', thinking: '', tools: [] as ToolState[], startedAt: Date.now() };
+          if (ev.type === 'thinking') return { ...cur, thinking: cur.thinking + (ev.delta ?? '') };
+          if (ev.type === 'text') return { ...cur, text: cur.text + (ev.delta ?? '') };
+          if (ev.type === 'tool_start') return { ...cur, tools: [...cur.tools, { name: ev.name ?? '', status: 'running' }] };
+          if (ev.type === 'tool_progress') {
+            const tools = [...cur.tools];
+            for (let i = tools.length - 1; i >= 0; i--) {
+              if (tools[i].status === 'running' && (!ev.name || tools[i].name === ev.name)) {
+                tools[i] = { ...tools[i], summary: ev.summary };
+                break;
+              }
+            }
+            return { ...cur, tools };
+          }
+          if (ev.type === 'tool_end') {
+            return { ...cur, tools: cur.tools.map((x) => (x.name === ev.name && x.status === 'running' ? { ...x, status: 'done' as const, summary: ev.summary } : x)) };
+          }
+          return cur;
+        });
+      };
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         buf += decode(value ?? new Uint8Array(0));
         const parts = buf.split('\n\n');
         buf = parts.pop() ?? '';
-        for (const part of parts) {
-          const line = part.split('\n').find((l) => l.startsWith('data: '));
-          if (!line) continue;
-          let ev: { type: string; delta?: string; name?: string; summary?: string; engine?: string; fallbackReason?: string; sessionId?: number; messageId?: number };
-          try {
-            ev = JSON.parse(line.slice(6));
-          } catch {
-            continue;
-          }
-          if (ev.sessionId) {
-            activeSessionId = ev.sessionId;
-            sessionIdRef.current = ev.sessionId;
-            setSessionId(ev.sessionId);
-          }
-          if (ev.type === 'error') {
-            hadError = true;
-            setErr(ev.delta ?? '生成出错');
-          }
-          if (ev.type === 'done') {
-            doneEngine = ev.engine;
-            doneMessageId = ev.messageId;
-            doneFallback = ev.fallbackReason;
-          }
-          setStream((st) => {
-            const cur = st ?? { text: '', thinking: '', tools: [] as ToolState[], startedAt: Date.now() };
-            if (ev.type === 'thinking') return { ...cur, thinking: cur.thinking + (ev.delta ?? '') };
-            if (ev.type === 'text') return { ...cur, text: cur.text + (ev.delta ?? '') };
-            if (ev.type === 'tool_start') return { ...cur, tools: [...cur.tools, { name: ev.name ?? '', status: 'running' }] };
-            if (ev.type === 'tool_progress') {
-              const tools = [...cur.tools];
-              for (let i = tools.length - 1; i >= 0; i--) {
-                if (tools[i].status === 'running' && (!ev.name || tools[i].name === ev.name)) {
-                  tools[i] = { ...tools[i], summary: ev.summary };
-                  break;
-                }
-              }
-              return { ...cur, tools };
-            }
-            if (ev.type === 'tool_end') {
-              return { ...cur, tools: cur.tools.map((x) => (x.name === ev.name && x.status === 'running' ? { ...x, status: 'done' as const, summary: ev.summary } : x)) };
-            }
-            return cur;
-          });
-        }
+        for (const part of parts) handlePart(part);
       }
+      // 流结束：flush 解码器把尾部不完整字节以替换字符拼出，并解析缓冲里剩余的最后事件
+      buf += decode(new Uint8Array(0), true);
+      for (const part of buf.split('\n\n')) handlePart(part);
       if (doneFallback && !hadError && doneFallback !== '已停止生成（保留已输出部分）' && doneFallback !== '已停止生成') setErr(doneFallback);
       setStream((st) => {
         if (st && (st.text.trim() || st.thinking.trim())) {
@@ -275,27 +284,36 @@ export default function AdvisorTab() {
       });
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') {
-        setStream((st) => {
-          if (st && st.text.trim()) {
-            setMessages((prev) => [
-              ...prev,
-              { id: Date.now() + 1, sessionId: activeSessionId ?? 0, role: 'assistant', content: st.text, engine: null, toolCalls: [], createdAt: new Date().toISOString() },
-            ]);
-          }
-          return null;
-        });
-        // 服务端也已中止并落库：稍后同步一次，用真实消息 id 替换本地临时 id（供重新生成使用）
-        setTimeout(() => {
-          if (!abortRef.current) void syncSession();
-        }, 500);
+        if (navigatingRef.current) {
+          // 来自导航切换（新建对话/删除会话）：旧流的部分输出不再属于当前会话，直接丢弃
+          navigatingRef.current = false;
+          setStream(null);
+        } else {
+          setStream((st) => {
+            if (st && st.text.trim()) {
+              setMessages((prev) => [
+                ...prev,
+                { id: Date.now() + 1, sessionId: activeSessionId ?? 0, role: 'assistant', content: st.text, engine: null, toolCalls: [], createdAt: new Date().toISOString() },
+              ]);
+            }
+            return null;
+          });
+          // 服务端也已中止并落库：稍后同步一次，用真实消息 id 替换本地临时 id（供重新生成使用）
+          setTimeout(() => {
+            if (!abortRef.current) void syncSession();
+          }, 500);
+        }
       } else {
         setErr(e instanceof Error ? e.message : '发送失败');
         setStream(null);
+        // 首条消息失败且从未获得 sessionId：回滚乐观 user 消息，避免残留半截对话
+        if (!activeSessionId) setMessages((prev) => prev.slice(0, baseLen));
         // 重新生成可能已被服务端拒绝（旧 id/会话不存在），恢复被乐观截断的消息
         await syncSession();
       }
     } finally {
       clearTimeout(timer);
+      navigatingRef.current = false;
       abortRef.current = null;
       setBusy(false);
       loadSessions();
