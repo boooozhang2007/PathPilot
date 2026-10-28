@@ -134,6 +134,41 @@ describe('用户系统与数据权限（PRD 13.1）', () => {
     expect(clearedTarget.json().nickname).toBe('只保存昵称');
   });
 
+  it('三位数周时长和不同毕业年月可以保存并在另一设备读取', async () => {
+    const email = `profile-hours${Date.now()}@t.cn`;
+    const token = await register(email);
+    await putProfile(token);
+    for (const weeklyHours of [100, 168]) {
+      const saved = await app.inject({
+        method: 'PUT',
+        url: '/api/profile',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { weeklyHours, graduationDate: '2031-11-01' },
+      });
+      expect(saved.statusCode).toBe(200);
+      expect(saved.json().weeklyHours).toBe(weeklyHours);
+      expect(saved.json().graduationDate).toBe('2031-11-01');
+    }
+
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'password123' } });
+    const reloaded = await app.inject({ method: 'GET', url: '/api/profile', headers: { authorization: `Bearer ${login.json().token}` } });
+    expect(reloaded.json().weeklyHours).toBe(168);
+    expect(reloaded.json().graduationDate).toBe('2031-11-01');
+    expect(reloaded.json().targetRole).toBe('Java 后端开发');
+
+    for (const weeklyHours of [0, 169, 8.5]) {
+      const rejected = await app.inject({
+        method: 'PUT',
+        url: '/api/profile',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { weeklyHours },
+      });
+      expect(rejected.statusCode).toBe(400);
+    }
+    const unchanged = await app.inject({ method: 'GET', url: '/api/profile', headers: { authorization: `Bearer ${token}` } });
+    expect(unchanged.json().weeklyHours).toBe(168);
+  });
+
   it('用户 A 无法读取用户 B 的资料/经历/任务（越权防护）', async () => {
     await putProfile(tokenA);
     await putProfile(tokenB);

@@ -9,6 +9,7 @@ import type { ProfileDTO, ProfileSkillDTO, ExperienceDTO, SkillGapResult } from 
 import {
   GRADES, GRADE_LABELS, CAREER_PATHS, CAREER_PATH_LABELS, EXPERIENCE_TYPES, EXPERIENCE_TYPE_LABELS,
   EVIDENCE_STATUSES, EVIDENCE_STATUS_LABELS, MBTI_DIMENSIONS, skillGroupOf, SKILL_GROUP_LABELS,
+  MIN_WEEKLY_HOURS, MAX_WEEKLY_HOURS, weeklyHoursSchema,
 } from '@pathpilot/shared';
 
 type Tab = 'skills' | 'courses' | 'projects' | 'contests';
@@ -80,9 +81,9 @@ export default function ProfilePage() {
     // 输入框清空时 Number('') 为 0,NaN 序列化为 null——保存前拦截非法小时数
     if (p.weeklyHours !== undefined) {
       const h = Number(p.weeklyHours);
-      if (!Number.isFinite(h) || h < 1 || h > 80) {
+      if (!weeklyHoursSchema.safeParse(h).success) {
         setMsg('');
-        setErr('每周可投入时间需为 1-80 小时之间的数字');
+        setErr(`每周可投入时间需为 ${MIN_WEEKLY_HOURS}-${MAX_WEEKLY_HOURS} 小时之间的整数`);
         return;
       }
     }
@@ -423,13 +424,14 @@ export default function ProfilePage() {
                 <input
                   className="pp-input"
                   type="number"
-                  min={1}
-                  max={80}
+                  min={MIN_WEEKLY_HOURS}
+                  max={MAX_WEEKLY_HOURS}
+                  step={1}
                   value={profile?.weeklyHours ?? 8}
                   onChange={(e) => setProfile(profile ? { ...profile, weeklyHours: Number(e.target.value) } : profile)}
                   onBlur={(e) => {
                     const val = Number(e.target.value);
-                    if (val >= 1 && val <= 80) saveProfile({ weeklyHours: val });
+                    saveProfile({ weeklyHours: val });
                   }}
                   onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
                 />

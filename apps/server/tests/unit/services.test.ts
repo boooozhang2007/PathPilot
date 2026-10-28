@@ -97,6 +97,13 @@ describe('规划 JSON 校验（PRD 6.4 / 13.8.3）', () => {
     expect(result).toBeDefined();
   });
 
+  it.each([100, 168])('三位数周时长 %i 小时可用于规划与预算校验', (weeklyHours) => {
+    const { result, validation } = validateRoadmap({ ...base, weekly_hours: weeklyHours }, { grade: 'sophomore', weeklyHours });
+    expect(validation.ok).toBe(true);
+    expect(result?.weekly_hours).toBe(weeklyHours);
+    expect(semesterBudget(weeklyHours)).toBe(Math.floor(18 * 0.75 * weeklyHours));
+  });
+
   it('结构不合法（缺字段）被拒绝', () => {
     const broken = { ...base, tasks: [{ title: '缺字段' }] };
     const { result, validation } = validateRoadmap(broken, { grade: 'sophomore', weeklyHours: 10 });

@@ -1,6 +1,6 @@
 // 经历档案交叉校验：endDate 不得早于 startDate（新增 superRefine 的回归用例）
 import { describe, expect, it } from 'vitest';
-import { experienceInput, experienceUpdate } from './schemas';
+import { experienceInput, experienceUpdate, profileInput, profilePatchInput, generateRoadmapInput, reviseRoadmapInput, roadmapResult } from './schemas';
 
 const base = { type: 'project', title: '示例项目' } as const;
 
@@ -42,5 +42,19 @@ describe('experienceUpdate 日期交叉校验', () => {
 
   it('仅更新标题：通过', () => {
     expect(experienceUpdate.safeParse({ title: '新标题' }).success).toBe(true);
+  });
+});
+
+describe('每周投入时长在档案与规划中保持一致', () => {
+  const inputs = [profileInput.pick({ weeklyHours: true }), profilePatchInput, generateRoadmapInput, reviseRoadmapInput];
+
+  it.each([1, 80, 100, 168])('档案、规划生成/调整和模型输出均接受 %i 小时', (hours) => {
+    for (const schema of inputs) expect(schema.parse({ weeklyHours: hours }).weeklyHours).toBe(hours);
+    expect(roadmapResult.pick({ weekly_hours: true }).parse({ weekly_hours: hours }).weekly_hours).toBe(hours);
+  });
+
+  it.each([0, -1, 169, 8.5])('各入口均拒绝非法时长 %s', (hours) => {
+    for (const schema of inputs) expect(schema.safeParse({ weeklyHours: hours }).success).toBe(false);
+    expect(roadmapResult.pick({ weekly_hours: true }).safeParse({ weekly_hours: hours }).success).toBe(false);
   });
 });

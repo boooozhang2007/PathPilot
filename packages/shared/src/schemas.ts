@@ -17,6 +17,9 @@ import {
 // ---------- 通用 ----------
 export const idSchema = z.number().int().positive();
 export const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式应为 YYYY-MM-DD');
+export const MIN_WEEKLY_HOURS = 1;
+export const MAX_WEEKLY_HOURS = 7 * 24;
+export const weeklyHoursSchema = z.number().int().min(MIN_WEEKLY_HOURS).max(MAX_WEEKLY_HOURS);
 
 // ---------- 认证 ----------
 export const registerInput = z.object({
@@ -41,7 +44,7 @@ export const profileInput = z.object({
   graduationDate: dateString,
   targetRole: z.string().min(1, '目标岗位不能为空').max(50),
   careerPath: z.enum(CAREER_PATHS),
-  weeklyHours: z.number().int().min(1).max(80),
+  weeklyHours: weeklyHoursSchema,
   /** MBTI 人格类型（16 型，如 INTJ）；未测可为空 */
   mbti: z.string().regex(MBTI_RE, 'MBTI 格式应为 4 位（如 INTJ）').nullable().optional(),
   /** 头像（data:image/... base64，≤512KB）；null 清除头像 */
@@ -190,7 +193,7 @@ export type RoadmapTaskDraft = z.infer<typeof roadmapTaskSchema>;
 export const roadmapResult = z.object({
   goal: z.string(),
   assumptions: z.array(z.string()).default([]),
-  weekly_hours: z.number().int().min(1).max(80),
+  weekly_hours: weeklyHoursSchema,
   semesters: z.array(semesterSchema).min(1),
   tasks: z.array(roadmapTaskSchema).min(1),
   total_estimated_hours: z.number().min(0),
@@ -201,7 +204,7 @@ export type RoadmapResult = z.infer<typeof roadmapResult>;
 
 export const generateRoadmapInput = z.object({
   /** 缺省使用 profile 中的当前值 */
-  weeklyHours: z.number().int().min(1).max(80).optional(),
+  weeklyHours: weeklyHoursSchema.optional(),
   targetRole: z.string().min(1).max(50).optional(),
   careerPath: z.enum(CAREER_PATHS).optional(),
   jobAnalysisId: z.number().int().positive().optional(),
@@ -209,7 +212,7 @@ export const generateRoadmapInput = z.object({
 export type GenerateRoadmapInput = z.infer<typeof generateRoadmapInput>;
 
 export const reviseRoadmapInput = z.object({
-  weeklyHours: z.number().int().min(1).max(80).optional(),
+  weeklyHours: weeklyHoursSchema.optional(),
   targetRole: z.string().min(1).max(50).optional(),
   careerPath: z.enum(CAREER_PATHS).optional(),
   reason: z.string().max(200).optional(),

@@ -1,79 +1,16 @@
 // 个人信息修改：头像上传 / 年级两排（含博士、博士后）/ 年月选择器 / MBTI / 目标与路径
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, View, Text, TextInput, TouchableOpacity, Modal, Pressable, Image, Alert, ActivityIndicator } from 'react-native';
+import { ScrollView, View, Text, TextInput, TouchableOpacity, Image, Alert, ActivityIndicator, KeyboardAvoidingView, Keyboard, Platform, type ScrollViewInstance, type TextInputInstance } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { api } from '../lib/api';
+import { createProfileSaveQueue } from '../lib/profileSaveQueue';
 import { C, SF, Btn, Loading, useSettings } from '../components/ui';
 import { Icon } from '../components/icons';
+import { MonthPicker } from '../components/MonthPicker';
 import type { ProfileDTO } from '@pathpilot/shared';
-import { GRADES, GRADE_LABELS, CAREER_PATHS, CAREER_PATH_LABELS, MBTI_DIMENSIONS } from '@pathpilot/shared';
-
-/** 年月选择器：两列滚动（年份 × 月份），自实现无原生依赖 */
-function MonthPicker({
-  visible,
-  value,
-  onClose,
-  onPick,
-}: {
-  visible: boolean;
-  value: string; // YYYY-MM
-  onClose: () => void;
-  onPick: (ym: string) => void;
-}) {
-  const { fs } = useSettings();
-  const now = new Date();
-  const years = Array.from({ length: 10 }, (_, i) => now.getFullYear() + i);
-  const months = Array.from({ length: 12 }, (_, i) => i + 1);
-  const [year, setYear] = useState(Number(value.slice(0, 4)) || now.getFullYear() + 2);
-  const [month, setMonth] = useState(Number(value.slice(5, 7)) || 6);
-  const ROW = 44;
-
-  useEffect(() => {
-    if (visible) {
-      setYear(Number(value.slice(0, 4)) || now.getFullYear() + 2);
-      setMonth(Number(value.slice(5, 7)) || 6);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
-
-  const col = (items: number[], picked: number, set: (n: number) => void, fmt: (n: number) => string, key: string) => (
-    <View key={key} style={{ flex: 1 }}>
-      <ScrollView showsVerticalScrollIndicator={false} snapToInterval={ROW} decelerationRate="fast" contentContainerStyle={{ paddingVertical: 3 * ROW }}>
-        {items.map((n) => (
-          <TouchableOpacity
-            key={n}
-            style={{ height: ROW, alignItems: 'center', justifyContent: 'center' }}
-            onPress={() => set(n)}
-          >
-            <Text style={{ fontSize: fs(picked === n ? 17 : 15), fontWeight: picked === n ? '800' : '400', color: picked === n ? C.ink : C.slate }}>{fmt(n)}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-      {/* 高亮选中区 */}
-      <View pointerEvents="none" style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: ROW, marginTop: -ROW / 2, borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.line }} />
-    </View>
-  );
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={{ flex: 1, backgroundColor: C.mask, justifyContent: 'flex-end' }} onPress={onClose}>
-        <Pressable style={{ ...SF.sheet, paddingBottom: 30, paddingTop: 14 }} onPress={() => {}}>
-          <View style={{ width: 36, height: 4, borderRadius: 999, backgroundColor: C.line, alignSelf: 'center', marginBottom: 10 }} />
-          <Text style={{ fontSize: fs(15), fontWeight: '700', color: C.ink, textAlign: 'center', marginBottom: 8 }}>选择毕业时间（年月）</Text>
-          <View style={{ height: ROW * 7, flexDirection: 'row', paddingHorizontal: 12 }}>
-            {col(years, year, setYear, (n) => `${n} 年`, 'y')}
-            {col(months, month, setMonth, (n) => `${String(n).padStart(2, '0')} 月`, 'm')}
-          </View>
-          <View style={{ paddingHorizontal: 16, marginTop: 10 }}>
-            <Btn title="确定" onPress={() => { onPick(`${year}-${String(month).padStart(2, '0')}`); onClose(); }} />
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
+import { GRADES, GRADE_LABELS, CAREER_PATHS, CAREER_PATH_LABELS, MBTI_DIMENSIONS, MIN_WEEKLY_HOURS, MAX_WEEKLY_HOURS, weeklyHoursSchema } from '@pathpilot/shared';
 
 export default function ProfileEdit() {
   const router = useRouter();
@@ -82,30 +19,83 @@ export default function ProfileEdit() {
   // 同步最新档案的 ref：连续快速修改多个选项时，savePatch 不会用到过期闭包
   const profileRef = useRef<ProfileDTO | null>(null);
   const activeSavesRef = useRef(0);
-  const savingFieldsRef = useRef(new Set<keyof ProfileDTO>());
+  const savesRef = useRef<ReturnType<typeof createProfileSaveQueue> | null>(null);
+  const scrollRef = useRef<ScrollViewInstance | null>(null);
+  const inputRefs = useRef<Record<string, TextInputInstance | null>>({});
+  const focusedInputRef = useRef<TextInputInstance | null>(null);
+  const scrollOffsetRef = useRef(0);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [finishing, setFinishing] = useState(false);
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [weeklyHoursDraft, setWeeklyHoursDraft] = useState('');
-  const debounceTimersRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const weeklyHoursDraftRef = useRef('');
+  const debounceTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const debouncePatchesRef = useRef<Record<string, Partial<ProfileDTO>>>({});
   // MBTI 逐维选择状态（独立于 profile.mbti：选到一半也能保持高亮，凑齐 4 位才入库）
   const [mbtiSel, setMbtiSel] = useState<[string | null, string | null, string | null, string | null]>([null, null, null, null]);
 
   useEffect(() => {
+    const timers = debounceTimersRef.current;
     return () => {
-      Object.values(debounceTimersRef.current).forEach((t) => clearTimeout(t));
+      Object.values(timers).forEach((t) => clearTimeout(t));
     };
   }, []);
+
+  // 软键盘弹出及窗口缩小时，把当前输入框完整滚动到键盘上方。
+  function revealFocusedInput() {
+    const input = focusedInputRef.current;
+    const scroll = scrollRef.current;
+    if (!input?.isFocused() || !scroll) return;
+    scroll.measureInWindow((_x, top, _width, height) => {
+      input.measureInWindow((_ix, inputTop, _iw, inputHeight) => {
+        if (focusedInputRef.current !== input || height <= 0) return;
+        const bottom = Math.min(top + height, Keyboard.metrics()?.screenY ?? Infinity) - 16;
+        const delta = inputTop + inputHeight > bottom
+          ? inputTop + inputHeight - bottom
+          : Math.min(0, inputTop - top - 16);
+        if (delta) scroll.scrollTo({ y: Math.max(0, scrollOffsetRef.current + delta), animated: true });
+      });
+    });
+  }
+
+  useEffect(() => {
+    const shown = Keyboard.addListener('keyboardDidShow', () => requestAnimationFrame(revealFocusedInput));
+    return () => shown.remove();
+  }, []);
+
+  function focusProps(key: string) {
+    return {
+      ref: (input: TextInputInstance | null) => { inputRefs.current[key] = input; },
+      onFocus: () => {
+        focusedInputRef.current = inputRefs.current[key];
+        requestAnimationFrame(revealFocusedInput);
+      },
+      accessibilityLabel: ({ nickname: '昵称', school: '学校', major: '专业', targetRole: '目标岗位', weeklyHours: '每周可投入时间（小时）' } as Record<string, string>)[key],
+      editable: !finishing,
+    };
+  }
 
   useEffect(() => {
     api<ProfileDTO | null>('/api/profile')
       .then((p) => {
         if (p) {
           profileRef.current = p;
+          savesRef.current = createProfileSaveQueue({
+            read: () => profileRef.current,
+            apply: applyProfile,
+            send: async (patch) => {
+              const updated = await api<ProfileDTO>('/api/profile', { method: 'PUT', json: patch });
+              await AsyncStorage.setItem('pp_nickname', updated.nickname).catch(() => {});
+              return updated;
+            },
+            onError: (error) => setErr(error instanceof Error ? error.message : '保存失败'),
+          });
           setProfile(p);
           setWeeklyHoursDraft(String(p.weeklyHours));
+          weeklyHoursDraftRef.current = String(p.weeklyHours);
           const m = p.mbti ?? '';
           setMbtiSel(m.length === 4 ? [m[0], m[1], m[2], m[3]] : [null, null, null, null]);
         }
@@ -125,42 +115,16 @@ export default function ProfileEdit() {
   }
 
   /** 每个资料项独立保存；请求只提交当前字段，不带上其它未保存的编辑。 */
-  async function savePatch(patch: Partial<ProfileDTO>) {
-    const base = profileRef.current;
-    if (!base || !Object.keys(patch).length) return;
-    const fields = Object.keys(patch) as (keyof ProfileDTO)[];
-    if (fields.some((field) => savingFieldsRef.current.has(field))) return;
-    const next = { ...base, ...patch };
-    applyProfile(next); // 乐观更新，失败回滚
-    fields.forEach((field) => savingFieldsRef.current.add(field));
+  async function savePatch(patch: Partial<ProfileDTO>): Promise<boolean> {
+    if (!savesRef.current) return false;
     activeSavesRef.current += 1;
     setBusy(true);
     setErr('');
     try {
-      const updated = await api<ProfileDTO>('/api/profile', {
-        method: 'PUT',
-        json: patch,
-      });
-      // Keep drafts for other fields. Only the submitted keys come from the
-      // server response; this prevents saving one item from resetting another.
-      const current = profileRef.current ?? next;
-      const saved = { ...current, updatedAt: updated.updatedAt };
-      for (const key of Object.keys(patch) as (keyof ProfileDTO)[]) {
-        if (Object.is(current[key], next[key])) Object.assign(saved, { [key]: updated[key] });
-      }
-      applyProfile(saved);
-      await AsyncStorage.setItem('pp_nickname', updated.nickname);
-      flashSaved();
-    } catch (e) {
-      const current = profileRef.current ?? base;
-      const restored = { ...current };
-      for (const key of Object.keys(patch) as (keyof ProfileDTO)[]) {
-        if (Object.is(current[key], next[key])) Object.assign(restored, { [key]: base[key] });
-      }
-      applyProfile(restored);
-      setErr(e instanceof Error ? e.message : '保存失败');
+      const saved = await savesRef.current.save(patch);
+      if (saved && activeSavesRef.current === 1) flashSaved();
+      return saved;
     } finally {
-      fields.forEach((field) => savingFieldsRef.current.delete(field));
       activeSavesRef.current -= 1;
       setBusy(activeSavesRef.current > 0);
     }
@@ -204,8 +168,10 @@ export default function ProfileEdit() {
     if (debounceTimersRef.current[key]) {
       clearTimeout(debounceTimersRef.current[key]);
     }
+    debouncePatchesRef.current[key] = patch;
     debounceTimersRef.current[key] = setTimeout(() => {
       delete debounceTimersRef.current[key];
+      delete debouncePatchesRef.current[key];
       savePatch(patch);
     }, delay);
   }
@@ -215,24 +181,41 @@ export default function ProfileEdit() {
       clearTimeout(debounceTimersRef.current[key]);
       delete debounceTimersRef.current[key];
     }
-    savePatch(patch);
+    delete debouncePatchesRef.current[key];
+    return savePatch(patch);
   }
 
   function handleWeeklyHoursChange(val: string) {
     setWeeklyHoursDraft(val);
+    weeklyHoursDraftRef.current = val;
+    clearTimeout(debounceTimersRef.current.weeklyHours);
+    delete debounceTimersRef.current.weeklyHours;
+    delete debouncePatchesRef.current.weeklyHours;
     const num = Number(val);
-    if (Number.isInteger(num) && num >= 1 && num <= 80) {
+    if (weeklyHoursSchema.safeParse(num).success) {
       debounceSave('weeklyHours', { weeklyHours: num });
     }
   }
 
   function commitWeeklyHours() {
-    const num = Number(weeklyHoursDraft);
-    if (!Number.isInteger(num) || num < 1 || num > 80) {
-      if (weeklyHoursDraft.trim()) setErr('每周时长需为 1-80 小时');
-      return;
+    const num = Number(weeklyHoursDraftRef.current);
+    if (!weeklyHoursSchema.safeParse(num).success) {
+      setErr(`每周时长需为 ${MIN_WEEKLY_HOURS}-${MAX_WEEKLY_HOURS} 小时的整数`);
+      return false;
     }
     commitField('weeklyHours', { weeklyHours: num });
+    return true;
+  }
+
+  async function finishEditing() {
+    if (finishing || !commitWeeklyHours()) return;
+    setFinishing(true);
+    Keyboard.dismiss();
+    for (const [key, patch] of Object.entries(debouncePatchesRef.current)) commitField(key, patch);
+    const saved = await savesRef.current?.flush();
+    setFinishing(false);
+    if (saved) router.back();
+    else setErr('部分资料未保存，请重新修改后重试');
   }
 
   if (loading) return <Loading />;
@@ -249,7 +232,7 @@ export default function ProfileEdit() {
   const inputSt = { ...SF.input, paddingHorizontal: 12, paddingVertical: 10, fontSize: fs(13), color: C.ink };
 
   return (
-    <View style={{ flex: 1, ...SF.page }}>
+    <KeyboardAvoidingView style={{ flex: 1, ...SF.page }} behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined}>
       {/* 顶部浮动保存状态条：滚动时依然可见 */}
       {busy || msg ? (
         <View
@@ -287,7 +270,17 @@ export default function ProfileEdit() {
         </View>
       ) : null}
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingTop: 54, paddingBottom: 40 }}>
+      <ScrollView
+        ref={scrollRef}
+        pointerEvents={finishing ? 'none' : 'auto'}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingTop: 54, paddingBottom: 40 }}
+        keyboardShouldPersistTaps="handled"
+        scrollsChildToFocus
+        onScroll={(event) => { scrollOffsetRef.current = event.nativeEvent.contentOffset.y; }}
+        scrollEventThrottle={16}
+        onLayout={() => requestAnimationFrame(revealFocusedInput)}
+      >
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={{ fontSize: 20, fontWeight: '800', color: C.ink }}>个人信息</Text>
@@ -298,15 +291,10 @@ export default function ProfileEdit() {
           ) : null}
         </View>
         <TouchableOpacity
-          onPress={() => {
-            Object.entries(debounceTimersRef.current).forEach(([k, t]) => {
-              clearTimeout(t);
-              delete debounceTimersRef.current[k];
-            });
-            router.back();
-          }}
+          disabled={finishing}
+          onPress={finishEditing}
         >
-          <Text style={{ fontSize: 13, color: C.accent, fontWeight: '700' }}>完成</Text>
+          <Text style={{ fontSize: 13, color: C.accent, fontWeight: '700' }}>{finishing ? '保存中…' : '完成'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -338,6 +326,7 @@ export default function ProfileEdit() {
         <View>
           <Text style={s.label}>昵称</Text>
           <TextInput
+            {...focusProps('nickname')}
             style={inputSt}
             value={profile.nickname}
             onChangeText={(v) => { applyProfile({ ...profile, nickname: v }); debounceSave('nickname', { nickname: v }); }}
@@ -352,6 +341,7 @@ export default function ProfileEdit() {
           <View style={{ flex: 1 }}>
             <Text style={s.label}>学校</Text>
             <TextInput
+              {...focusProps('school')}
               style={inputSt}
               value={profile.school ?? ''}
               onChangeText={(v) => { applyProfile({ ...profile, school: v }); debounceSave('school', { school: v }); }}
@@ -365,6 +355,7 @@ export default function ProfileEdit() {
           <View style={{ flex: 1 }}>
             <Text style={s.label}>专业</Text>
             <TextInput
+              {...focusProps('major')}
               style={inputSt}
               value={profile.major ?? ''}
               onChangeText={(v) => { applyProfile({ ...profile, major: v }); debounceSave('major', { major: v }); }}
@@ -400,7 +391,7 @@ export default function ProfileEdit() {
         {/* 预计毕业时间：年月选择器 */}
         <View>
           <Text style={s.label}>预计毕业时间（年月）</Text>
-          <TouchableOpacity style={[inputSt, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]} onPress={() => setMonthPickerOpen(true)}>
+          <TouchableOpacity style={[inputSt, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]} onPress={() => { Keyboard.dismiss(); setMonthPickerOpen(true); }}>
             <Text style={{ fontSize: 13, color: gradYM ? C.ink : C.slate2 }}>{gradYM || '点击选择（如 2028-06）'}</Text>
             <Icon name="calendar" size={16} color={C.slate2} />
           </TouchableOpacity>
@@ -447,6 +438,7 @@ export default function ProfileEdit() {
         <View>
           <Text style={s.label}>目标岗位</Text>
           <TextInput
+            {...focusProps('targetRole')}
             style={inputSt}
             value={profile.targetRole}
             onChangeText={(v) => { applyProfile({ ...profile, targetRole: v }); debounceSave('targetRole', { targetRole: v }); }}
@@ -472,28 +464,30 @@ export default function ProfileEdit() {
         <View>
           <Text style={s.label}>每周可投入时间（小时）</Text>
           <TextInput
+            {...focusProps('weeklyHours')}
             style={inputSt}
             value={weeklyHoursDraft}
             onChangeText={handleWeeklyHoursChange}
             onBlur={commitWeeklyHours}
             onSubmitEditing={commitWeeklyHours}
             keyboardType="number-pad"
-            maxLength={2}
+            maxLength={3}
             placeholder="例如 8"
             placeholderTextColor={C.slate2}
             returnKeyType="done"
           />
+          <Text style={{ fontSize: fs(11), color: C.slate2, marginTop: 6 }}>{MIN_WEEKLY_HOURS}-{MAX_WEEKLY_HOURS} 小时 / 周</Text>
         </View>
       </View>
 
+    </ScrollView>
       <MonthPicker
         visible={monthPickerOpen}
         value={gradYM}
         onClose={() => setMonthPickerOpen(false)}
         onPick={(ym) => savePatch({ graduationDate: `${ym}-01` })}
       />
-    </ScrollView>
-  </View>
+  </KeyboardAvoidingView>
 );
 }
 

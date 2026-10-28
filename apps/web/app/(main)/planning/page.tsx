@@ -6,7 +6,7 @@ import { Empty, ErrorState, Tag, PageHeader } from '@/components/ui';
 import { VersionCompare } from '@/components/charts';
 import { Ic } from '@/components/Icon';
 import type { ProfileDTO, RoadmapVersionSummary, RoadmapDiff, RoadmapDTO } from '@pathpilot/shared';
-import { CAREER_PATHS, CAREER_PATH_LABELS } from '@pathpilot/shared';
+import { CAREER_PATHS, CAREER_PATH_LABELS, MIN_WEEKLY_HOURS, MAX_WEEKLY_HOURS } from '@pathpilot/shared';
 
 export default function PlanningPage() {
   const [profile, setProfile] = useState<ProfileDTO | null>(null);
@@ -166,10 +166,10 @@ export default function PlanningPage() {
             <label className="pp-label">
               每周可投入时间:<span className="num ml-1 text-base font-bold text-accent">{weekly} 小时</span>
             </label>
-            <input type="range" min={2} max={30} value={weekly} onChange={(e) => setWeekly(Number(e.target.value))} className="w-full accent-accent" />
+            <input type="range" min={MIN_WEEKLY_HOURS} max={MAX_WEEKLY_HOURS} step={1} value={weekly} onChange={(e) => setWeekly(Number(e.target.value))} className="w-full accent-accent" />
             <div className="num flex justify-between text-[10px] text-slate-2">
-              <span>2h</span>
-              <span>30h</span>
+              <span>{MIN_WEEKLY_HOURS}h</span>
+              <span>{MAX_WEEKLY_HOURS}h</span>
             </div>
           </div>
           <div className="mb-4">
