@@ -37,6 +37,8 @@ export default function TasksTab() {
     Promise.all([api<RoadmapTaskDTO[]>('/api/tasks'), api<{ grade?: string } | null>('/api/profile').catch(() => null)])
       .then(([t, p]) => {
         setTasks(t);
+        // 冲突后刷新详情的版本号，让保留的编辑草稿可以再次提交。
+        setDetail((current) => current ? t.find((task) => task.id === current.id) ?? null : null);
         // 共享的年级→学期映射；profile 不可用时回退到 FALLBACK_SEMESTER，避免「本学期」视图恒空
         const grade = p?.grade as keyof typeof GRADE_TO_CURRENT_SEMESTER | undefined;
         setCurSemester(grade ? GRADE_TO_CURRENT_SEMESTER[grade] ?? FALLBACK_SEMESTER : FALLBACK_SEMESTER);
@@ -58,9 +60,11 @@ export default function TasksTab() {
       const updated = await api<RoadmapTaskDTO>(`/api/tasks/${task.id}`, { method: 'PATCH', json: { ...patch, expectedUpdatedAt: task.updatedAt } });
       setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
       setDetail((d) => (d && d.id === updated.id ? updated : d));
+      return true;
     } catch (e) {
       setSyncFail(e instanceof Error ? e.message : '未同步：更新失败，请重试');
       load();
+      return false;
     }
   }
 
@@ -85,8 +89,7 @@ export default function TasksTab() {
 
   async function saveDescription() {
     if (!detail || descDraft === null || !descDraft.trim()) return;
-    await update(detail, { description: descDraft.trim() });
-    setDescDraft(null);
+    if (await update(detail, { description: descDraft.trim() })) setDescDraft(null);
   }
 
   function removeTask(task: RoadmapTaskDTO) {
@@ -289,6 +292,7 @@ export default function TasksTab() {
                 <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 28 }} keyboardShouldPersistTaps="handled">
                   <View style={{ width: 40, height: 4, borderRadius: 999, backgroundColor: C.line, alignSelf: 'center', marginBottom: 12 }} />
                   <Text style={{ fontSize: 16, fontWeight: '800', color: C.ink, marginBottom: 8 }}>{detail.title}</Text>
+                  {syncFail ? <Text style={{ color: C.amber, fontSize: fs(12), marginBottom: 12 }}>{syncFail}</Text> : null}
 
                   {/* 任务说明（可编辑） */}
                   {descDraft === null ? (

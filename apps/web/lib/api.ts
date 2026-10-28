@@ -1,6 +1,7 @@
 'use client';
 // 统一 API 客户端：JWT 注入、401 跳登录、统一错误格式（PRD §9）
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'https://pathpilot.070320.xyz';
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL
+  ?? (process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : 'https://pathpilot.070320.xyz');
 
 export class ApiError extends Error {
   constructor(public code: string, message: string, public status: number) {

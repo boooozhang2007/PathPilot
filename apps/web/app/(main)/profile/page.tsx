@@ -90,6 +90,7 @@ export default function ProfilePage() {
     setSaving(true);
     setMsg('');
     setErr('');
+    const submittedFrom = profile;
     try {
       const updated = await api<ProfileDTO>('/api/profile', { method: 'PUT', json: p });
       // Keep other fields currently being edited locally. The API response contains
@@ -98,7 +99,9 @@ export default function ProfilePage() {
         if (!current) return updated;
         const merged = { ...current, updatedAt: updated.updatedAt };
         for (const key of Object.keys(p) as (keyof ProfileDTO)[]) {
-          if (Object.is(current[key], p[key])) Object.assign(merged, { [key]: updated[key] });
+          if (Object.is(current[key], p[key]) || Object.is(current[key], submittedFrom?.[key])) {
+            Object.assign(merged, { [key]: updated[key] });
+          }
         }
         return merged;
       });

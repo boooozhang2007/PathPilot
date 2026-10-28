@@ -257,7 +257,6 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
       },
       streamFn: models.streamSimple.bind(models) as never,
       beforeToolCall: async () => {
-        totalToolCalls++;
         if (totalToolCalls > config.agentLimits.maxToolCalls) {
           outOfBudget = true;
           return { block: true, reason: '已达到工具调用次数上限，请直接给出最终回答', terminate: true };
@@ -283,6 +282,8 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
         }
       }
       if (event.type === 'tool_execution_start') {
+        totalToolCalls++;
+        if (totalToolCalls > config.agentLimits.maxToolCalls) outOfBudget = true;
         send({ type: 'tool_start', name: (event as { toolName: string }).toolName });
       }
       if (event.type === 'tool_execution_end') {

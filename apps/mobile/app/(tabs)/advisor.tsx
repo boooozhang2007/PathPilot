@@ -141,22 +141,34 @@ export default function AdvisorTab() {
   }
 
   async function remove(s: ChatSessionSummaryDTO) {
-    await api(`/api/agent/sessions/${s.id}`, { method: 'DELETE' }).catch(() => {});
-    setSessions((prev) => prev.filter((x) => x.id !== s.id));
-    if (s.id === sessionId) newChat();
+    try {
+      await api(`/api/agent/sessions/${s.id}`, { method: 'DELETE' });
+      setSessions((prev) => prev.filter((x) => x.id !== s.id));
+      if (s.id === sessionIdRef.current) newChat();
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : t('deleteFailed'));
+    }
   }
 
   /** 批量删除所选会话 */
   async function removeSelected() {
     const ids = [...selected];
     if (!ids.length) return;
+    const deleted = new Set<number>();
     for (const id of ids) {
-      await api(`/api/agent/sessions/${id}`, { method: 'DELETE' }).catch(() => {});
+      try {
+        await api(`/api/agent/sessions/${id}`, { method: 'DELETE' });
+        deleted.add(id);
+      } catch {
+        // 保留失败项，允许重试，不能把未删除的数据从列表中隐藏。
+      }
     }
-    setSessions((prev) => prev.filter((x) => !selected.has(x.id)));
-    if (sessionId != null && selected.has(sessionId)) newChat();
-    setSelected(new Set());
-    setSelectMode(false);
+    setSessions((prev) => prev.filter((x) => !deleted.has(x.id)));
+    if (sessionIdRef.current != null && deleted.has(sessionIdRef.current)) newChat();
+    const failed = ids.filter((id) => !deleted.has(id));
+    setSelected(new Set(failed));
+    setSelectMode(failed.length > 0);
+    setErr(failed.length ? t('deleteFailed') : '');
   }
 
   async function copyMessage(m: ChatMessageDTO) {
@@ -572,6 +584,7 @@ export default function AdvisorTab() {
               </View>
             )}
 
+            {err ? <Text style={{ color: C.amber, fontSize: fs(12), paddingHorizontal: 16, paddingBottom: 8 }}>{err}</Text> : null}
             <ScrollView contentContainerStyle={{ paddingHorizontal: 10, paddingBottom: 30 }}>
               {sessions.length === 0 && <Text style={{ fontSize: fs(12), color: C.slate2, textAlign: 'center', paddingVertical: 30 }}>{t('emptyHistory')}</Text>}
               {(['today', 'yesterday', 'earlier'] as const).map((g) =>

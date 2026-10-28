@@ -30,12 +30,14 @@
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^3.2.7"
   },
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
-    "prebuild": "expo prebuild -p android"
+    "prebuild": "expo prebuild -p android",
+    "test": "vitest run"
   },
   "private": true
 }

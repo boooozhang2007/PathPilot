@@ -16,7 +16,7 @@
     "dev:web": "npm run dev -w @pathpilot/web",
     "dev:mobile": "npm run start -w @pathpilot/mobile",
     "build": "npm run build -w @pathpilot/shared && npm run build -w @pathpilot/server && npm run build -w @pathpilot/web",
-    "test": "npm run test -w @pathpilot/shared && npm run test -w @pathpilot/server",
+    "test": "npm run test -w @pathpilot/shared && npm run test -w @pathpilot/server && npm run test -w @pathpilot/web && npm run test -w @pathpilot/mobile",
     "db:migrate": "npm run db:migrate -w @pathpilot/server",
     "db:seed": "npm run db:seed -w @pathpilot/server"
   }

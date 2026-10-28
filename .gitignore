@@ -20,7 +20,7 @@ apps/server/data/
 keystore.properties
 
 # Pi framework source checkout (reference only, install from npm)
-pi/
+/pi/
 
 # misc
 .DS_Store

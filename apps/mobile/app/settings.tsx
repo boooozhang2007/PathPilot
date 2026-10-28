@@ -175,15 +175,19 @@ export default function Settings() {
   }
 
   function deleteAccount() {
-    Alert.alert(t('deleteAccount'), t('deleteAllChatsConfirm'), [
+    Alert.alert(t('deleteAccount'), t('deleteAccountConfirm'), [
       { text: t('cancel'), style: 'cancel' },
       {
         text: t('confirm'),
         style: 'destructive',
         onPress: async () => {
-          await api('/api/account', { method: 'DELETE' }).catch(() => {});
-          await clearAuth();
-          router.replace('/login');
+          try {
+            await api('/api/account', { method: 'DELETE' });
+            await clearAuth();
+            router.replace('/login');
+          } catch (error) {
+            toast(error instanceof Error ? error.message : t('deleteFailed'));
+          }
         },
       },
     ]);
@@ -196,8 +200,12 @@ export default function Settings() {
         text: t('confirm'),
         style: 'destructive',
         onPress: async () => {
-          await api('/api/agent/sessions', { method: 'DELETE' }).catch(() => {});
-          toast(t('save'));
+          try {
+            await api('/api/agent/sessions', { method: 'DELETE' });
+            toast(t('deleted'));
+          } catch (error) {
+            toast(error instanceof Error ? error.message : t('deleteFailed'));
+          }
         },
       },
     ]);

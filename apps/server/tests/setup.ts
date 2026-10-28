@@ -2,6 +2,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { afterAll } from 'vitest';
 
 const dir = mkdtempSync(join(tmpdir(), 'pathpilot-test-'));
 process.env.DB_PATH = join(dir, 'test.db');
@@ -18,8 +19,9 @@ const { seedIfNeeded } = await import('../src/db/seed.js');
 migrate(getDb().sqlite, MIGRATIONS_DIR);
 await seedIfNeeded();
 
-process.on('exit', () => {
+afterAll(() => {
   try {
+    getDb().sqlite.close();
     rmSync(dir, { recursive: true, force: true });
   } catch {
     /* ignore */

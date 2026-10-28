@@ -6,7 +6,8 @@
     "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start -p 3001",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest run"
   },
   "dependencies": {
     "@pathpilot/shared": "*",
@@ -22,7 +23,10 @@
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.5",
+    "@types/react-test-renderer": "19.1.0",
+    "react-test-renderer": "19.3.1",
     "tailwindcss": "^4.1.8",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.7"
   }
 }

@@ -84,6 +84,12 @@ describe('全模块 Agent 工具集', () => {
     expect(skills.some((s) => s.name === 'JavaScript' && s.evidenceStatus === 'to_verify')).toBe(true);
   });
 
+  it('档案：模型声称已掌握但没有提供证据时保留待验证', async () => {
+    const tool = writeTools().find((t) => t.name === 'upsert_skill')!;
+    await call(tool, { skill_name: 'Redis', level: 3, evidence_status: 'evidenced' });
+    expect((await listProfileSkills(demoUserId)).find((s) => s.name === 'Redis')?.evidenceStatus).toBe('to_verify');
+  });
+
   it('档案：create_experience 记录真实经历', async () => {
     const tool = writeTools().find((t) => t.name === 'create_experience')!;
     const res = await call<{ saved: string }>(tool, { type: 'project', title: '课程设计：图书管理系统', technologies: ['Java', 'MySQL'] });
@@ -121,6 +127,27 @@ describe('全模块 Agent 工具集', () => {
     const ver = buildAgentTools(demoUserId).find((t) => t.name === 'get_roadmap_versions')!;
     const versions = await call<{ version: number }[]>(ver, {});
     expect(versions.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('规划：添加、编辑和删除任务同步真实任务与规划内容', async () => {
+    const add = writeTools().find((t) => t.name === 'roadmap_add_task')!;
+    const edit = writeTools().find((t) => t.name === 'roadmap_update_task')!;
+    const remove = writeTools().find((t) => t.name === 'roadmap_remove_task')!;
+    const result = await call<{ added: { id: number } }>(add, { title: '工具新建任务', semester: 3, description: '编写真实项目测试', estimated_hours: 2, priority: 'medium' });
+    const changed = await call<{ updated: { title: string; estimatedHours: number } }>(edit, { task_id: result.added.id, title: '工具编辑任务', estimated_hours: 3 });
+    expect(changed.updated.title).toBe('工具编辑任务');
+    expect(changed.updated.estimatedHours).toBe(3);
+    const current = buildAgentTools(demoUserId).find((t) => t.name === 'get_current_roadmap')!;
+    const snapshot = await call<{ content: { tasks: { title: string }[] } }>(current, {});
+    expect(snapshot.content.tasks.some((t) => t.title === '工具编辑任务')).toBe(true);
+    await call(remove, { task_id: result.added.id });
+    expect((await listRoadmapTasks(demoUserId)).some((t) => t.id === result.added.id)).toBe(false);
+  });
+
+  it('工具被取消时不会执行写入', async () => {
+    const tool = writeTools().find((t) => t.name === 'upsert_skill')!;
+    await expect(tool.execute('test', { skill_name: 'NeverAdded', level: 1, evidence_status: 'to_verify' }, AbortSignal.abort())).rejects.toThrow('取消');
+    expect((await listProfileSkills(demoUserId)).some((s) => s.name === 'NeverAdded')).toBe(false);
   });
 
   it('规划：create_roadmap_revision 生成新版本且保留已完成任务（PRD 4.6）', async () => {

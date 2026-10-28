@@ -95,6 +95,7 @@ export function AgentChat({
   const abortRef = useRef<AbortController | null>(null);
   const syncTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
+  const viewRevisionRef = useRef(0);
   // UI 杂项
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
@@ -124,9 +125,10 @@ export function AgentChat({
   useEffect(() => {
     if (full) {
       loadSessions();
+      const revision = viewRevisionRef.current;
       api<{ sessionId: number; messages: ChatMessageDTO[] } | null>('/api/agent/session')
         .then((s) => {
-          if (s) {
+          if (s && mountedRef.current && viewRevisionRef.current === revision) {
             sessionIdRef.current = s.sessionId;
             setSessionId(s.sessionId);
             setMessages(s.messages);
@@ -168,7 +170,11 @@ export function AgentChat({
   }
 
   function newChat() {
+    viewRevisionRef.current += 1;
     abortRef.current?.abort();
+    abortRef.current = null;
+    if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
+    setBusy(false);
     sessionIdRef.current = undefined;
     setSessionId(undefined);
     setMessages([]);
@@ -180,17 +186,19 @@ export function AgentChat({
   }
 
   async function openSession(id: number) {
-    if (busy) return;
+    if (abortRef.current) return;
     setSidebarOpen(false);
     if (id === sessionId) return;
+    const revision = ++viewRevisionRef.current;
     try {
       const msgs = await api<ChatMessageDTO[]>(`/api/agent/session/${id}`);
+      if (!mountedRef.current || viewRevisionRef.current !== revision) return;
       sessionIdRef.current = id;
       setSessionId(id);
       setMessages(msgs);
       setErr('');
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '加载会话失败');
+      if (mountedRef.current && viewRevisionRef.current === revision) setErr(e instanceof Error ? e.message : '加载会话失败');
     }
   }
 
@@ -223,7 +231,14 @@ export function AgentChat({
   /** 流式发送;regenerateFrom 时由服务端截断该回复及其后的消息后重答，避免用户消息重复入库 */
   async function send(text?: string, opts?: { regenerateFrom?: number; truncateTo?: number }) {
     const message = (text ?? input).trim();
-    if (!message || busy) return;
+    if (!message || abortRef.current) return;
+    viewRevisionRef.current += 1;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const isCurrent = () => mountedRef.current && abortRef.current === controller;
+    // Keep this request's accumulated reply outside React's deferred state queue.
+    // React may execute a state updater after the stream has already completed.
+    let streamState: Streaming = { text: '', thinking: '', tools: [], startedAt: Date.now() };
     setInput('');
     requestAnimationFrame(() => {
       if (taRef.current) taRef.current.style.height = 'auto';
@@ -232,14 +247,12 @@ export function AgentChat({
     setNotice('');
     setBusy(true);
     setAtBottom(true);
-    setStreaming({ text: '', thinking: '', tools: [], startedAt: Date.now() });
+    setStreaming(streamState);
     let activeSessionId = sessionIdRef.current;
     setMessages((prev) => {
       const base = opts && opts.truncateTo !== undefined ? prev.slice(0, opts.truncateTo) : prev;
       return [...base, { id: Date.now(), sessionId: activeSessionId ?? 0, role: 'user', content: message, engine: null, toolCalls: [], createdAt: new Date().toISOString() }];
     });
-    const controller = new AbortController();
-    abortRef.current = controller;
     /** 从服务端恢复消息（请求失败/中断后对齐真实 id 与内容） */
     const syncSession = async () => {
       if (!activeSessionId) return;
@@ -258,6 +271,7 @@ export function AgentChat({
         body: JSON.stringify({ sessionId: activeSessionId, message, autoWrite, ...(opts?.regenerateFrom ? { regenerateFrom: opts.regenerateFrom } : {}) }),
         signal: controller.signal,
       });
+      if (!isCurrent()) return;
       if (res.status === 401 && typeof window !== 'undefined') {
         location.href = '/login';
         return;
@@ -272,6 +286,7 @@ export function AgentChat({
       let hadError = false;
       for (;;) {
         const { done, value } = await reader.read();
+        if (!isCurrent()) return;
         if (done) break;
         buf += decoder.decode(value, { stream: true });
         const parts = buf.split('\n\n');
@@ -290,8 +305,8 @@ export function AgentChat({
             sessionIdRef.current = ev.sessionId;
             setSessionId(ev.sessionId);
           }
-          setStreaming((st) => {
-            const cur = st ?? { text: '', thinking: '', tools: [], startedAt: Date.now() };
+          streamState = (() => {
+            const cur = streamState;
             switch (ev.type) {
               case 'thinking':
                 return { ...cur, thinking: cur.thinking + (ev.delta ?? '') };
@@ -316,7 +331,8 @@ export function AgentChat({
               default:
                 return cur;
             }
-          });
+          })();
+          setStreaming(streamState);
           if (ev.type === 'error') {
             hadError = true;
             setErr(ev.delta ?? '生成出错');
@@ -328,45 +344,39 @@ export function AgentChat({
           }
         }
       }
-      // 先取出最终消息到局部变量,updater 内不做 setState 副作用(StrictMode 下 updater 可能执行两次)
-      let finalMessage: ChatMessageDTO | null = null;
-      setStreaming((st) => {
-        if (st && (st.text.trim() || st.thinking.trim())) {
-          finalMessage = {
-            id: doneMessageId ?? Date.now(),
-            sessionId: activeSessionId ?? 0,
-            role: 'assistant',
-            content: st.text.trim() || '（模型未返回内容）',
-            engine: doneEngine ?? null,
-            thinking: st.thinking.trim() || null,
-            toolCalls: st.tools.filter((t) => t.status === 'done').map((t) => ({ name: t.name, summary: t.summary ?? '' })),
-            createdAt: new Date().toISOString(),
-          };
-        }
-        return null;
-      });
-      if (finalMessage) setMessages((prev) => [...prev, finalMessage!]);
+      if (streamState.text.trim() || streamState.thinking.trim()) {
+        const finalMessage: ChatMessageDTO = {
+          id: doneMessageId ?? Date.now(),
+          sessionId: activeSessionId ?? 0,
+          role: 'assistant',
+          content: streamState.text.trim() || '（模型未返回内容）',
+          engine: doneEngine ?? null,
+          thinking: streamState.thinking.trim() || null,
+          toolCalls: streamState.tools.filter((t) => t.status === 'done').map((t) => ({ name: t.name, summary: t.summary ?? '' })),
+          createdAt: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, finalMessage]);
+      }
+      setStreaming(null);
       if (fallback && !hadError && !fallback.startsWith('已停止')) setNotice(fallback);
     } catch (e) {
+      if (!isCurrent()) return;
       if (e instanceof DOMException && e.name === 'AbortError') {
         // 用户停止:保留已生成的部分
-        let partialMessage: ChatMessageDTO | null = null;
-        setStreaming((st) => {
-          if (st && (st.text.trim() || st.thinking.trim())) {
-            partialMessage = {
-              id: Date.now(),
-              sessionId: activeSessionId ?? 0,
-              role: 'assistant',
-              content: st.text || '已停止生成',
-              engine: null,
-              thinking: st.thinking.trim() || null,
-              toolCalls: st.tools.filter((t) => t.status === 'done').map((t) => ({ name: t.name, summary: t.summary ?? '' })),
-              createdAt: new Date().toISOString(),
-            };
-          }
-          return null;
-        });
-        if (partialMessage) setMessages((prev) => [...prev, partialMessage!]);
+        if (streamState.text.trim() || streamState.thinking.trim()) {
+          const partialMessage: ChatMessageDTO = {
+            id: Date.now(),
+            sessionId: activeSessionId ?? 0,
+            role: 'assistant',
+            content: streamState.text || '已停止生成',
+            engine: null,
+            thinking: streamState.thinking.trim() || null,
+            toolCalls: streamState.tools.filter((t) => t.status === 'done').map((t) => ({ name: t.name, summary: t.summary ?? '' })),
+            createdAt: new Date().toISOString(),
+          };
+          setMessages((prev) => [...prev, partialMessage]);
+        }
+        setStreaming(null);
         // 服务端也已中止并落库：稍后同步一次，用真实消息 id 替换本地临时 id（供重新生成使用）
         if (mountedRef.current) {
           if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
@@ -382,9 +392,11 @@ export function AgentChat({
         if (mountedRef.current) await syncSession();
       }
     } finally {
-      abortRef.current = null;
-      setBusy(false);
-      loadSessions();
+      if (isCurrent()) {
+        abortRef.current = null;
+        setBusy(false);
+        loadSessions();
+      }
     }
   }
 

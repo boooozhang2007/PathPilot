@@ -75,4 +75,14 @@ describe('Pi Agent 运行时（fauxProvider）', () => {
     const { models, model } = setupFaux([fauxAssistantMessage('x', { stopReason: 'error', errorMessage: 'quota' })]);
     await expect(runAgentWith(models, model, { systemPrompt: 't', prompt: 'p' })).rejects.toThrow(/quota|模型返回错误/);
   });
+
+  it('取消后不会把历史中的旧回答误认为本次模型结果', async () => {
+    const { models, model } = setupFaux([fauxAssistantMessage('不应生成的新回答')]);
+    const out = await runAgentWith(models, model, {
+      systemPrompt: 't', prompt: '新问题', signal: AbortSignal.abort(),
+      history: [fauxAssistantMessage('这是上一轮旧回答')],
+    });
+    expect(out.aborted).toBe(true);
+    expect(out.text).toBe('');
+  });
 });

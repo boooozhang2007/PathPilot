@@ -78,9 +78,13 @@ export default function MineTab() {
         text: '确认删除',
         style: 'destructive',
         onPress: async () => {
-          await api('/api/account', { method: 'DELETE' }).catch(() => {});
-          await clearAuth();
-          router.replace('/login');
+          try {
+            await api('/api/account', { method: 'DELETE' });
+            await clearAuth();
+            router.replace('/login');
+          } catch (error) {
+            Alert.alert('删除失败', error instanceof Error ? error.message : '账号未删除，请重试');
+          }
         },
       },
     ]);
@@ -91,7 +95,7 @@ export default function MineTab() {
   const professional = skills.filter((s) => skillGroupOf(s.category) === 'professional');
   const general = skills.filter((s) => skillGroupOf(s.category) === 'general');
 
-  const Avatar = ({ size = 52 }: { size?: number }) =>
+  const renderAvatar = (size = 52) =>
     profile?.avatar ? (
       <Image source={{ uri: profile.avatar }} style={{ width: size, height: size, borderRadius: 999 }} />
     ) : (
@@ -100,7 +104,7 @@ export default function MineTab() {
       </View>
     );
 
-  const SkillRow = ({ s }: { s: ProfileSkillDTO }) => (
+  const renderSkillRow = (s: ProfileSkillDTO) => (
     <View key={s.id} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: C.line + '70' }}>
       <Text style={{ fontSize: 12, fontWeight: '600', color: C.ink }}>{s.name} · Lv{s.level}</Text>
       <Text style={{ fontSize: 11, color: C.slate }}>{EVIDENCE_STATUS_LABELS[s.evidenceStatus]}</Text>
@@ -112,7 +116,7 @@ export default function MineTab() {
       {/* 账号卡：点击进入个人信息修改 */}
       <TouchableOpacity onPress={() => !guest && router.push('/profile-edit')}>
         <Panel style={{ padding: 18, marginBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-          <Avatar />
+          {renderAvatar()}
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Text style={{ color: C.deepText, fontSize: 17, fontWeight: '800' }}>{guest ? '访客' : nickname}</Text>
@@ -150,9 +154,7 @@ export default function MineTab() {
                   <Icon name="layers" size={13} color={C.accent} />
                   <Text style={{ fontSize: fs(12), fontWeight: '700', color: C.accent }}>{SKILL_GROUP_LABELS.professional}（{professional.length}）</Text>
                 </View>
-                {professional.slice(0, 8).map((s) => (
-                  <SkillRow key={s.id} s={s} />
-                ))}
+                {professional.slice(0, 8).map(renderSkillRow)}
               </View>
             )}
             {general.length > 0 && (
@@ -161,9 +163,7 @@ export default function MineTab() {
                   <Icon name="chat" size={13} color={C.teal} />
                   <Text style={{ fontSize: fs(12), fontWeight: '700', color: C.teal }}>{SKILL_GROUP_LABELS.general}（{general.length}）</Text>
                 </View>
-                {general.slice(0, 8).map((s) => (
-                  <SkillRow key={s.id} s={s} />
-                ))}
+                {general.slice(0, 8).map(renderSkillRow)}
               </View>
             )}
             {skills.length > 8 && <Text style={{ fontSize: fs(11), color: C.slate2, marginTop: 6 }}>仅展示前 8 项，完整档案在 Web 端「能力档案」</Text>}

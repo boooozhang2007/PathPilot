@@ -13,11 +13,15 @@ PathPilot 是面向计算机专业学生的职业成长平台：从目标岗位�
 
 ```bash
 npm install
+# 复制环境模板到 apps/server/.env，并先填写非空的 JWT_SECRET
+cp .env.example apps/server/.env
 npm run dev:server
 npm run dev:web
 ```
 
 首次启动服务端会执行数据库迁移和基础数据初始化。服务端默认监听 `3000`，Web 默认监听 `3001`。
+
+开发模式下 Web 默认连接本地 API `http://localhost:3000`。连接其它后端时，在 `apps/web/.env.local` 设置 `NEXT_PUBLIC_API_URL`；生产构建默认连接线上 API。后端 `CORS_ORIGINS` 可配置允许的 Web 来源（逗号分隔），默认允许本地 `3001` 端口，部署时应填写实际 Web 域名。
 
 ## 配置
 
@@ -60,3 +64,4 @@ https://github.com/boooozhang2007/PathPilot/releases/tag/v1.3.2
 - [产品成熟度提升计划](./PRODUCT_MATURITY_PLAN.md)
 - [架构说明](./ARCHITECTURE.md)
 - [产品需求文档](./PRD.md)
+- [2026-10-28 测试与修复记录](./QA_REPORT_2026-10-28.md)

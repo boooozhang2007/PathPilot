@@ -222,6 +222,45 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   deferred: ['deferred', 'not_started', 'in_progress', 'done'],
 };
 
+/** Task links must stay inside one user's roadmap and form acyclic graphs. */
+async function validateTaskLinks(
+  userId: number,
+  roadmapId: number,
+  taskId: number | undefined,
+  input: { parentTaskId?: number | null; dependencyIds?: number[] }
+): Promise<void> {
+  if (input.parentTaskId === undefined && input.dependencyIds === undefined) return;
+  const rows = await db.select({ id: roadmapTasks.id, parentTaskId: roadmapTasks.parentTaskId, dependencyIds: roadmapTasks.dependencyIds })
+    .from(roadmapTasks).where(and(eq(roadmapTasks.userId, userId), eq(roadmapTasks.roadmapId, roadmapId)));
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  if (input.parentTaskId !== undefined && input.parentTaskId !== null) {
+    let parentId: number | null = input.parentTaskId;
+    const seen = new Set<number>();
+    while (parentId !== null) {
+      if (parentId === taskId || seen.has(parentId)) throw badRequest('父任务不能是自身或后代任务');
+      seen.add(parentId);
+      const parent = byId.get(parentId);
+      if (!parent) throw badRequest('父任务不存在或不属于当前规划');
+      parentId = parent.parentTaskId;
+    }
+  }
+  if (input.dependencyIds !== undefined) {
+    const visiting = new Set<number>();
+    const visited = new Set<number>();
+    const visit = (id: number): void => {
+      if (id === taskId || visiting.has(id)) throw badRequest('前置任务不能是自身或形成循环依赖');
+      if (visited.has(id)) return;
+      const dependency = byId.get(id);
+      if (!dependency) throw badRequest('前置任务不存在或不属于当前规划');
+      visiting.add(id);
+      for (const nextId of dependency.dependencyIds ?? []) visit(nextId);
+      visiting.delete(id);
+      visited.add(id);
+    };
+    for (const id of input.dependencyIds) visit(id);
+  }
+}
+
 /** 乐观锁校验：合并更新前在路由层做一次，避免多次刷新 updatedAt 导致误报 409 */
 export async function assertTaskVersion(userId: number, taskId: number, expectedUpdatedAt: string): Promise<void> {
   const rows = await db
@@ -261,12 +300,14 @@ export async function updateTask(
   const rows = await db.select().from(roadmapTasks).where(and(eq(roadmapTasks.id, taskId), eq(roadmapTasks.userId, userId))).limit(1);
   if (!rows[0]) throw notFound('任务不存在');
   const task = rows[0];
-  if (input.status === 'in_progress' && task.dependencyIds?.length) {
-    const depIds = [...new Set(task.dependencyIds)];
+  await validateTaskLinks(userId, task.roadmapId, taskId, input);
+  const dependencyIds = input.dependencyIds ?? task.dependencyIds ?? [];
+  if ((input.status ?? task.status) === 'in_progress' && dependencyIds.length) {
+    const depIds = [...new Set(dependencyIds)];
     const deps = await db
       .select({ id: roadmapTasks.id, status: roadmapTasks.status })
       .from(roadmapTasks)
-      .where(and(inArray(roadmapTasks.id, depIds), eq(roadmapTasks.userId, userId)));
+      .where(and(inArray(roadmapTasks.id, depIds), eq(roadmapTasks.userId, userId), eq(roadmapTasks.roadmapId, task.roadmapId)));
     if (deps.length !== depIds.length) throw badRequest('前置任务不存在或不属于当前用户');
     if (deps.some((d) => d.status !== 'done')) throw badRequest('请先完成前置任务');
   }
@@ -279,7 +320,8 @@ export async function updateTask(
   if (input.status === 'deferred' && !input.deferredReason && !task.deferredReason) {
     throw badRequest('延期任务必须填写原因');
   }
-  const now = new Date().toISOString();
+  // Even two writes in one millisecond must produce distinct versions.
+  const now = new Date(Math.max(Date.now(), Date.parse(task.updatedAt) + 1)).toISOString();
   const updated = await db
     .update(roadmapTasks)
     .set({
@@ -304,8 +346,10 @@ export async function updateTask(
       completedAt: input.status === 'done' ? (task.completedAt ?? now) : input.status ? null : task.completedAt,
       updatedAt: now,
     })
-    .where(and(eq(roadmapTasks.id, taskId), eq(roadmapTasks.userId, userId)))
+    .where(and(eq(roadmapTasks.id, taskId), eq(roadmapTasks.userId, userId),
+      input.expectedUpdatedAt ? eq(roadmapTasks.updatedAt, input.expectedUpdatedAt) : undefined))
     .returning();
+  if (!updated[0]) throw conflict('任务已被其他设备修改，请刷新后重试');
   await refreshParentTask(userId, updated[0].parentTaskId);
   // 内容字段变化时同步进规划 content.tasks
   if (input.title !== undefined || input.semester !== undefined || input.description !== undefined || input.estimatedHours !== undefined || input.deliverable !== undefined || input.acceptanceCriteria !== undefined) {
@@ -361,14 +405,7 @@ export async function addRoadmapTask(
 ): Promise<RoadmapTaskDTO> {
   const roadmap = await getActiveRoadmap(userId);
   if (!roadmap) throw badRequest('当前没有生效规划，请先让 AI 生成规划');
-  if (input.parentTaskId) {
-    const parent = await db
-      .select({ id: roadmapTasks.id })
-      .from(roadmapTasks)
-      .where(and(eq(roadmapTasks.id, input.parentTaskId), eq(roadmapTasks.userId, userId), eq(roadmapTasks.roadmapId, roadmap.id)))
-      .limit(1);
-    if (!parent[0]) throw badRequest('父任务不存在或不属于当前生效规划');
-  }
+  await validateTaskLinks(userId, roadmap.id, undefined, input);
   const now = new Date().toISOString();
   const inserted = await db
     .insert(roadmapTasks)

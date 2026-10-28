@@ -2,7 +2,7 @@ import 'dotenv/config';
 
 function requireEnv(name: string, fallback?: string): string {
   const v = process.env[name] ?? fallback;
-  if (v === undefined) throw new Error(`缺少环境变量 ${name}（参考 .env.example 配置）`);
+  if (v === undefined || v.trim().length === 0) throw new Error(`缺少环境变量 ${name}（参考 .env.example 配置）`);
   return v;
 }
 
@@ -12,7 +12,7 @@ export const config = {
   jwtExpiresIn: '7d',
   dbPath: process.env.DB_PATH ?? './data/pathpilot.db',
   /** CORS 允许来源（逗号分隔的环境变量白名单；无 Origin 的同源/非浏览器请求放行） */
-  corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173')
+  corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:3000,http://localhost:3001,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:5173')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
