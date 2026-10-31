@@ -55,3 +55,6 @@ apps/mobile/.playwright-mcp/
 # IDE / tool caches
 .qoder-credits/
 .claude/
+
+# Agent 本地工作记忆（项目数据，仅本地保留）
+.workbuddy/
