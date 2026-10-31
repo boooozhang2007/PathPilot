@@ -211,6 +211,7 @@ export default function MineTab() {
 
       {/* 设置 / 关于（DeepSeek 式分组） */}
       <SettingGroup>
+        <SettingRow icon={<Icon name="bell" size={16} color={C.ink} />} title="学习提醒" onPress={() => router.push('/reminders')} />
         <SettingRow icon={<Icon name="settings" size={16} color={C.ink} />} title="设置" onPress={() => router.push('/settings')} />
         <SettingRow icon={<Icon name="info" size={16} color={C.ink} />} title="关于 PathPilot" onPress={() => router.push('/about')} last />
       </SettingGroup>

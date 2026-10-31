@@ -271,3 +271,36 @@ export const appSettings = sqliteTable('app_settings', {
   value: text('value', { mode: 'json' }).notNull(),
   updatedAt: text('updated_at').notNull().$defaultFn(isoNow),
 });
+
+/** 学习提醒：任务到期提醒 / 每周总结（dedupe_key 防重复，dismiss 后不再展示） */
+export const reminders = sqliteTable(
+  'reminders',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    type: text('type').notNull(), // task_due | weekly_summary
+    dedupeKey: text('dedupe_key').notNull(),
+    title: text('title').notNull(),
+    message: text('message').notNull(),
+    taskId: integer('task_id'),
+    scheduledAt: text('scheduled_at').notNull(),
+    dismissedAt: text('dismissed_at'),
+    createdAt: text('created_at').notNull().$defaultFn(isoNow),
+  },
+  (t) => [index('reminders_user_idx').on(t.userId), uniqueIndex('reminders_user_dedupe_uq').on(t.userId, t.dedupeKey)]
+);
+
+/** 规划分享（只读链接）；同一规划同一时刻只保留一个有效分享 */
+export const roadmapShares = sqliteTable(
+  'roadmap_shares',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    roadmapId: integer('roadmap_id').notNull().references(() => roadmaps.id, { onDelete: 'cascade' }),
+    token: text('token').notNull(),
+    expiresAt: text('expires_at'),
+    revokedAt: text('revoked_at'),
+    createdAt: text('created_at').notNull().$defaultFn(isoNow),
+  },
+  (t) => [uniqueIndex('roadmap_shares_token_uq').on(t.token), index('roadmap_shares_roadmap_idx').on(t.roadmapId)]
+);
