@@ -183,8 +183,8 @@ export interface ChatMessageDTO {
   thinking?: string | null;
   /** 本次回复失败/被停止时的错误码（正常回复为 null） */
   errorCode?: string | null;
-  /** 工具调用链路（LLM 通道）：[{name, summary}] */
-  toolCalls: { name: string; summary: string }[];
+  /** 工具调用链路（LLM 通道）：[{name, summary, status}] */
+  toolCalls: { name: string; summary: string; status?: 'done' | 'error' }[];
   createdAt: string;
 }
 

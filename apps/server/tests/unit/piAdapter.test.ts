@@ -18,7 +18,7 @@ let baseUrl: string;
 let previous: LlmSettings;
 
 function stream(res: ServerResponse, delta: Record<string, unknown>, finishReason = 'stop') {
-  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'close' });
   const chunk = (change: Record<string, unknown>, finish: string | null) => ({
     id: 'chatcmpl-local-test',
     object: 'chat.completion.chunk',
@@ -38,6 +38,9 @@ function submit(res: ServerResponse, data: unknown) {
 }
 
 const server = createServer(async (req, res) => {
+  // 请求头到达即记录；取消可能抢在请求体读完之前，不能让超时断言受记录时机影响。
+  const request: RequestRecord = { path: req.url ?? '', headers: req.headers, body: {} };
+  requests.push(request);
   let body = '';
   try {
     for await (const part of req) body += part;
@@ -46,8 +49,7 @@ const server = createServer(async (req, res) => {
     if (req.destroyed) return;
     throw error;
   }
-  const request = { path: req.url ?? '', headers: req.headers, body: JSON.parse(body) as Record<string, unknown> };
-  requests.push(request);
+  request.body = JSON.parse(body) as Record<string, unknown>;
   respond(res, request);
 });
 
@@ -128,7 +130,7 @@ describe('Pi adapter with a local OpenAI-compatible server', () => {
 
   it('stops a hanging model request at its wall-clock limit', async () => {
     respond = (res) => {
-      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', Connection: 'close' });
       res.flushHeaders();
     };
     const { models, model } = await resolveModel();
@@ -142,7 +144,7 @@ describe('Pi adapter with a local OpenAI-compatible server', () => {
   it('propagates caller cancellation during a hanging request', async () => {
     const controller = new AbortController();
     respond = (res) => {
-      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', Connection: 'close' });
       res.flushHeaders();
       controller.abort();
     };

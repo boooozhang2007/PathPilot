@@ -11,6 +11,7 @@ import {
   buildAdvisorSystemPrompt,
   loadRecentHistory,
   saveAssistantError,
+  summarizeToolResult,
   tracedTools,
   truncateForRegenerate,
   type ToolTraceEntry,
@@ -29,6 +30,8 @@ export interface StreamEvent {
   delta?: string;
   name?: string;
   summary?: string;
+  /** tool_end：工具是否失败 */
+  isError?: boolean;
   engine?: 'pi-llm' | 'rules';
   model?: string;
   fallbackReason?: string;
@@ -228,6 +231,7 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
   };
 
   let thinkingText = '';
+  let streamedOutput = false;
   const attempt = async (): Promise<string> => {
     if (clientGone) return '';
     const { Agent } = await import('@earendil-works/pi-agent-core');
@@ -274,6 +278,7 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
       if (event.type === 'message_update') {
         const ev = (event as { assistantMessageEvent?: { type?: string; delta?: string } }).assistantMessageEvent;
         if (ev?.delta) {
+          streamedOutput = true;
           if (ev.type === 'thinking_delta') {
             thinkingText += ev.delta;
             send({ type: 'thinking', delta: ev.delta });
@@ -287,9 +292,9 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
         send({ type: 'tool_start', name: (event as { toolName: string }).toolName });
       }
       if (event.type === 'tool_execution_end') {
-        const e = event as { toolName: string; result?: { content?: { type?: string; text?: string }[] }; isError?: boolean };
+        const e = event as { toolName: string; result?: { content?: { type?: string; text?: string }[]; details?: unknown }; isError?: boolean };
         const text = e.result?.content?.find?.((c) => c.type === 'text')?.text ?? '';
-        send({ type: 'tool_end', name: e.toolName, summary: (e.isError ? '⚠ ' : '') + text.replace(/\s+/g, ' ').slice(0, 160) });
+        send({ type: 'tool_end', name: e.toolName, summary: summarizeToolResult(e.toolName, e.result?.details, text, !!e.isError), isError: !!e.isError });
       }
     });
 
@@ -338,7 +343,7 @@ export async function streamChat(req: FastifyRequest, reply: FastifyReply): Prom
     } else {
       let llmErr = err instanceof Error ? err.message : String(err);
       // 仅当本次尝试没有执行任何工具（无副作用）且非超时错误时才自动重试一次
-      const canRetry = toolStarted === 0 && !timedOut && !/timed? ?out|timeout|超时|取消|abort/i.test(llmErr);
+      const canRetry = toolStarted === 0 && !streamedOutput && !timedOut && !/timed? ?out|timeout|超时|取消|abort/i.test(llmErr);
       if (canRetry && /econn|fetch failed|network|50[234]/i.test(llmErr)) {
         await new Promise((r) => setTimeout(r, 2000));
         if (clientGone) {

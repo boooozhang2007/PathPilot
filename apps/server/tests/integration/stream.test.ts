@@ -1,6 +1,13 @@
 // SSE 集成测试（真实 HTTP + faux 模型）：事件持续流出 / 重新生成截断 / 客户端中断后部分回复落库
 // 回归点：不能监听 req.raw 的 close（请求体读完即触发，会误判客户端断开并吞掉整条流）
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
+
+const searchMock = vi.hoisted(() => ({ webSearchJobs: vi.fn() }));
+
+vi.mock('../../src/agent/search/webSearch.js', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, webSearchJobs: searchMock.webSearchJobs };
+});
 
 vi.mock('../../src/agent/settings.js', async (importOriginal) => {
   const mod = await importOriginal<Record<string, unknown>>();
@@ -13,15 +20,17 @@ vi.mock('../../src/agent/pi/provider.js', async () => {
   const faux = pi.fauxProvider({ models: [{ id: 'faux-stream' }], tokensPerSecond: 80 });
   const models = pi.createModels();
   models.setProvider(faux.provider);
-  const queue: string[] = [];
+  const queue: unknown[][] = [];
   let counter = 0;
   return {
     resolveModel: async () => {
-      const text = queue.shift() ?? `流式回答${++counter}`;
-      faux.setResponses([pi.fauxAssistantMessage(text)]);
+      const steps = queue.shift();
+      const text = `流式回答${++counter}`;
+      faux.setResponses((steps ?? [pi.fauxAssistantMessage(text)]) as never[]);
       return { models, model: faux.getModel() };
     },
-    __setNextText: (text: string) => queue.push(text),
+    __setNextText: (text: string) => queue.push([pi.fauxAssistantMessage(text)]),
+    __setNextResponses: (responses: unknown[]) => queue.push(responses),
   };
 });
 
@@ -32,7 +41,7 @@ let app: FastifyInstance;
 let baseUrl = '';
 let token = '';
 
-type StreamEvent = { type: string; delta?: string; sessionId?: number; messageId?: number; fallbackReason?: string };
+type StreamEvent = { type: string; delta?: string; name?: string; summary?: string; isError?: boolean; sessionId?: number; messageId?: number; fallbackReason?: string };
 
 async function readEvents(res: Response): Promise<StreamEvent[]> {
   const events: StreamEvent[] = [];
@@ -63,10 +72,10 @@ async function postStream(payload: unknown, signal?: AbortSignal): Promise<Respo
   });
 }
 
-async function sessionMessages(sessionId: number): Promise<{ id: number; role: string; content: string; errorCode?: string | null }[]> {
+async function sessionMessages(sessionId: number): Promise<{ id: number; role: string; content: string; errorCode?: string | null; toolCalls?: { name: string; summary: string; status?: 'done' | 'error' }[] }[]> {
   const res = await fetch(`${baseUrl}/api/agent/session/${sessionId}`, { headers: { Authorization: `Bearer ${token}` } });
   expect(res.status).toBe(200);
-  return (await res.json()) as { id: number; role: string; content: string; errorCode?: string | null }[];
+  return (await res.json()) as { id: number; role: string; content: string; errorCode?: string | null; toolCalls?: { name: string; summary: string; status?: 'done' | 'error' }[] }[];
 }
 
 beforeAll(async () => {
@@ -85,6 +94,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
+});
+
+afterEach(() => {
+  searchMock.webSearchJobs.mockReset();
 });
 
 describe('SSE 流式对话', () => {
@@ -119,6 +132,36 @@ describe('SSE 流式对话', () => {
     expect(after).toHaveLength(2);
     expect(after[0].content).toBe('第一问');
     expect(after[1].id).not.toBe(assistantId);
+  });
+
+  it('搜索工具失败：SSE 和落库记录均如实标记 error，不显示为成功', async () => {
+    const pi = await import('@earendil-works/pi-ai');
+    const provider = (await import('../../src/agent/pi/provider.js')) as unknown as { __setNextResponses: (responses: unknown[]) => void };
+    searchMock.webSearchJobs.mockResolvedValue({
+      samples: [],
+      attempts: [],
+      failedCount: 0,
+      ok: false,
+      note: 'Bing: network down',
+    });
+    provider.__setNextResponses([
+      pi.fauxAssistantMessage([
+        pi.fauxToolCall('search_jobs', { target_role: '前端开发', employment_type: 'internship', sample_limit: 3 }),
+      ], { stopReason: 'toolUse' }),
+      pi.fauxAssistantMessage('联网搜索暂时不可用，请稍后重试。'),
+    ]);
+
+    const events = await readEvents(await postStream({ message: '搜索前端实习岗位' }));
+
+    expect(events.some((e) => e.type === 'tool_start' && e.name === 'search_jobs')).toBe(true);
+    const end = events.find((e) => e.type === 'tool_end' && e.name === 'search_jobs');
+    expect(end).toMatchObject({ isError: true });
+    expect(end?.summary).toContain('network down');
+    const sid = events.find((e) => e.type === 'session')!.sessionId!;
+    const msgs = await sessionMessages(sid);
+    expect(msgs.at(-1)?.toolCalls).toEqual([
+      expect.objectContaining({ name: 'search_jobs', status: 'error', summary: expect.stringContaining('network down') }),
+    ]);
   });
 
   it('客户端中断：服务端中止生成，仍保留部分回复（或停止占位）', async () => {

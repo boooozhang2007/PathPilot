@@ -14,8 +14,15 @@ import type { ChatMessageDTO, ChatSessionSummaryDTO } from '@pathpilot/shared';
 
 const SUGGESTIONS = ['我目前最应该学习什么？', '就业还是考研？', '我的项目经历缺哪些证据？', '换 AI 方向要补什么？'];
 
-type ToolState = { name: string; status: 'running' | 'done'; summary?: string };
+type ToolState = { name: string; status: 'running' | 'done' | 'error'; summary?: string };
 type StreamState = { text: string; thinking: string; tools: ToolState[]; startedAt: number };
+type RetryState = { message: string; truncateTo: number; regenerateFrom?: number };
+
+function completedToolCalls(tools: ToolState[]): ChatMessageDTO['toolCalls'] {
+  return tools
+    .filter((tool) => tool.status !== 'running')
+    .map((tool) => ({ name: tool.name, summary: tool.summary ?? '', status: tool.status === 'error' ? 'error' : 'done' }));
+}
 
 function timeLabel(iso: string): string {
   const d = new Date(iso);
@@ -48,6 +55,7 @@ export default function AdvisorTab() {
   const [busy, setBusy] = useState(false);
   const [stream, setStream] = useState<StreamState | null>(null);
   const [err, setErr] = useState('');
+  const [retry, setRetry] = useState<RetryState | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // 历史管理弹层：rename=重命名输入框 / manage=操作面板；selectMode=批量删除选择
   const [renameFor, setRenameFor] = useState<ChatSessionSummaryDTO | null>(null);
@@ -80,6 +88,7 @@ export default function AdvisorTab() {
           setSessionId(id);
           setMessages(msgs);
           setErr('');
+          setRetry(null);
           setSidebarOpen(false);
         })
         .catch((e) => setErr(e instanceof Error ? e.message : '加载失败'));
@@ -126,6 +135,7 @@ export default function AdvisorTab() {
     setMessages([]);
     setStream(null);
     setErr('');
+    setRetry(null);
     setInput('');
     setSidebarOpen(false);
   }
@@ -186,6 +196,7 @@ export default function AdvisorTab() {
     if (!message || busy) return;
     setInput('');
     setErr('');
+    setRetry(null);
     setBusy(true);
     setStream({ text: '', thinking: '', tools: [], startedAt: Date.now() });
     let activeSessionId = sessionIdRef.current;
@@ -234,15 +245,17 @@ export default function AdvisorTab() {
       let doneMessageId: number | undefined;
       let doneFallback: string | undefined;
       let hadError = false;
+      let hadToolError = false;
       const handlePart = (part: string) => {
         const line = part.split('\n').find((l) => l.startsWith('data: '));
         if (!line) return;
-        let ev: { type: string; delta?: string; name?: string; summary?: string; engine?: string; fallbackReason?: string; sessionId?: number; messageId?: number };
+        let ev: { type: string; delta?: string; name?: string; summary?: string; isError?: boolean; engine?: string; fallbackReason?: string; sessionId?: number; messageId?: number };
         try {
           ev = JSON.parse(line.slice(6));
         } catch {
           return;
         }
+        if (ev.type === 'tool_end' && ev.isError) hadToolError = true;
         if (ev.sessionId) {
           activeSessionId = ev.sessionId;
           sessionIdRef.current = ev.sessionId;
@@ -256,6 +269,10 @@ export default function AdvisorTab() {
           doneEngine = ev.engine;
           doneMessageId = ev.messageId;
           doneFallback = ev.fallbackReason;
+          if ((hadError || hadToolError) && ev.messageId) {
+            if (!hadError) setErr('部分工具调用失败，可重试本次生成');
+            setRetry({ message, truncateTo: baseLen, regenerateFrom: ev.messageId });
+          }
         }
         setStream((st) => {
           const cur = st ?? { text: '', thinking: '', tools: [] as ToolState[], startedAt: Date.now() };
@@ -273,7 +290,7 @@ export default function AdvisorTab() {
             return { ...cur, tools };
           }
           if (ev.type === 'tool_end') {
-            return { ...cur, tools: cur.tools.map((x) => (x.name === ev.name && x.status === 'running' ? { ...x, status: 'done' as const, summary: ev.summary } : x)) };
+            return { ...cur, tools: cur.tools.map((x) => (x.name === ev.name && x.status === 'running' ? { ...x, status: ev.isError ? 'error' as const : 'done' as const, summary: ev.summary } : x)) };
           }
           return cur;
         });
@@ -290,24 +307,30 @@ export default function AdvisorTab() {
       buf += decode(new Uint8Array(0), true);
       for (const part of buf.split('\n\n')) handlePart(part);
       if (doneFallback && !hadError && doneFallback !== '已停止生成（保留已输出部分）' && doneFallback !== '已停止生成') setErr(doneFallback);
-      setStream((st) => {
-        if (st && (st.text.trim() || st.thinking.trim())) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: doneMessageId ?? Date.now() + 1,
-              sessionId: activeSessionId ?? 0,
-              role: 'assistant',
-              content: st.text.trim() || '（无内容）',
-              engine: (doneEngine as never) ?? null,
-              thinking: st.thinking.trim() || null,
-              toolCalls: st.tools.filter((x) => x.status === 'done').map((x) => ({ name: x.name, summary: x.summary ?? '' })),
-              createdAt: new Date().toISOString(),
-            },
-          ]);
-        }
-        return null;
-      });
+      if (hadError) {
+        // 错误回复由服务端持久化；重新读取以避免本地部分内容与服务端错误消息不一致。
+        await syncSession();
+        setStream(null);
+      } else {
+        setStream((st) => {
+          if (st && (st.text.trim() || st.thinking.trim())) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: doneMessageId ?? Date.now() + 1,
+                sessionId: activeSessionId ?? 0,
+                role: 'assistant',
+                content: st.text.trim() || '（无内容）',
+                engine: (doneEngine as never) ?? null,
+                thinking: st.thinking.trim() || null,
+                toolCalls: completedToolCalls(st.tools),
+                createdAt: new Date().toISOString(),
+              },
+            ]);
+          }
+          return null;
+        });
+      }
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') {
         if (navigatingRef.current) {
@@ -326,7 +349,7 @@ export default function AdvisorTab() {
                   content: st.text.trim() || '已停止生成',
                   engine: null,
                   thinking: st.thinking.trim() || null,
-                  toolCalls: st.tools.filter((x) => x.status === 'done').map((x) => ({ name: x.name, summary: x.summary ?? '' })),
+                  toolCalls: completedToolCalls(st.tools),
                   createdAt: new Date().toISOString(),
                 },
               ]);
@@ -457,7 +480,7 @@ export default function AdvisorTab() {
               {(m.thinking || (m.toolCalls && m.toolCalls.length > 0)) && (
                 <DeepSeekThinkingBlock
                   thinking={m.thinking}
-                  tools={m.toolCalls?.map((tc) => ({ name: tc.name, status: 'done' as const, summary: tc.summary }))}
+                  tools={m.toolCalls?.map((tc) => ({ name: tc.name, status: tc.status ?? 'done', summary: tc.summary }))}
                   initiallyOpen={false}
                 />
               )}
@@ -481,6 +504,18 @@ export default function AdvisorTab() {
           <View style={{ backgroundColor: C.amberSoft, borderRadius: 10, padding: 9, marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Icon name="warn" size={13} color={C.amber} />
             <Text style={{ flex: 1, fontSize: fs(11), color: C.amber }}>{err}</Text>
+            {retry && !busy ? (
+              <TouchableOpacity
+                style={{ borderRadius: 7, borderWidth: 1, borderColor: C.amber, paddingHorizontal: 8, paddingVertical: 4 }}
+                onPress={() => {
+                  const request = retry;
+                  setRetry(null);
+                  void send(request.message, { truncateTo: request.truncateTo, regenerateFrom: request.regenerateFrom });
+                }}
+              >
+                <Text style={{ fontSize: fs(11), color: C.amber, fontWeight: '700' }}>重试</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         ) : null}
       </ScrollView>
@@ -807,6 +842,7 @@ function DeepSeekThinkingBlock({
               {tools.map((x, i) => {
                 const label = TOOL_LABELS[x.name] || x.name;
                 const isRunning = x.status === 'running';
+                const isError = x.status === 'error';
                 return (
                   <View
                     key={i}
@@ -815,17 +851,17 @@ function DeepSeekThinkingBlock({
                       borderRadius: 8,
                       padding: 8,
                       borderWidth: 1,
-                      borderColor: isRunning ? C.accent + '40' : C.line,
+                      borderColor: isRunning ? C.accent + '40' : isError ? C.amber : C.line,
                     }}
                   >
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Icon name={isRunning ? 'clock' : 'checkCircle'} size={12} color={isRunning ? C.accent : C.teal} />
+                        <Icon name={isRunning ? 'clock' : isError ? 'warn' : 'checkCircle'} size={12} color={isRunning ? C.accent : isError ? C.amber : C.teal} />
                         <Text style={{ fontSize: fs(11), fontWeight: '700', color: C.ink }}>{label}</Text>
                         <Text style={{ fontSize: fs(10), color: C.slate2 }}>({x.name})</Text>
                       </View>
-                      <Text style={{ fontSize: fs(10), color: isRunning ? C.accent : C.teal, fontWeight: '600' }}>
-                        {isRunning ? '执行中…' : '调用成功'}
+                      <Text style={{ fontSize: fs(10), color: isRunning ? C.accent : isError ? C.amber : C.teal, fontWeight: '600' }}>
+                        {isRunning ? '执行中…' : isError ? '调用失败' : '调用成功'}
                       </Text>
                     </View>
                     {x.summary ? (

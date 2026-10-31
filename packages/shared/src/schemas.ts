@@ -97,7 +97,7 @@ export const jobAnalyzeInput = z.object({
   city: z.string().max(30).optional(),
   employmentType: z.enum(EMPLOYMENT_TYPES).default('internship'),
   /** 期望采集样本数上限 */
-  sampleLimit: z.number().int().min(3).max(30).default(18),
+  sampleLimit: z.number().int().min(3).max(50).default(18),
 });
 export type JobAnalyzeInput = z.infer<typeof jobAnalyzeInput>;
 

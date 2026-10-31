@@ -67,13 +67,26 @@ export async function runAgentWith(models: Models, model: Model<Api>, opts: RunO
   const timer = setTimeout(abort, opts.wallClockMs ?? config.agentLimits.wallClockMs);
   try {
     if (opts.signal?.aborted) abort();
-    else await Promise.race([agent.prompt(opts.prompt), stopped]);
+    else {
+      const prompting = agent.prompt(opts.prompt);
+      await Promise.race([prompting, stopped]);
+      // abort 会在 race 中先胜出；仍须等待 Pi 完成取消与消息落尾，避免读取到中间状态。
+      if (aborted) await prompting;
+    }
   } finally {
     clearTimeout(timer);
     opts.signal?.removeEventListener('abort', abort);
   }
   const last = agent.state.messages.slice(historyLength).reverse().find((message) => message.role === 'assistant');
   if (last?.role === 'assistant') {
+    // 超时/取消会把底层连接错误转换成 error；这类结果应如实标记 aborted，而不是误报为模型调用失败。
+    if (last.stopReason === 'error' && aborted) {
+      return {
+        text: last.content.filter((part) => part.type === 'text').map((part) => part.text).join(''),
+        toolCalls,
+        aborted: true,
+      };
+    }
     if (last.stopReason === 'error') throw new Error(last.errorMessage || '模型返回错误');
     return {
       text: last.content.filter((part) => part.type === 'text').map((part) => part.text).join(''),

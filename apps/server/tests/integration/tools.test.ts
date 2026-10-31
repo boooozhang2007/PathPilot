@@ -1,6 +1,15 @@
 // 工具层集成测试（全模块工具集）：以演示账号验证各模块工具真实可用且归属校验生效
 // LLM 通道 mock 为固定合法结果（无网络依赖）
-import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
+
+vi.mock('node:dns/promises', () => ({
+  lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]),
+}));
+
+vi.mock('../../src/agent/search/liepin.js', () => ({
+  liepinConfigured: () => false,
+  liepinSearchJobs: vi.fn(async () => ({ samples: [], ok: false, note: '猎聘通道测试未启用' })),
+}));
 
 vi.mock('../../src/agent/pi/runtime.js', async (importOriginal) => {
   const mod = await importOriginal<Record<string, unknown>>();
@@ -39,6 +48,10 @@ beforeAll(async () => {
   otherUserId = inserted[0].id;
   // 演示账号生成规划（规则引擎，无网络依赖）
   await generateRoadmap(demoUserId, {});
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('全模块 Agent 工具集', () => {
@@ -183,9 +196,40 @@ describe('全模块 Agent 工具集', () => {
     expect(data.skills).toEqual(expect.arrayContaining(['Java', 'Spring Boot', 'MySQL', 'Redis']));
   });
 
-  it('岗位：fetch_job_page 拒绝白名单外域名（安全）', async () => {
+  it('岗位：fetch_job_page 接受非白名单公开招聘域名（不做域名准入）', async () => {
+    const html = '<html><body>岗位职责：负责后端接口开发、需求评审、技术方案设计、单元测试与接口文档维护，参与代码评审并持续优化系统性能。任职要求：本科及以上，熟悉 Java、Spring Boot、MySQL，具备良好的沟通能力，能够定位并解决线上问题。这段正文包含足够完整的岗位信息。</body></html>';
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(html)));
     const tool = buildAgentTools(demoUserId).find((t) => t.name === 'fetch_job_page')!;
-    await expect(call(tool, { url: 'https://evil.example.com/job' })).rejects.toThrow(/白名单/);
+    const result = await call<{ url: string; description: string }>(tool, { url: 'https://jobs.example.com/backend' });
+    expect(result.url).toBe('https://jobs.example.com/backend');
+    expect(result.description).toContain('网页内容开始');
+    vi.unstubAllGlobals();
+  });
+
+  it('岗位：search_jobs 成功调用搜索服务并返回结构化结果', async () => {
+    const target = 'https://jobs.example.com/frontend';
+    const encoded = Buffer.from(target, 'utf8').toString('base64url');
+    const searchHtml = `<html><li class="b_algo"><h2><a href="https://www.bing.com/ck/a?u=a1${encoded}">前端开发实习</a></h2></li></html>`;
+    const pageHtml = '<html><body>岗位职责：负责 Web 前端页面开发、需求评审、技术方案设计、联调与单元测试，参与代码评审并持续优化页面性能。任职要求：本科及以上，熟悉 HTML、CSS、JavaScript、React，具备良好的沟通能力，能够定位并解决浏览器兼容问题。这段正文包含足够完整的岗位信息。</body></html>';
+    vi.stubGlobal('fetch', vi.fn(async (url) => new Response(String(url).includes('bing.com/search') ? searchHtml : pageHtml)));
+    const tool = buildAgentTools(demoUserId).find((t) => t.name === 'search_jobs')!;
+    const result = await call<{ ok: boolean; samples: { source_url: string }[]; note: string }>(tool, {
+      target_role: '前端开发', employment_type: 'internship', sample_limit: 3,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.samples.map((s) => s.source_url)).toContain(target);
+    expect(result.note).not.toContain('白名单');
+    vi.unstubAllGlobals();
+  });
+
+  it('岗位：search_jobs 失败时透传 SEARCH_FAILED 与具体原因', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new Error('network down'))));
+    const tool = buildAgentTools(demoUserId).find((t) => t.name === 'search_jobs')!;
+    await expect(call(tool, { target_role: '后端开发', employment_type: 'full_time', sample_limit: 3 })).rejects.toMatchObject({
+      code: 'SEARCH_FAILED',
+      message: expect.stringContaining('network down'),
+    });
+    vi.unstubAllGlobals();
   });
 
   it('简历：generate_resume_draft 基于真实经历', async () => {

@@ -14,6 +14,26 @@ import { flowPrompt, markFlowResult, prepareFlow } from './flow.js';
 export interface ToolTraceEntry {
   name: string;
   summary: string;
+  status?: 'done' | 'error';
+}
+
+/** 把工具结果转成用户可读摘要，避免把整段 JSON 直接塞进思考链。 */
+export function summarizeToolResult(name: string, details: unknown, fallback: string, isError = false): string {
+  const clean = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 240);
+  if (isError) return clean(fallback) || '工具执行失败';
+  if (details && typeof details === 'object') {
+    const data = details as Record<string, unknown>;
+    if (typeof data.note === 'string' && data.note.trim()) return clean(data.note);
+    if (Array.isArray(data.samples)) {
+      return `搜索完成：获得 ${data.samples.length} 条有效岗位样本${typeof data.failedCount === 'number' ? `，${data.failedCount} 个页面解析失败` : ''}。`;
+    }
+    if (data.result && typeof data.result === 'object') {
+      const result = data.result as Record<string, unknown>;
+      if (typeof result.sample_count === 'number') return `岗位分析完成：统计 ${result.sample_count} 条真实样本。`;
+    }
+    if (typeof data.url === 'string' && typeof data.description === 'string') return `已抓取岗位页面：${clean(data.url)}`;
+  }
+  return clean(fallback) || '工具执行完成';
 }
 
 export function buildAdvisorSystemPrompt(
@@ -68,10 +88,15 @@ export function tracedTools(tools: AgentTool<any>[], trace: ToolTraceEntry[], on
     ...tool,
     execute: async (id: string, params: unknown, signal?: AbortSignal, onUpdate?: (partial: unknown) => void) => {
       onStart?.();
-      const res = await tool.execute(id, params, signal, onUpdate as never);
-      const text = (res.content as { type?: string; text?: string }[])?.find?.((c) => c.type === 'text')?.text ?? '';
-      trace.push({ name: tool.name, summary: text.replace(/\s+/g, ' ').slice(0, 160) });
-      return res;
+      try {
+        const res = await tool.execute(id, params, signal, onUpdate as never);
+        const text = (res.content as { type?: string; text?: string }[])?.find?.((c) => c.type === 'text')?.text ?? '';
+        trace.push({ name: tool.name, summary: summarizeToolResult(tool.name, res.details, text), status: 'done' });
+        return res;
+      } catch (error) {
+        trace.push({ name: tool.name, summary: error instanceof Error ? error.message : String(error), status: 'error' });
+        throw error;
+      }
     },
   })) as AgentTool<any>[];
 }
@@ -153,6 +178,7 @@ export async function chat(
   let engine: 'pi-llm' | 'rules' = 'pi-llm';
   let usedModel: string | undefined;
   let fallbackReason = '';
+  let abortedWithText = false;
   let toolTrace: ToolTraceEntry[] = [];
   let toolStarted = 0;
 
@@ -188,6 +214,7 @@ export async function chat(
   );
   let llmErr = '';
   const attemptLlm = async (): Promise<void> => {
+    abortedWithText = false;
     const { runAgentWith } = await import('./pi/runtime.js');
     const { resolveModel } = await import('./pi/provider.js');
     const { buildAgentTools } = await import('./pi/tools.js');
@@ -206,6 +233,10 @@ export async function chat(
     });
     if (!outcome.text) throw new Error(outcome.aborted ? '模型运行超时' : '模型返回为空');
     replyText = outcome.text;
+    if (outcome.aborted) {
+      abortedWithText = true;
+      fallbackReason = '生成超时（保留已输出部分）';
+    }
     engine = 'pi-llm';
     toolTrace = trace;
   };
@@ -234,7 +265,7 @@ export async function chat(
 
   const inserted = await db
     .insert(agentChatMessages)
-    .values({ sessionId: sid, role: 'assistant', content: replyText, engine, toolCalls: toolTrace.length ? toolTrace : null })
+    .values({ sessionId: sid, role: 'assistant', content: replyText, engine, errorCode: abortedWithText ? 'AGENT_TIMEOUT' : null, toolCalls: toolTrace.length ? toolTrace : null })
     .returning();
   await db.update(agentChatSessions).set({ updatedAt: new Date().toISOString() }).where(eq(agentChatSessions.id, sid));
   if (toolTrace.length) await markFlowResult(sid);
@@ -250,7 +281,7 @@ export async function chat(
       role: 'assistant',
       content: row.content,
       engine,
-      errorCode: null,
+      errorCode: row.errorCode ?? null,
       toolCalls: row.toolCalls ?? [],
       createdAt: row.createdAt,
     },

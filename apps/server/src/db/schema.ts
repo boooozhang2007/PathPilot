@@ -258,8 +258,8 @@ export const agentChatMessages = sqliteTable(
     thinking: text('thinking'),
     /** 本次回复失败/被停止时的错误码（正常回复为空） */
     errorCode: text('error_code'),
-    /** 工具调用链路 [{name, summary}]（LLM 通道） */
-    toolCalls: text('tool_calls', { mode: 'json' }).$type<{ name: string; summary: string }[] | null>(),
+    /** 工具调用链路 [{name, summary, status}]（LLM 通道） */
+    toolCalls: text('tool_calls', { mode: 'json' }).$type<{ name: string; summary: string; status?: 'done' | 'error' }[] | null>(),
     createdAt: text('created_at').notNull().$defaultFn(isoNow),
   },
   (t) => [index('agent_chat_messages_session_idx').on(t.sessionId)]

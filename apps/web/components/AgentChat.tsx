@@ -10,8 +10,15 @@ import type { ChatMessageDTO, ChatSessionSummaryDTO, ProfileDTO } from '@pathpil
 
 export const DEFAULT_SUGGESTIONS = ['我目前最应该学习什么？', '帮我分析北京的 Java 岗位', '把每周改成 8 小时并重新规划', '在规划里加一个 Redis 学习任务'];
 
-type ToolState = { name: string; status: 'running' | 'done'; summary?: string };
+type ToolState = { name: string; status: 'running' | 'done' | 'error'; summary?: string };
 type Streaming = { text: string; thinking: string; tools: ToolState[]; startedAt: number; engine?: 'pi-llm' | 'rules' };
+type RetryState = { message: string; truncateTo: number; regenerateFrom?: number };
+
+function completedToolCalls(tools: ToolState[]): ChatMessageDTO['toolCalls'] {
+  return tools
+    .filter((tool) => tool.status !== 'running')
+    .map((tool) => ({ name: tool.name, summary: tool.summary ?? '', status: tool.status === 'error' ? 'error' : 'done' }));
+}
 
 const SUGGEST_ICONS = ['compass', 'globe', 'calendar', 'pen'];
 
@@ -88,6 +95,7 @@ export function AgentChat({
   const [streaming, setStreaming] = useState<Streaming | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [retry, setRetry] = useState<RetryState | null>(null);
   const [notice, setNotice] = useState('');
   // 输入
   const [input, setInput] = useState('');
@@ -180,6 +188,7 @@ export function AgentChat({
     setMessages([]);
     setStreaming(null);
     setErr('');
+    setRetry(null);
     setNotice('');
     setSidebarOpen(false);
     setInput('');
@@ -197,6 +206,7 @@ export function AgentChat({
       setSessionId(id);
       setMessages(msgs);
       setErr('');
+      setRetry(null);
     } catch (e) {
       if (mountedRef.current && viewRevisionRef.current === revision) setErr(e instanceof Error ? e.message : '加载会话失败');
     }
@@ -239,11 +249,13 @@ export function AgentChat({
     // Keep this request's accumulated reply outside React's deferred state queue.
     // React may execute a state updater after the stream has already completed.
     let streamState: Streaming = { text: '', thinking: '', tools: [], startedAt: Date.now() };
+    const baseIndex = opts?.truncateTo ?? messages.length;
     setInput('');
     requestAnimationFrame(() => {
       if (taRef.current) taRef.current.style.height = 'auto';
     });
     setErr('');
+    setRetry(null);
     setNotice('');
     setBusy(true);
     setAtBottom(true);
@@ -284,6 +296,7 @@ export function AgentChat({
       let doneMessageId: number | undefined;
       let fallback = '';
       let hadError = false;
+      let hadToolError = false;
       for (;;) {
         const { done, value } = await reader.read();
         if (!isCurrent()) return;
@@ -294,12 +307,13 @@ export function AgentChat({
         for (const part of parts) {
           const line = part.split('\n').find((l) => l.startsWith('data: '));
           if (!line) continue;
-          let ev: { type: string; delta?: string; name?: string; summary?: string; engine?: 'pi-llm' | 'rules'; model?: string; fallbackReason?: string; sessionId?: number; messageId?: number };
+          let ev: { type: string; delta?: string; name?: string; summary?: string; isError?: boolean; engine?: 'pi-llm' | 'rules'; model?: string; fallbackReason?: string; sessionId?: number; messageId?: number };
           try {
             ev = JSON.parse(line.slice(6));
           } catch {
             continue;
           }
+          if (ev.type === 'tool_end' && ev.isError) hadToolError = true;
           if (ev.sessionId) {
             activeSessionId = ev.sessionId;
             sessionIdRef.current = ev.sessionId;
@@ -325,7 +339,7 @@ export function AgentChat({
                 return { ...cur, tools };
               }
               case 'tool_end': {
-                const tools = cur.tools.map((t) => (t.name === ev.name && t.status === 'running' ? { ...t, status: 'done' as const, summary: ev.summary } : t));
+                const tools = cur.tools.map((t) => (t.name === ev.name && t.status === 'running' ? { ...t, status: ev.isError ? 'error' as const : 'done' as const, summary: ev.summary } : t));
                 return { ...cur, tools };
               }
               default:
@@ -341,10 +355,17 @@ export function AgentChat({
             doneEngine = ev.engine;
             doneMessageId = ev.messageId;
             if (ev.fallbackReason) fallback = ev.fallbackReason;
+            if ((hadError || hadToolError) && ev.messageId) {
+              if (!hadError) setErr('部分工具调用失败，可重试本次生成');
+              setRetry({ message, truncateTo: baseIndex, regenerateFrom: ev.messageId });
+            }
           }
         }
       }
-      if (streamState.text.trim() || streamState.thinking.trim()) {
+      if (hadError) {
+        // 错误回复由服务端持久化；重新读取可避免本地部分内容与服务端错误消息不一致。
+        await syncSession();
+      } else if (streamState.text.trim() || streamState.thinking.trim()) {
         const finalMessage: ChatMessageDTO = {
           id: doneMessageId ?? Date.now(),
           sessionId: activeSessionId ?? 0,
@@ -352,7 +373,7 @@ export function AgentChat({
           content: streamState.text.trim() || '（模型未返回内容）',
           engine: doneEngine ?? null,
           thinking: streamState.thinking.trim() || null,
-          toolCalls: streamState.tools.filter((t) => t.status === 'done').map((t) => ({ name: t.name, summary: t.summary ?? '' })),
+          toolCalls: completedToolCalls(streamState.tools),
           createdAt: new Date().toISOString(),
         };
         setMessages((prev) => [...prev, finalMessage]);
@@ -371,7 +392,7 @@ export function AgentChat({
             content: streamState.text || '已停止生成',
             engine: null,
             thinking: streamState.thinking.trim() || null,
-            toolCalls: streamState.tools.filter((t) => t.status === 'done').map((t) => ({ name: t.name, summary: t.summary ?? '' })),
+            toolCalls: completedToolCalls(streamState.tools),
             createdAt: new Date().toISOString(),
           };
           setMessages((prev) => [...prev, partialMessage]);
@@ -544,7 +565,7 @@ export function AgentChat({
                       {(m.thinking || m.toolCalls.length > 0) && (
                         <DeepSeekReasoning
                           thinking={m.thinking}
-                          tools={m.toolCalls.map((t) => ({ ...t, status: 'done' as const }))}
+                          tools={m.toolCalls.map((t) => ({ ...t, status: t.status ?? 'done' }))}
                           initiallyOpen={false}
                         />
                       )}
@@ -612,7 +633,20 @@ export function AgentChat({
         {err && (
           <div className="mx-auto w-full max-w-3xl px-4 pb-1">
             <div className="flex items-center gap-1.5 rounded-lg bg-[#fdf1ef] px-3 py-1.5 text-xs text-[#b3271d]">
-              <Ic name="warn" size={12} /> {err}
+              <Ic name="warn" size={12} />
+              <span className="min-w-0 flex-1">{err}</span>
+              {retry && !busy && (
+                <button
+                  className="shrink-0 rounded-md border border-[#e7b7b1] px-2 py-1 font-semibold transition hover:bg-white"
+                  onClick={() => {
+                    const request = retry;
+                    setRetry(null);
+                    send(request.message, { truncateTo: request.truncateTo, regenerateFrom: request.regenerateFrom });
+                  }}
+                >
+                  重试
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -775,19 +809,21 @@ function DeepSeekReasoning({
             {tools.map((t, i) => {
               const label = TOOL_LABELS[t.name] || t.name;
               return (
-                <div key={i} className="rounded-md border border-line/60 bg-white/80 p-2 text-[11px]">
+                <div key={i} className={`rounded-md border bg-white/80 p-2 text-[11px] ${t.status === 'error' ? 'border-[#efc3bd]' : 'border-line/60'}`}>
                   <div className="flex items-center justify-between">
                     <span className="flex items-center gap-1.5 font-semibold text-ink">
                       {t.status === 'running' ? (
                         <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                      ) : t.status === 'error' ? (
+                        <Ic name="warn" size={12} className="shrink-0 text-[#b3271d]" />
                       ) : (
                         <Ic name="checkCircle" size={12} className="shrink-0 text-teal" />
                       )}
                       <span>{label}</span>
                       <span className="text-[10px] font-normal text-slate-2">({t.name})</span>
                     </span>
-                    <span className={`text-[10px] font-semibold ${t.status === 'running' ? 'text-accent' : 'text-teal'}`}>
-                      {t.status === 'running' ? '执行中…' : '调用成功'}
+                    <span className={`text-[10px] font-semibold ${t.status === 'running' ? 'text-accent' : t.status === 'error' ? 'text-[#b3271d]' : 'text-teal'}`}>
+                      {t.status === 'running' ? '执行中…' : t.status === 'error' ? '调用失败' : '调用成功'}
                     </span>
                   </div>
                   {t.summary && (
@@ -817,7 +853,8 @@ function StreamingMessage({ s }: { s: Streaming }) {
     const t = setInterval(() => setElapsed(Math.floor((Date.now() - s.startedAt) / 1000)), 1000);
     return () => clearInterval(t);
   }, [s.startedAt]);
-  const thinkingActive = !s.text && (!!s.thinking || s.tools.length === 0);
+  // 工具结束后、正文尚未到达时仍处于等待状态，不能提前显示“已深度思考”。
+  const thinkingActive = !s.text;
 
   return (
     <div className="mb-6 flex items-start gap-2">

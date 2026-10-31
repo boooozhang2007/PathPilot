@@ -69,6 +69,10 @@ describe('AI 顾问流式会话', () => {
     return renderer.root.findAllByType('p').filter((node) => node.props['data-message']).map((node) => node.children.join(''));
   }
 
+  function text(value: string) {
+    return renderer.root.findAll((node) => node.children.includes(value));
+  }
+
   it('React 批处理流事件时，完成后保留全文、思考和服务端消息 ID', async () => {
     const reply = stream();
     reply.push({ type: 'session', sessionId: 7 });
@@ -148,5 +152,73 @@ describe('AI 顾问流式会话', () => {
       history.resolve({ sessionId: 3, messages: [{ id: 9, role: 'assistant', content: '过期历史', toolCalls: [] }] });
     });
     expect(replies()).toEqual([]);
+  });
+
+  it('真实搜索工具失败会显示调用失败，并支持从原回复重试', async () => {
+    const reply = stream();
+    reply.push({ type: 'session', sessionId: 7 });
+    reply.push({ type: 'tool_start', name: 'search_jobs' });
+    reply.push({ type: 'tool_end', name: 'search_jobs', summary: 'Bing: network down', isError: true });
+    reply.push({ type: 'text', delta: '搜索未完成' });
+    reply.push({ type: 'done', engine: 'pi-llm', messageId: 49 });
+    reply.close();
+    const retried = stream();
+    retried.push({ type: 'session', sessionId: 7 });
+    retried.push({ type: 'text', delta: '重试后成功' });
+    retried.push({ type: 'done', engine: 'pi-llm', messageId: 50 });
+    retried.close();
+    fetchMock.mockResolvedValueOnce(reply.response).mockResolvedValueOnce(retried.response);
+    await mount();
+
+    await act(async () => { await scenario().props.onClick(); });
+
+    expect(text('调用失败')).toHaveLength(1);
+    expect(text('调用成功')).toHaveLength(0);
+    expect(text('Bing: network down')).toHaveLength(1);
+    const retry = renderer.root.findAllByType('button').find((node) => node.children.includes('重试'))!;
+    await act(async () => { await retry.props.onClick(); });
+    expect(JSON.parse(fetchMock.mock.calls[1][1]?.body as string).regenerateFrom).toBe(49);
+    expect(replies()).toEqual(['重试后成功']);
+  });
+
+  it('搜索失败后可重试，复用原回复且不会重复累积用户消息', async () => {
+    const message = '基于我档案里的真实经历,指出我简历最薄弱的三点,并给出具体的修改建议和可以补充的量化点;需要我补充信息时直接问我。';
+    const failed = stream();
+    failed.push({ type: 'session', sessionId: 7 });
+    failed.push({ type: 'error', delta: 'Bing: network down' });
+    failed.push({ type: 'done', messageId: 50 });
+    failed.close();
+    const retried = stream();
+    retried.push({ type: 'session', sessionId: 7 });
+    retried.push({ type: 'text', delta: '重试成功' });
+    retried.push({ type: 'done', messageId: 51 });
+    retried.close();
+    fetchMock.mockResolvedValueOnce(failed.response).mockResolvedValueOnce(retried.response);
+    vi.mocked(api).mockImplementation(async (path) => {
+      if (path === '/api/profile') return { targetRole: 'Java', grade: 'freshman', weeklyHours: 8 };
+      if (path === '/api/agent/sessions') return [];
+      if (path === '/api/agent/session/7') {
+        return [
+          { id: 48, sessionId: 7, role: 'user', content: message, engine: null, toolCalls: [], createdAt: new Date().toISOString() },
+          { id: 50, sessionId: 7, role: 'assistant', content: '搜索失败', engine: 'pi-llm', errorCode: 'SEARCH_FAILED', toolCalls: [], createdAt: new Date().toISOString() },
+        ];
+      }
+      return null;
+    });
+    await mount();
+
+    await act(async () => { await scenario().props.onClick(); });
+    expect(text('Bing: network down').length).toBeGreaterThan(0);
+    const retry = renderer.root.findAllByType('button').find((node) => node.children.includes('重试'))!;
+    expect(retry).toBeDefined();
+
+    await act(async () => { await retry.props.onClick(); });
+
+    const firstBody = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    const retryBody = JSON.parse(fetchMock.mock.calls[1][1]?.body as string);
+    expect(retryBody).toMatchObject({ message: firstBody.message, sessionId: 7, regenerateFrom: 50 });
+    expect(replies()).toEqual(['重试成功']);
+    const userMessages = renderer.root.findAllByType('div').filter((node) => node.props.className === 'mb-6 flex flex-col items-end');
+    expect(userMessages).toHaveLength(1);
   });
 });
