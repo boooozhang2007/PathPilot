@@ -7,7 +7,8 @@ export type IconName =
   | 'warn' | 'play' | 'pause' | 'expand' | 'collapse' | 'chevronUp' | 'chevronDown' | 'chevronRight'
   | 'close' | 'copy' | 'refresh' | 'arrowUp' | 'user' | 'settings' | 'info' | 'globe' | 'moon'
   | 'font' | 'folder' | 'trash' | 'door' | 'server' | 'compass' | 'download' | 'rocket' | 'star'
-  | 'chat' | 'roadmap' | 'target' | 'layers' | 'calendar' | 'trashSweep' | 'party';
+  | 'chat' | 'roadmap' | 'target' | 'layers' | 'calendar' | 'trashSweep' | 'party'
+  | 'bell' | 'share';
 
 const P = (d: string) => d;
 
@@ -65,6 +66,8 @@ const PATHS: Record<IconName, string[]> = {
   calendar: [P('M4.5 6.5h15v13h-15z'), P('M4.5 10.5h15'), P('M8.5 4v3'), P('M15.5 4v3')],
   trashSweep: [P('M4 7h16'), P('M9 7V5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5v2'), P('M6.5 7l1 13h9l1-13'), P('M10 11h5')],
   party: [P('M4 19 11 6.5'), P('M11 6.5c2.5.5 4 2 4.5 4.5'), P('M4 19l3.4-1.2 1.2-3.4'), P('M16 5v.1'), P('M19.5 8l.1.1'), P('M18.5 12.5l.1.1'), P('M14.5 3.5l.1.1')],
+  bell: [P('M18 9.5a6 6 0 1 0-12 0c0 5-2.5 6.5-2.5 6.5h17S18 14.5 18 9.5'), P('M10.3 19.2a1.9 1.9 0 0 0 3.4 0')],
+  share: [P('M12 3.5v11'), P('m7.5 7 4.5-4.5L16.5 7'), P('M5 12.5v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6')],
 };
 
 export function Icon({ name, size = 16, color = '#000', strokeWidth = 1.8 }: { name: IconName; size?: number; color?: string; strokeWidth?: number }) {

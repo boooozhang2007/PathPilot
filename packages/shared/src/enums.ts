@@ -196,6 +196,10 @@ export interface ApiErrorBody {
   error: { code: ErrorCode; message: string; details?: unknown };
 }
 
+/** 提醒类型（reminders.type） */
+export const REMINDER_TYPES = ['task_due', 'weekly_summary'] as const;
+export type ReminderType = (typeof REMINDER_TYPES)[number];
+
 /** Agent 业务任务类型（agent_runs.task_type） */
 export const AGENT_TASK_TYPES = [
   'analyze_jobs',

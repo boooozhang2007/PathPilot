@@ -1,7 +1,7 @@
 'use client';
 // 简历工作台:选经历 → AI 生成草稿 → 逐项编辑 → 复制 Markdown / 下载 / 打印导出 PDF
 import { useEffect, useState } from 'react';
-import { api } from '@/lib/api';
+import { api, API_BASE, getToken } from '@/lib/api';
 import { Loading, ErrorState, Tag, PageHeader, Empty } from '@/components/ui';
 import { Ic } from '@/components/Icon';
 import type { ExperienceDTO, ProfileDTO } from '@pathpilot/shared';
@@ -99,6 +99,42 @@ export default function ResumePage() {
     URL.revokeObjectURL(url);
   }
 
+  async function downloadPdf() {
+    if (!draft) return;
+    setBusy(true);
+    setErr('');
+    try {
+      const res = await fetch(`${API_BASE}/api/resume/pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({
+          targetRole: draft.target_role,
+          summary: draft.summary,
+          sections: draft.sections,
+          notes: draft.notes,
+          nickname: profile?.nickname,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const m = (data as { error?: { message?: string } }).error?.message;
+        throw new Error(m ?? 'PDF 导出失败');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `resume-${(profile?.nickname ?? 'pathpilot').replace(/\s+/g, '-')}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setMsg('PDF 已下载');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'PDF 导出失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (loading) return <Loading />;
 
   return (
@@ -116,8 +152,11 @@ export default function ResumePage() {
               <button className="pp-btn pp-btn-ghost px-3 py-2 text-xs" onClick={downloadMd}>
                 <Ic name="download" size={13} /> 下载 .md
               </button>
-              <button className="pp-btn pp-btn-primary px-3 py-2 text-xs" onClick={() => window.print()}>
-                <Ic name="font" size={13} /> 打印 / PDF
+              <button className="pp-btn pp-btn-ghost px-3 py-2 text-xs" onClick={() => window.print()}>
+                <Ic name="font" size={13} /> 打印
+              </button>
+              <button className="pp-btn pp-btn-primary px-3 py-2 text-xs" onClick={downloadPdf} disabled={busy}>
+                <Ic name="download" size={13} /> {busy ? '导出中…' : '下载 PDF'}
               </button>
             </div>
           )
