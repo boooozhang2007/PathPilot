@@ -1,12 +1,13 @@
-// 会话级「自动写入」开关：Agent 写工具（改任务/规划/档案）默认拒绝执行，
-// 用户在前端对话中显式开启后才放行（PRD 6.6 运行限制；会话级、内存态，服务重启后需重新开启）
-const enabledSessions = new Set<number>();
+import { eq } from 'drizzle-orm';
+import { db } from '../db/client.js';
+import { agentChatSessions } from '../db/schema.js';
 
+/** 用户按会话授权 Agent 写操作；数据库持久化，跨设备和服务重启保持一致。 */
 export function setSessionAutoWrite(sessionId: number, enabled: boolean): void {
-  if (enabled) enabledSessions.add(sessionId);
-  else enabledSessions.delete(sessionId);
+  db.update(agentChatSessions).set({ autoWrite: enabled }).where(eq(agentChatSessions.id, sessionId)).run();
 }
 
 export function isSessionAutoWriteEnabled(sessionId: number): boolean {
-  return enabledSessions.has(sessionId);
+  return db.select({ enabled: agentChatSessions.autoWrite }).from(agentChatSessions)
+    .where(eq(agentChatSessions.id, sessionId)).get()?.enabled ?? false;
 }

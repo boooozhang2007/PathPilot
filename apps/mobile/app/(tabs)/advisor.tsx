@@ -2,27 +2,23 @@
 // 回复消息下方带 复制 / 重新生成；停止生成会真正中止服务端推理（SSE 断开即 abort）
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, Modal, Pressable, Keyboard, type ScrollViewInstance } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, Modal, Pressable, Keyboard, ActivityIndicator, type ScrollViewInstance } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import { api, getApiBase, getToken } from '../../lib/api';
+import { api, clearAuth, getApiBase, getToken } from '../../lib/api';
 import { createUtf8StreamDecoder } from '../../lib/utf8';
 import { C, SF, useSettings } from '../../components/ui';
 import { Icon, LogoMark } from '../../components/icons';
 import { Markdown } from '../../components/Markdown';
 import { makeT } from '../../lib/i18n';
-import type { ChatMessageDTO, ChatSessionSummaryDTO } from '@pathpilot/shared';
+import { AGENT_PHASE_LABELS, AGENT_TOOL_LABELS, applyAgentEvent, completedAgentTools, readAgentStream, type AgentStreamState, type ChatMessageDTO, type ChatSessionSummaryDTO } from '@pathpilot/shared';
 
 const SUGGESTIONS = ['我目前最应该学习什么？', '就业还是考研？', '我的项目经历缺哪些证据？', '换 AI 方向要补什么？'];
 
-type ToolState = { name: string; status: 'running' | 'done' | 'error'; summary?: string };
-type StreamState = { text: string; thinking: string; tools: ToolState[]; startedAt: number };
+type ToolState = AgentStreamState['tools'][number];
+type StreamState = AgentStreamState;
 type RetryState = { message: string; truncateTo: number; regenerateFrom?: number };
 
-function completedToolCalls(tools: ToolState[]): ChatMessageDTO['toolCalls'] {
-  return tools
-    .filter((tool) => tool.status !== 'running')
-    .map((tool) => ({ name: tool.name, summary: tool.summary ?? '', status: tool.status === 'error' ? 'error' : 'done' }));
-}
+const completedToolCalls = completedAgentTools;
 
 function timeLabel(iso: string): string {
   const d = new Date(iso);
@@ -67,10 +63,14 @@ export default function AdvisorTab() {
   const [guideStep, setGuideStep] = useState<'profile' | 'choice' | 'done'>('profile');
   const [guideReady, setGuideReady] = useState(false);
   const [autoWrite, setAutoWrite] = useState(false);
+  const autoWriteRef = useRef(false);
+  const [sessionBusy, setSessionBusy] = useState(false);
+  const [showScrollToLatest, setShowScrollToLatest] = useState(false);
+  const chatRevisionRef = useRef(0);
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listRef = useRef<ScrollViewInstance | null>(null);
+  const followOutputRef = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
-  // 导航类中止（新建对话/删除会话）标记：AbortError catch 据此跳过本地消息追加，避免旧流半截回复污染新会话
-  const navigatingRef = useRef(false);
 
   const loadSessions = useCallback(() => {
     api<ChatSessionSummaryDTO[]>('/api/agent/sessions').then(setSessions).catch(() => {});
@@ -78,41 +78,69 @@ export default function AdvisorTab() {
 
   const openSession = useCallback(
     (id: number) => {
-      if (busy || id === sessionId) {
+      if (id === sessionIdRef.current) {
         setSidebarOpen(false);
         return;
       }
-      api<ChatMessageDTO[]>(`/api/agent/session/${id}`)
-        .then((msgs) => {
+      const revision = ++chatRevisionRef.current;
+      abortRef.current?.abort();
+      abortRef.current = null;
+      setBusy(false);
+      setStream(null);
+      setSessionBusy(true);
+      setErr('');
+      setRetry(null);
+      followOutputRef.current = true;
+      setShowScrollToLatest(false);
+      Promise.all([api<ChatMessageDTO[]>(`/api/agent/session/${id}`), api<ChatSessionSummaryDTO[]>('/api/agent/sessions')])
+        .then(([msgs, allSessions]) => {
+          if (chatRevisionRef.current !== revision) return;
+          const selectedSession = allSessions.find((session) => session.id === id);
           sessionIdRef.current = id;
           setSessionId(id);
           setMessages(msgs);
+          autoWriteRef.current = selectedSession?.autoWrite ?? false;
+          setAutoWrite(autoWriteRef.current);
           setErr('');
           setRetry(null);
           setSidebarOpen(false);
         })
-        .catch((e) => setErr(e instanceof Error ? e.message : '加载失败'));
+        .catch((e) => {
+          if (chatRevisionRef.current === revision) setErr(e instanceof Error ? e.message : '加载失败');
+        })
+        .finally(() => { if (chatRevisionRef.current === revision) setSessionBusy(false); });
     },
-    [busy, sessionId]
+    []
   );
 
   useEffect(() => {
     const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => {
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+      setTimeout(() => {
+        if (followOutputRef.current) listRef.current?.scrollToEnd({ animated: true });
+      }, 100);
     });
     return () => {
       showSub.remove();
     };
   }, []);
 
+  useEffect(() => () => {
+    chatRevisionRef.current += 1;
+    abortRef.current?.abort();
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+  }, []);
+
   useEffect(() => {
     loadSessions();
-    api<{ sessionId: number; messages: ChatMessageDTO[] } | null>('/api/agent/session')
+    const revision = chatRevisionRef.current;
+    api<{ sessionId: number; messages: ChatMessageDTO[]; autoWrite: boolean } | null>('/api/agent/session')
       .then((s) => {
-        if (s) {
+        if (s && chatRevisionRef.current === revision) {
           sessionIdRef.current = s.sessionId;
           setSessionId(s.sessionId);
           setMessages(s.messages);
+          autoWriteRef.current = s.autoWrite;
+          setAutoWrite(s.autoWrite);
         }
       })
       .catch(() => {});
@@ -128,16 +156,41 @@ export default function AdvisorTab() {
   );
 
   function newChat() {
-    if (abortRef.current) navigatingRef.current = true; // 仅在确有进行中的流时标记，避免残留标记误伤后续中止
+    chatRevisionRef.current += 1;
     abortRef.current?.abort();
+    abortRef.current = null;
+    setBusy(false);
+    setSessionBusy(false);
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = null;
     sessionIdRef.current = undefined;
+    followOutputRef.current = true;
+    setShowScrollToLatest(false);
+    autoWriteRef.current = false;
     setSessionId(undefined);
+    setAutoWrite(false);
     setMessages([]);
     setStream(null);
     setErr('');
     setRetry(null);
     setInput('');
     setSidebarOpen(false);
+  }
+
+  function toggleAutoWrite() {
+    const next = !autoWriteRef.current;
+    autoWriteRef.current = next;
+    setAutoWrite(next);
+    const activeSession = sessionIdRef.current;
+    if (activeSession) {
+      void api(`/api/agent/sessions/${activeSession}/auto-write`, { method: 'POST', json: { enabled: next } }).catch((error) => {
+        if (sessionIdRef.current === activeSession && autoWriteRef.current === next) {
+          autoWriteRef.current = !next;
+          setAutoWrite(!next);
+          setErr(error instanceof Error ? error.message : '自动写入设置未保存');
+        }
+      });
+    }
   }
 
   async function rename(s: ChatSessionSummaryDTO, title: string) {
@@ -193,12 +246,18 @@ export default function AdvisorTab() {
 
   async function send(text?: string, opts?: { regenerateFrom?: number; truncateTo?: number }) {
     const message = (text ?? input).trim();
-    if (!message || busy) return;
+    if (!message || busy || sessionBusy) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const revision = ++chatRevisionRef.current;
+    const isCurrent = () => chatRevisionRef.current === revision && abortRef.current === controller;
     setInput('');
     setErr('');
     setRetry(null);
     setBusy(true);
-    setStream({ text: '', thinking: '', tools: [], startedAt: Date.now() });
+    followOutputRef.current = true;
+    setShowScrollToLatest(false);
+    setStream({ text: '', thinking: '', tools: [], startedAt: Date.now(), phase: 'connecting' });
     let activeSessionId = sessionIdRef.current;
     // 消息基线长度：非中止失败且从未获得 sessionId 时，回滚到基线以清除乐观 user 消息
     const baseLen = opts?.truncateTo ?? messages.length;
@@ -206,8 +265,6 @@ export default function AdvisorTab() {
       const base = opts && opts.truncateTo !== undefined ? prev.slice(0, opts.truncateTo) : prev;
       return [...base, { id: Date.now(), sessionId: activeSessionId ?? 0, role: 'user', content: message, engine: null, toolCalls: [], createdAt: new Date().toISOString() }];
     });
-    const controller = new AbortController();
-    abortRef.current = controller;
     // 略大于服务端墙钟上限(300s)：让服务端先落库并下发 done，而不是客户端先断开
     const timer = setTimeout(() => controller.abort(), 330000);
     /** 从服务端恢复消息（请求失败/中断后对齐真实 id 与内容） */
@@ -220,6 +277,7 @@ export default function AdvisorTab() {
         /* 忽略 */
       }
     };
+    let currentStream: StreamState = { text: '', thinking: '', tools: [], startedAt: Date.now(), phase: 'connecting' };
     try {
       const base = await getApiBase();
       const token = (await getToken()) ?? '';
@@ -231,136 +289,82 @@ export default function AdvisorTab() {
           message,
           answerStyle: settings.answerStyle,
           thinking: settings.showThinking,
-          autoWrite,
+          autoWrite: autoWriteRef.current,
           ...(opts?.regenerateFrom ? { regenerateFrom: opts.regenerateFrom } : {}),
         }),
         signal: controller.signal,
       });
-      if (!res.ok || !res.body) throw new Error(`请求失败(${res.status})`);
-      const reader = (res.body as unknown as { getReader: () => { read: () => Promise<{ done: boolean; value?: Uint8Array }> } }).getReader();
-      // SSE 字节流按 UTF-8 增量解码（多字节中文可能被切断在块边界，不能按字节直接拼字符）
+      if (!isCurrent()) return;
+      if (res.status === 401) {
+        await clearAuth();
+        throw new Error('登录已过期，请到「我的」页重新登录');
+      }
+      if (!res.ok || !res.body) {
+        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        const reason = body?.error?.message || `请求失败（${res.status}）`;
+        // 会话已在其他设备删除（404）：回到新对话状态，避免之后每次发送都失败
+        if (res.status === 404 && activeSessionId && sessionIdRef.current === activeSessionId) {
+          sessionIdRef.current = undefined;
+          autoWriteRef.current = false;
+          activeSessionId = undefined;
+          setSessionId(undefined);
+          setAutoWrite(false);
+          setMessages([]);
+        }
+        throw new Error(reason);
+      }
       const decode = createUtf8StreamDecoder();
-      let buf = '';
-      let doneEngine: string | undefined;
-      let doneMessageId: number | undefined;
-      let doneFallback: string | undefined;
       let hadError = false;
       let hadToolError = false;
-      const handlePart = (part: string) => {
-        const line = part.split('\n').find((l) => l.startsWith('data: '));
-        if (!line) return;
-        let ev: { type: string; delta?: string; name?: string; summary?: string; isError?: boolean; engine?: string; fallbackReason?: string; sessionId?: number; messageId?: number };
-        try {
-          ev = JSON.parse(line.slice(6));
-        } catch {
-          return;
-        }
+      const completion = await readAgentStream(res.body, (ev) => {
+        if (!isCurrent()) return;
         if (ev.type === 'tool_end' && ev.isError) hadToolError = true;
         if (ev.sessionId) {
           activeSessionId = ev.sessionId;
           sessionIdRef.current = ev.sessionId;
           setSessionId(ev.sessionId);
+          if (typeof ev.autoWrite === 'boolean') {
+            autoWriteRef.current = ev.autoWrite;
+            setAutoWrite(ev.autoWrite);
+          }
         }
-        if (ev.type === 'error') {
+        if (ev.type === 'error' || (ev.type === 'done' && ev.errorCode && ev.errorCode !== 'STOPPED')) {
           hadError = true;
-          setErr(ev.delta ?? '生成出错');
+          setErr(ev.delta ?? ev.fallbackReason ?? '本次回复未完成，请重试');
         }
-        if (ev.type === 'done') {
-          doneEngine = ev.engine;
-          doneMessageId = ev.messageId;
-          doneFallback = ev.fallbackReason;
-          if ((hadError || hadToolError) && ev.messageId) {
+        if (ev.type === 'done' && (hadError || hadToolError) && (ev.reply?.id ?? ev.messageId)) {
             if (!hadError) setErr('部分工具调用失败，可重试本次生成');
-            setRetry({ message, truncateTo: baseLen, regenerateFrom: ev.messageId });
-          }
+            setRetry({ message, truncateTo: baseLen, regenerateFrom: ev.reply?.id ?? ev.messageId });
         }
-        setStream((st) => {
-          const cur = st ?? { text: '', thinking: '', tools: [] as ToolState[], startedAt: Date.now() };
-          if (ev.type === 'thinking') return { ...cur, thinking: cur.thinking + (ev.delta ?? '') };
-          if (ev.type === 'text') return { ...cur, text: cur.text + (ev.delta ?? '') };
-          if (ev.type === 'tool_start') return { ...cur, tools: [...cur.tools, { name: ev.name ?? '', status: 'running' }] };
-          if (ev.type === 'tool_progress') {
-            const tools = [...cur.tools];
-            for (let i = tools.length - 1; i >= 0; i--) {
-              if (tools[i].status === 'running' && (!ev.name || tools[i].name === ev.name)) {
-                tools[i] = { ...tools[i], summary: ev.summary };
-                break;
-              }
-            }
-            return { ...cur, tools };
-          }
-          if (ev.type === 'tool_end') {
-            return { ...cur, tools: cur.tools.map((x) => (x.name === ev.name && x.status === 'running' ? { ...x, status: ev.isError ? 'error' as const : 'done' as const, summary: ev.summary } : x)) };
-          }
-          return cur;
+        currentStream = applyAgentEvent(currentStream, ev);
+        setStream(currentStream);
+      }, controller.signal, decode);
+      if (!isCurrent()) return;
+      if (completion.reply) {
+        setMessages((prev) => {
+          const base = opts && opts.truncateTo !== undefined ? prev.slice(0, opts.truncateTo + 1) : prev;
+          return [...base, completion.reply!];
         });
-      };
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decode(value ?? new Uint8Array(0));
-        const parts = buf.split('\n\n');
-        buf = parts.pop() ?? '';
-        for (const part of parts) handlePart(part);
-      }
-      // 流结束：flush 解码器把尾部不完整字节以替换字符拼出，并解析缓冲里剩余的最后事件
-      buf += decode(new Uint8Array(0), true);
-      for (const part of buf.split('\n\n')) handlePart(part);
-      if (doneFallback && !hadError && doneFallback !== '已停止生成（保留已输出部分）' && doneFallback !== '已停止生成') setErr(doneFallback);
-      if (hadError) {
-        // 错误回复由服务端持久化；重新读取以避免本地部分内容与服务端错误消息不一致。
-        await syncSession();
-        setStream(null);
-      } else {
-        setStream((st) => {
-          if (st && (st.text.trim() || st.thinking.trim())) {
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: doneMessageId ?? Date.now() + 1,
-                sessionId: activeSessionId ?? 0,
-                role: 'assistant',
-                content: st.text.trim() || '（无内容）',
-                engine: (doneEngine as never) ?? null,
-                thinking: st.thinking.trim() || null,
-                toolCalls: completedToolCalls(st.tools),
-                createdAt: new Date().toISOString(),
-              },
-            ]);
-          }
-          return null;
-        });
-      }
+      } else await syncSession();
+      if (completion.fallbackReason && !hadError && !completion.fallbackReason.startsWith('已停止')) setErr(completion.fallbackReason);
+      setStream(null);
     } catch (e) {
+      if (!isCurrent()) return;
       if (e instanceof Error && e.name === 'AbortError') {
-        if (navigatingRef.current) {
-          // 来自导航切换（新建对话/删除会话）：旧流的部分输出不再属于当前会话，直接丢弃
-          navigatingRef.current = false;
-          setStream(null);
-        } else {
-          setStream((st) => {
-            if (st && (st.text.trim() || st.thinking.trim())) {
-              setMessages((prev) => [
-                ...prev,
-                {
-                  id: Date.now() + 1,
-                  sessionId: activeSessionId ?? 0,
-                  role: 'assistant',
-                  content: st.text.trim() || '已停止生成',
-                  engine: null,
-                  thinking: st.thinking.trim() || null,
-                  toolCalls: completedToolCalls(st.tools),
-                  createdAt: new Date().toISOString(),
-                },
-              ]);
-            }
-            return null;
-          });
-          // 服务端也已中止并落库：稍后同步一次，用真实消息 id 替换本地临时 id（供重新生成使用）
-          setTimeout(() => {
-            if (!abortRef.current) void syncSession();
-          }, 500);
+        if (currentStream.text.trim() || currentStream.thinking.trim()) {
+          setMessages((prev) => [...prev, {
+            id: -Date.now(), sessionId: activeSessionId ?? 0, role: 'assistant',
+            content: currentStream.text.trim() || '已停止生成', engine: null,
+            errorCode: 'STOPPED', thinking: currentStream.thinking.trim() || null,
+            toolCalls: completedToolCalls(currentStream.tools), createdAt: new Date().toISOString(),
+          }]);
         }
+        setStream(null);
+        if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = setTimeout(() => {
+          syncTimerRef.current = null;
+          if (chatRevisionRef.current === revision) void syncSession();
+        }, 350);
       } else {
         setErr(e instanceof Error ? e.message : '发送失败');
         setStream(null);
@@ -371,10 +375,11 @@ export default function AdvisorTab() {
       }
     } finally {
       clearTimeout(timer);
-      navigatingRef.current = false;
-      abortRef.current = null;
-      setBusy(false);
-      loadSessions();
+      if (isCurrent()) {
+        abortRef.current = null;
+        setBusy(false);
+        loadSessions();
+      }
     }
   }
 
@@ -409,7 +414,7 @@ export default function AdvisorTab() {
           <Icon name="menu" size={22} color={C.ink} />
         </TouchableOpacity>
         <Text style={{ flex: 1, fontSize: fs(15), fontWeight: '700', color: C.ink }} numberOfLines={1}>
-          {messages.length === 0 && !busy ? 'PathPilot' : currentTitle}
+          {sessionBusy ? '正在加载对话…' : messages.length === 0 && !busy ? 'PathPilot' : currentTitle}
         </Text>
         <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={newChat}>
           <View style={{ width: 30, height: 30, borderRadius: 999, backgroundColor: C.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
@@ -424,8 +429,23 @@ export default function AdvisorTab() {
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
         keyboardShouldPersistTaps="handled"
-        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+        scrollEventThrottle={100}
+        onScroll={(event) => {
+          const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+          const following = contentSize.height - contentOffset.y - layoutMeasurement.height < 88;
+          followOutputRef.current = following;
+          setShowScrollToLatest((visible) => visible === !following ? visible : !following);
+        }}
+        onContentSizeChange={() => {
+          if (followOutputRef.current) listRef.current?.scrollToEnd({ animated: true });
+        }}
       >
+        {sessionBusy ? (
+          <View accessibilityRole="progressbar" style={{ minHeight: 220, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10 }}>
+            <ActivityIndicator size="small" color={C.accent} />
+            <Text style={{ fontSize: fs(13), color: C.slate }}>正在加载会话内容…</Text>
+          </View>
+        ) : <>
         {messages.length === 0 && !stream && !busy && (
           <View style={{ alignItems: 'center', paddingVertical: '18%' }}>
             <View style={{ width: 58, height: 58, borderRadius: 18, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
@@ -480,19 +500,20 @@ export default function AdvisorTab() {
               {(m.thinking || (m.toolCalls && m.toolCalls.length > 0)) && (
                 <DeepSeekThinkingBlock
                   thinking={m.thinking}
-                  tools={m.toolCalls?.map((tc) => ({ name: tc.name, status: tc.status ?? 'done', summary: tc.summary }))}
+                  tools={m.toolCalls?.map((tc) => ({ name: tc.name, toolCallId: tc.toolCallId, status: tc.status ?? 'done', summary: tc.summary }))}
                   initiallyOpen={false}
                 />
               )}
               <Markdown text={m.content} />
               {/* 回复操作：复制 + 重新生成（每条回复下方） */}
               <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
+                {m.engine && <Text style={{ alignSelf: 'center', fontSize: fs(10), color: C.slate2 }}>{m.engine === 'pi-llm' ? 'AI 模型' : '规则引擎'}</Text>}
                 <MsgAction
                   icon={copiedId === m.id ? 'check' : 'copy'}
                   label={copiedId === m.id ? t('copied') : t('copy')}
                   onPress={() => copyMessage(m)}
                 />
-                {!busy && <MsgAction icon="refresh" label={t('regenerate')} onPress={() => regenerateAt(i)} />}
+                {!busy && !sessionBusy && <MsgAction icon="refresh" label={t('regenerate')} onPress={() => regenerateAt(i)} />}
               </View>
             </View>
           )
@@ -504,7 +525,7 @@ export default function AdvisorTab() {
           <View style={{ backgroundColor: C.amberSoft, borderRadius: 10, padding: 9, marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Icon name="warn" size={13} color={C.amber} />
             <Text style={{ flex: 1, fontSize: fs(11), color: C.amber }}>{err}</Text>
-            {retry && !busy ? (
+            {retry && !busy && !sessionBusy ? (
               <TouchableOpacity
                 style={{ borderRadius: 7, borderWidth: 1, borderColor: C.amber, paddingHorizontal: 8, paddingVertical: 4 }}
                 onPress={() => {
@@ -518,7 +539,23 @@ export default function AdvisorTab() {
             ) : null}
           </View>
         ) : null}
+        </>}
       </ScrollView>
+
+      {showScrollToLatest && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="回到最新消息"
+          onPress={() => {
+            followOutputRef.current = true;
+            setShowScrollToLatest(false);
+            listRef.current?.scrollToEnd({ animated: true });
+          }}
+          style={{ position: 'absolute', right: 18, bottom: 88, width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: C.paper, borderWidth: 1, borderColor: C.line, elevation: 3 }}
+        >
+          <Icon name="chevronDown" size={18} color={C.accent} />
+        </TouchableOpacity>
+      )}
 
       {/* 输入区（DeepSeek 式）：圆角容器 + 多行输入 + 功能开关 + 发送/停止 */}
       <View style={{ padding: 10, paddingBottom: 14, borderTopWidth: 1, borderTopColor: C.line }}>
@@ -530,7 +567,9 @@ export default function AdvisorTab() {
             value={input}
             onChangeText={setInput}
             onFocus={() => {
-              setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 150);
+              setTimeout(() => {
+                if (followOutputRef.current) listRef.current?.scrollToEnd({ animated: true });
+              }, 150);
             }}
             multiline
           />
@@ -552,8 +591,11 @@ export default function AdvisorTab() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
+              accessibilityRole="switch"
+              accessibilityLabel="允许 Agent 直接修改任务、规划与档案"
+              accessibilityState={{ checked: autoWrite }}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5, backgroundColor: autoWrite ? C.accentSoft : 'transparent', borderWidth: 1, borderColor: autoWrite ? C.accent : C.line, boxShadow: autoWrite ? SF.chip.boxShadow : undefined }}
-              onPress={() => setAutoWrite((v) => !v)}
+              onPress={toggleAutoWrite}
             >
               <Icon name="checkCircle" size={14} color={autoWrite ? C.accent : C.slate} />
               <Text style={{ fontSize: fs(12), fontWeight: '600', color: autoWrite ? C.accent : C.slate }}>
@@ -569,7 +611,7 @@ export default function AdvisorTab() {
               <TouchableOpacity
                 style={{ width: 34, height: 34, borderRadius: 999, backgroundColor: input.trim() ? C.accent : C.slate2, alignItems: 'center', justifyContent: 'center' }}
                 onPress={() => send()}
-                disabled={!input.trim()}
+                disabled={!input.trim() || sessionBusy}
               >
                 <Icon name="arrowUp" size={18} color="#FFFFFF" strokeWidth={2.2} />
               </TouchableOpacity>
@@ -739,29 +781,6 @@ function MsgAction({ icon, label, onPress }: { icon: 'copy' | 'check' | 'refresh
   );
 }
 
-const TOOL_LABELS: Record<string, string> = {
-  get_user_profile: '获取能力档案',
-  upsert_skill: '更新技能评分',
-  create_experience: '创建经历凭证',
-  get_tasks: '查询待办任务',
-  update_task_status: '更新任务状态',
-  get_current_roadmap: '获取成长路线',
-  get_roadmap_versions: '查询路线历史',
-  generate_roadmap: '生成成长路线',
-  create_roadmap_revision: '修订成长路线',
-  roadmap_add_task: '路线添加任务',
-  roadmap_update_task: '更新路线任务',
-  roadmap_remove_task: '移除路线任务',
-  get_job_analysis: '查询岗位洞察',
-  analyze_jobs: '分析招聘需求',
-  analyze_skill_gap: '评估技能差距',
-  search_jobs: '搜索招聘市场',
-  fetch_job_page: '获取岗位详情',
-  extract_requirements: '提取任职要求',
-  normalize_skills: '匹配标准化技能',
-  generate_resume_draft: '生成简历草稿',
-};
-
 /** DeepSeek 式思考流程与工具调用链路展示组件（工具调用结果内嵌展示） */
 function DeepSeekThinkingBlock({
   thinking,
@@ -790,7 +809,7 @@ function DeepSeekThinkingBlock({
   let headerLabel = '';
   if (isStreaming) {
     if (runningTool) {
-      headerLabel = `正在调用工具：${TOOL_LABELS[runningTool.name] || runningTool.name}…`;
+      headerLabel = `正在调用工具：${AGENT_TOOL_LABELS[runningTool.name] || runningTool.name}…`;
     } else {
       headerLabel = elapsedSeconds !== undefined ? `${t('thinking')}… ${elapsedSeconds}${t('seconds')}` : `${t('thinking')}…`;
     }
@@ -840,9 +859,10 @@ function DeepSeekThinkingBlock({
           {hasTools && (
             <View style={{ gap: 6, marginBottom: hasThinking ? 8 : 0 }}>
               {tools.map((x, i) => {
-                const label = TOOL_LABELS[x.name] || x.name;
+                const label = AGENT_TOOL_LABELS[x.name] || x.name;
                 const isRunning = x.status === 'running';
                 const isError = x.status === 'error';
+                const isCanceled = x.status === 'canceled';
                 return (
                   <View
                     key={i}
@@ -856,12 +876,12 @@ function DeepSeekThinkingBlock({
                   >
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Icon name={isRunning ? 'clock' : isError ? 'warn' : 'checkCircle'} size={12} color={isRunning ? C.accent : isError ? C.amber : C.teal} />
+                        <Icon name={isRunning ? 'clock' : isError ? 'warn' : isCanceled ? 'minus' : 'checkCircle'} size={12} color={isRunning ? C.accent : isError ? C.amber : isCanceled ? C.slate2 : C.teal} />
                         <Text style={{ fontSize: fs(11), fontWeight: '700', color: C.ink }}>{label}</Text>
                         <Text style={{ fontSize: fs(10), color: C.slate2 }}>({x.name})</Text>
                       </View>
-                      <Text style={{ fontSize: fs(10), color: isRunning ? C.accent : isError ? C.amber : C.teal, fontWeight: '600' }}>
-                        {isRunning ? '执行中…' : isError ? '调用失败' : '调用成功'}
+                      <Text style={{ fontSize: fs(10), color: isRunning ? C.accent : isError ? C.amber : isCanceled ? C.slate2 : C.teal, fontWeight: '600' }}>
+                        {isRunning ? '执行中…' : isError ? '调用失败' : isCanceled ? '已停止' : '调用成功'}
                       </Text>
                     </View>
                     {x.summary ? (
@@ -920,10 +940,9 @@ function StreamBubble({ s }: { s: StreamState }) {
       ) : (
         !s.thinking &&
         s.tools.length === 0 && (
-          <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center' }}>
-            {[0, 1, 2].map((i) => (
-              <View key={i} style={{ width: 7, height: 7, borderRadius: 999, backgroundColor: C.slate2, opacity: 0.7 }} />
-            ))}
+          <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
+            <ActivityIndicator size="small" color={C.accent} />
+            <Text style={{ color: C.slate, fontSize: fs(12) }}>{AGENT_PHASE_LABELS[s.phase ?? 'connecting']}…</Text>
           </View>
         )
       )}

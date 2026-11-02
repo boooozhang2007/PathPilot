@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as echarts from 'echarts';
 
-const PALETTE = ['#426EFE', '#0E7C6B', '#B97A0B', '#0B2239', '#8B96A8', '#3157D6', '#14A08A', '#B39422'];
+const PALETTE = ['#167767', '#4d8290', '#c08a2e', '#334340', '#8aa39d', '#6f9fd8', '#a64c3e', '#b89b5c'];
 
 /** 跟随 <html class="dark"> 的主题状态 */
 export function useDark(): boolean {
@@ -19,11 +19,16 @@ export function useDark(): boolean {
   return dark;
 }
 
-/** 主题相关的坐标/文字色 */
+/** 主题相关的坐标/文字色（与 globals.css 的青绿灰主题同源） */
 function axisTheme(dark: boolean) {
   return dark
-    ? { label: '#b3a07e', split: 'rgba(255,235,190,0.10)', area: ['#332a1c', '#2b2316'], pieBorder: '#332a1c' }
-    : { label: '#6b5b45', split: '#ddcda6', area: ['#fdfaf0', '#f6efdc'], pieBorder: '#fdfaf0' };
+    ? { label: '#a8bab5', split: 'rgba(255,255,255,0.08)', area: ['#1d2926', '#202c29'], pieBorder: '#1d2926' }
+    : { label: '#576763', split: '#e1e8e5', area: ['#ffffff', '#f4f7f6'], pieBorder: '#ffffff' };
+}
+
+/** 供页面内自定义图表复用的主题色，跟随深浅模式切换。 */
+export function useChartTheme() {
+  return axisTheme(useDark());
 }
 
 export function Chart({ option, height = 300 }: { option: echarts.EChartsOption; height?: number }) {
@@ -32,13 +37,17 @@ export function Chart({ option, height = 300 }: { option: echarts.EChartsOption;
   const dark = useDark();
   useEffect(() => {
     if (!ref.current) return;
-    if (!chartRef.current) chartRef.current = echarts.init(ref.current);
+    // 卸载时实例已 dispose（React 严格模式会先卸载再重挂）：必须重新 init，否则对已销毁实例 setOption 会静默空白
+    if (!chartRef.current || chartRef.current.isDisposed()) chartRef.current = echarts.init(ref.current);
     chartRef.current.setOption({ color: PALETTE, textStyle: { fontFamily: 'inherit', color: axisTheme(dark).label }, ...option });
     const onResize = () => chartRef.current?.resize();
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, [option, dark]);
-  useEffect(() => () => chartRef.current?.dispose(), []);
+  useEffect(() => () => {
+    chartRef.current?.dispose();
+    chartRef.current = null;
+  }, []);
   return <div ref={ref} style={{ height, width: '100%' }} />;
 }
 
@@ -104,7 +113,7 @@ export function DistBars({ items, total }: { items: { label: string; count: numb
         } },
         xAxis: { type: 'category', data: items.map((i) => i.label), axisTick: { show: false }, axisLabel: { color: t.label } },
         yAxis: { type: 'value', splitLine: { lineStyle: { color: t.split } }, axisLabel: { color: t.label } },
-        series: [{ type: 'bar', data: items.map((i) => i.count), itemStyle: { borderRadius: [6, 6, 0, 0], color: '#0E7C6B' }, barMaxWidth: 36 }],
+        series: [{ type: 'bar', data: items.map((i) => i.count), itemStyle: { borderRadius: [6, 6, 0, 0], color: '#167767' }, barMaxWidth: 36 }],
       }}
     />
   );
@@ -137,8 +146,8 @@ export function VersionCompare({ oldHours, newHours, oldCount, newCount }: { old
         xAxis: { type: 'category', data: ['任务数', '预计小时'], axisTick: { show: false }, axisLabel: { color: t.label } },
         yAxis: { type: 'value', splitLine: { lineStyle: { color: t.split } }, axisLabel: { color: t.label } },
         series: [
-          { name: '调整前', type: 'bar', data: [oldCount, oldHours], itemStyle: { borderRadius: [6, 6, 0, 0], color: '#8B96A8' }, barMaxWidth: 28 },
-          { name: '调整后', type: 'bar', data: [newCount, newHours], itemStyle: { borderRadius: [6, 6, 0, 0], color: '#426EFE' }, barMaxWidth: 28 },
+          { name: '调整前', type: 'bar', data: [oldCount, oldHours], itemStyle: { borderRadius: [6, 6, 0, 0], color: '#9fb0ab' }, barMaxWidth: 28 },
+          { name: '调整后', type: 'bar', data: [newCount, newHours], itemStyle: { borderRadius: [6, 6, 0, 0], color: '#167767' }, barMaxWidth: 28 },
         ],
       }}
     />

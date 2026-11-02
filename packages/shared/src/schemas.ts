@@ -258,7 +258,7 @@ export const taskEvidenceInput = z.object({
 // ---------- AI 顾问（PRD 4.8） ----------
 export const agentChatInput = z.object({
   sessionId: z.number().int().positive().optional(),
-  message: z.string().min(1).max(2000),
+  message: z.string().trim().min(1, '消息不能为空').max(2000, '消息不能超过 2000 字'),
   answerStyle: z.enum(['concise', 'detailed']).optional(),
   /** 开启模型思考过程（需要模型支持 reasoning） */
   thinking: z.boolean().optional(),
@@ -266,6 +266,8 @@ export const agentChatInput = z.object({
   autoWrite: z.boolean().optional(),
   /** 重新生成：以该 assistant 消息为起点截断后重答 */
   regenerateFrom: z.number().int().positive().optional(),
+}).superRefine((input, ctx) => {
+  if (input.regenerateFrom && !input.sessionId) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['sessionId'], message: '重新生成需要指定会话' });
 });
 export type AgentChatInput = z.infer<typeof agentChatInput>;
 

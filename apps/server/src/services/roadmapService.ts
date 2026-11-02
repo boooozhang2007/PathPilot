@@ -128,17 +128,15 @@ export interface SaveRoadmapInput {
 /** 保存新版本：老版本转 archived，新版本 active（原子事务；失败不落库 → 旧规划不受影响） */
 export async function saveRoadmapVersion(input: SaveRoadmapInput): Promise<{ roadmapId: number; version: number }> {
   const now = new Date().toISOString();
-  const maxRow = await db
-    .select({ v: roadmaps.version })
-    .from(roadmaps)
-    .where(eq(roadmaps.userId, input.userId))
-    .orderBy(desc(roadmaps.version))
-    .limit(1);
-  const nextVersion = (maxRow[0]?.v ?? 0) + 1;
-
   const content = { ...input.content };
 
   return db.transaction((tx) => {
+    const maxRow = tx.select({ v: roadmaps.version })
+      .from(roadmaps)
+      .where(eq(roadmaps.userId, input.userId))
+      .orderBy(desc(roadmaps.version))
+      .limit(1).get();
+    const nextVersion = (maxRow?.v ?? 0) + 1;
     tx.update(roadmaps)
       .set({ status: 'archived' })
       .where(and(eq(roadmaps.userId, input.userId), eq(roadmaps.status, 'active')))
@@ -195,7 +193,7 @@ export async function saveRoadmapVersion(input: SaveRoadmapInput): Promise<{ roa
       }).run();
     }
     return { roadmapId: inserted.id, version: nextVersion };
-  });
+  }, { behavior: 'immediate' });
 }
 
 export async function diffRoadmapVersions(userId: number, newId: number, oldId?: number): Promise<ReturnType<typeof diffRoadmaps>> {

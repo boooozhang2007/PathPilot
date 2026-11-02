@@ -41,7 +41,7 @@ let app: FastifyInstance;
 let baseUrl = '';
 let token = '';
 
-type StreamEvent = { type: string; delta?: string; name?: string; summary?: string; isError?: boolean; sessionId?: number; messageId?: number; fallbackReason?: string };
+type StreamEvent = { type: string; delta?: string; name?: string; summary?: string; isError?: boolean; sessionId?: number; messageId?: number; fallbackReason?: string; autoWrite?: boolean; reply?: { id: number; content: string; errorCode: string | null } };
 
 async function readEvents(res: Response): Promise<StreamEvent[]> {
   const events: StreamEvent[] = [];
@@ -117,6 +117,24 @@ describe('SSE 流式对话', () => {
     expect(msgs.map((m) => m.role)).toEqual(['user', 'assistant']);
     expect(msgs[1].id).toBe(done.messageId);
     expect(msgs[1].content).toContain('流式回答');
+    expect(done.reply).toMatchObject({ id: msgs[1].id, content: msgs[1].content, errorCode: null });
+  });
+
+  it('自动写入授权保存在当前会话并由后续流确认', async () => {
+    const first = await readEvents(await postStream({ message: '先记录当前会话' }));
+    const sessionId = first.find((event) => event.type === 'session')!.sessionId!;
+    expect(first.find((event) => event.type === 'session')?.autoWrite).toBe(false);
+
+    const updated = await app.inject({
+      method: 'POST', url: `/api/agent/sessions/${sessionId}/auto-write`,
+      headers: { authorization: `Bearer ${token}` }, payload: { enabled: true },
+    });
+    expect(updated.statusCode).toBe(200);
+    const summaries = await app.inject({ url: '/api/agent/sessions', headers: { authorization: `Bearer ${token}` } });
+    expect(summaries.json().find((session: { id: number }) => session.id === sessionId)?.autoWrite).toBe(true);
+
+    const next = await readEvents(await postStream({ sessionId, message: '继续完成当前会话' }));
+    expect(next.find((event) => event.type === 'session')?.autoWrite).toBe(true);
   });
 
   it('重新生成：服务端截断旧回复，不重复累积用户消息', async () => {

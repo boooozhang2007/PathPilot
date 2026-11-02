@@ -340,6 +340,15 @@ describe('统一错误格式（PRD §9）', () => {
     expect(res.json().error.code).toBe('VALIDATION_ERROR');
     expect(res.json().error.message).toBeTruthy();
   });
+
+  it('格式错误的资源 ID 返回 400，而非数据库内部错误', async () => {
+    const roadmaps = await app.inject({ method: 'GET', url: '/api/roadmaps/not-an-id', headers: { authorization: `Bearer ${tokenA}` } });
+    expect(roadmaps.statusCode).toBe(400);
+    expect(roadmaps.json().error.code).toBe('VALIDATION_ERROR');
+    const run = await app.inject({ method: 'GET', url: '/api/agent/runs/1.5', headers: { authorization: `Bearer ${tokenA}` } });
+    expect(run.statusCode).toBe(400);
+    expect(run.json().error.code).toBe('VALIDATION_ERROR');
+  });
 });
 
 describe('审查修复回归', () => {

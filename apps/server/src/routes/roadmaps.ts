@@ -26,12 +26,13 @@ import {
 } from '../services/roadmapService.js';
 import { generateRoadmap, reviseRoadmap } from '../agent/planner.js';
 import { chat, chatHistory, latestSession, listSessions, deleteSession, renameSession, clearAllSessions, assertSessionOwner } from '../agent/advisor.js';
+import { streamChat } from '../agent/stream.js';
 import { setSessionAutoWrite } from '../agent/autoWrite.js';
 import { resumeDraft } from '../agent/resume.js';
 import { createRun, executeRun, getRun, agentConfigSummary } from '../agent/core.js';
 import { analyzeGapByRules } from '../agent/rules/chat.js';
 import { buildUserContext } from '../agent/context.js';
-import { badRequest } from '../services/errors.js';
+import { badRequest, parsePositiveId } from '../services/errors.js';
 import { currentSemesterOf, semesterLabel } from '../services/semester.js';
 import { getProfile, listExperiences, listProfileSkills } from '../services/profileService.js';
 import { latestAnalysisFor } from '../services/analysisService.js';
@@ -64,7 +65,7 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/roadmaps/:id', { preHandler: [auth] }, async (req) => {
     const { id } = req.params as { id: string };
-    const roadmap = await getRoadmap(getUserId(req), Number(id));
+    const roadmap = await getRoadmap(getUserId(req), parsePositiveId(id));
     const tasks = await getTasksOfRoadmap(roadmap.id);
     return { roadmap, tasks };
   });
@@ -72,7 +73,7 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/roadmaps/:id/revise', { preHandler: [auth] }, async (req, reply) => {
     const userId = getUserId(req);
     const { id } = req.params as { id: string };
-    const current = await getRoadmap(userId, Number(id));
+    const current = await getRoadmap(userId, parsePositiveId(id));
     const input = reviseRoadmapInput.parse(req.body);
     const runId = await createRun(userId, 'revise_roadmap', `重规划·${input.reason ?? '条件调整'}`);
     executeRun(runId, 'revise_roadmap', async ({ onProgress, signal }) => {
@@ -90,20 +91,20 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
     const userId = getUserId(req);
     const { id } = req.params as { id: string };
     const { compare } = req.query as { compare?: string };
-    return diffRoadmapVersions(userId, Number(id), compare ? Number(compare) : undefined);
+    return diffRoadmapVersions(userId, parsePositiveId(id), compare ? parsePositiveId(compare, 'compare') : undefined);
   });
 
   // ---------- 任务 ----------
   app.get('/api/tasks', { preHandler: [auth] }, async (req) => {
     const { roadmapId } = req.query as { roadmapId?: string };
-    return listRoadmapTasks(getUserId(req), roadmapId ? Number(roadmapId) : undefined);
+    return listRoadmapTasks(getUserId(req), roadmapId ? parsePositiveId(roadmapId, 'roadmapId') : undefined);
   });
 
   app.patch('/api/tasks/:id', { preHandler: [auth] }, async (req) => {
     const userId = getUserId(req);
     const { id } = req.params as { id: string };
     const input = taskUpdateInput.parse(req.body);
-    const taskId = Number(id);
+    const taskId = parsePositiveId(id);
     // 内容编辑字段（标题/学期/任务说明/时长/优先级/产出/验收）→ 走字段编辑；状态字段走状态机
     const contentKeys = ['title', 'semester', 'description', 'estimatedHours', 'deliverable', 'acceptanceCriteria'] as const;
     const contentPatch: Record<string, unknown> = {};
@@ -131,7 +132,7 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete('/api/tasks/:id', { preHandler: [auth] }, async (req) => {
     const { id } = req.params as { id: string };
-    await removeRoadmapTask(getUserId(req), Number(id));
+    await removeRoadmapTask(getUserId(req), parsePositiveId(id));
     return { ok: true };
   });
 
@@ -144,12 +145,11 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/tasks/:id/evidence', { preHandler: [auth] }, async (req) => {
     const { id } = req.params as { id: string };
     const input = taskEvidenceInput.parse(req.body);
-    return addTaskEvidence(getUserId(req), Number(id), input);
+    return addTaskEvidence(getUserId(req), parsePositiveId(id), input);
   });
 
   // ---------- AI 顾问 ----------
   app.post('/api/agent/chat/stream', { preHandler: [auth] }, async (req, reply) => {
-    const { streamChat } = await import('../agent/stream.js');
     return streamChat(req, reply);
   });
 
@@ -166,13 +166,13 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
   app.patch('/api/agent/sessions/:id', { preHandler: [auth] }, async (req) => {
     const { id } = req.params as { id: string };
     const input = agentSessionRenameInput.parse(req.body);
-    await renameSession(getUserId(req), Number(id), input.title);
+    await renameSession(getUserId(req), parsePositiveId(id), input.title);
     return { ok: true };
   });
 
   app.delete('/api/agent/sessions/:id', { preHandler: [auth] }, async (req) => {
     const { id } = req.params as { id: string };
-    await deleteSession(getUserId(req), Number(id));
+    await deleteSession(getUserId(req), parsePositiveId(id));
     return { ok: true };
   });
 
@@ -183,7 +183,7 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/agent/session/:id', { preHandler: [auth] }, async (req) => {
     const { id } = req.params as { id: string };
-    return chatHistory(getUserId(req), Number(id));
+    return chatHistory(getUserId(req), parsePositiveId(id));
   });
 
   /** 会话级「自动写入」开关：开启后 Agent 写工具（改任务/规划/档案）才会执行 */
@@ -192,8 +192,9 @@ export async function roadmapRoutes(app: FastifyInstance): Promise<void> {
     const { enabled } = (req.body ?? {}) as { enabled?: boolean };
     if (typeof enabled !== 'boolean') throw badRequest('enabled 必须为布尔值');
     const userId = getUserId(req);
-    await assertSessionOwner(userId, Number(id)); // 校验会话归属，防止跨用户开关
-    setSessionAutoWrite(Number(id), enabled);
+    const sessionId = parsePositiveId(id);
+    await assertSessionOwner(userId, sessionId); // 校验会话归属，防止跨用户开关
+    setSessionAutoWrite(sessionId, enabled);
     return { ok: true, autoWrite: enabled };
   });
 

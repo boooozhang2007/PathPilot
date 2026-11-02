@@ -119,7 +119,7 @@ export default function JobsPage() {
       );
       await load();
     } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') return;
+      if ((e as { name?: string } | null)?.name === 'AbortError') return;
       setErr(e instanceof Error ? e.message : '分析失败');
     } finally {
       if (mountedRef.current) setBusy('');
@@ -148,7 +148,7 @@ export default function JobsPage() {
       setManual({ title: '', company: '', description: '' });
       await load();
     } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') return;
+      if ((e as { name?: string } | null)?.name === 'AbortError') return;
       setErr(e instanceof Error ? e.message : '解析失败');
     } finally {
       if (mountedRef.current) setBusy('');

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { Loading, ErrorState, Tag, PageHeader, Ring, SectionTitle, Empty } from '@/components/ui';
-import { Chart, CategoryPie } from '@/components/charts';
+import { Chart, CategoryPie, useChartTheme } from '@/components/charts';
 import { Ic, type IconName } from '@/components/Icon';
 import type { GrowthStats, ProfileDTO, ProfileSkillDTO, ExperienceDTO, RoadmapTaskDTO, RoadmapVersionSummary } from '@pathpilot/shared';
 import { TASK_STATUS_LABELS, EVIDENCE_STATUS_LABELS } from '@pathpilot/shared';
@@ -24,6 +24,7 @@ export default function GrowthPage() {
   const [profile, setProfile] = useState<ProfileDTO | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+  const chartTheme = useChartTheme();
 
   useEffect(() => {
     Promise.all([
@@ -125,7 +126,7 @@ export default function GrowthPage() {
       <section className="ink-panel noise corner-ticks sheet-frame reveal relative col-span-12 flex flex-wrap items-center justify-between gap-6 overflow-hidden rounded-[10px] px-7 py-6 text-white lg:col-span-8 lg:row-span-2">
           <span className="tape" />
         <div className="min-w-0">
-          <div className="eyebrow mb-2" style={{ color: '#8ba7ff' }}>
+          <div className="eyebrow mb-2">
             05 · GROWTH
           </div>
           <h1 className="font-display text-[26px] font-bold leading-tight">{profile?.nickname ?? '同学'}的成长记录</h1>
@@ -206,12 +207,12 @@ export default function GrowthPage() {
             option={{
               grid: { left: 8, right: 16, top: 28, bottom: 4, containLabel: true },
               tooltip: { trigger: 'axis' },
-              legend: { top: 0, right: 0, textStyle: { fontSize: 11, color: '#6b5b45' }, itemWidth: 12, itemHeight: 8 },
-              xAxis: { type: 'category', data: hoursBySem.map((h) => h.sem), axisTick: { show: false } },
-              yAxis: { type: 'value', splitLine: { lineStyle: { color: '#ddcda6' } } },
+              legend: { top: 0, right: 0, textStyle: { fontSize: 11, color: chartTheme.label }, itemWidth: 12, itemHeight: 8 },
+              xAxis: { type: 'category', data: hoursBySem.map((h) => h.sem), axisTick: { show: false }, axisLabel: { color: chartTheme.label } },
+              yAxis: { type: 'value', splitLine: { lineStyle: { color: chartTheme.split } }, axisLabel: { color: chartTheme.label } },
               series: [
-                { name: '计划', type: 'bar', data: hoursBySem.map((h) => h.planned), itemStyle: { borderRadius: [5, 5, 0, 0], color: '#cdbb92' }, barMaxWidth: 22 },
-                { name: '实际', type: 'bar', data: hoursBySem.map((h) => h.actual), itemStyle: { borderRadius: [5, 5, 0, 0], color: '#3d63e0' }, barMaxWidth: 22 },
+                { name: '计划', type: 'bar', data: hoursBySem.map((h) => h.planned), itemStyle: { borderRadius: [5, 5, 0, 0], color: '#bdcbc6' }, barMaxWidth: 22 },
+                { name: '实际', type: 'bar', data: hoursBySem.map((h) => h.actual), itemStyle: { borderRadius: [5, 5, 0, 0], color: '#167767' }, barMaxWidth: 22 },
               ],
             }}
           />
@@ -225,9 +226,9 @@ export default function GrowthPage() {
               option={{
                 grid: { left: 8, right: 16, top: 14, bottom: 4, containLabel: true },
                 tooltip: { trigger: 'axis' },
-                xAxis: { type: 'category', data: months, axisTick: { show: false } },
-                yAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: '#ddcda6' } } },
-                series: [{ type: 'bar', data: months.map((m) => byMonth.get(m) ?? 0), itemStyle: { borderRadius: [5, 5, 0, 0], color: '#1a6e5c' }, barMaxWidth: 26 }],
+                xAxis: { type: 'category', data: months, axisTick: { show: false }, axisLabel: { color: chartTheme.label } },
+                yAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: chartTheme.split } }, axisLabel: { color: chartTheme.label } },
+                series: [{ type: 'bar', data: months.map((m) => byMonth.get(m) ?? 0), itemStyle: { borderRadius: [5, 5, 0, 0], color: '#16836f' }, barMaxWidth: 26 }],
               }}
             />
           ) : (

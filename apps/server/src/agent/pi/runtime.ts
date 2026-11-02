@@ -1,4 +1,4 @@
-import { Agent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core';
+import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core';
 import { Type, type Api, type Model, type Models, type ModelThinkingLevel } from '@earendil-works/pi-ai';
 import { z, type ZodType } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
@@ -16,18 +16,23 @@ interface RunOptions {
   thinkingLevel?: ModelThinkingLevel;
   signal?: AbortSignal;
   stopWhen?: () => boolean;
+  onEvent?: (event: AgentEvent) => void;
 }
 
 export interface AgentOutcome {
   text: string;
   toolCalls: string[];
   aborted: boolean;
+  stopReason?: 'complete' | 'stopped' | 'timeout' | 'budget';
 }
 
 export async function runAgentWith(models: Models, model: Model<Api>, opts: RunOptions): Promise<AgentOutcome> {
   const toolCalls: string[] = [];
   let aborted = false;
   let budgetExceeded = false;
+  let stopReason: AgentOutcome['stopReason'] = 'complete';
+  let finished = false;
+  let partialText = '';
   let wake: (() => void) | undefined;
   const agent = new Agent({
     initialState: {
@@ -40,7 +45,8 @@ export async function runAgentWith(models: Models, model: Model<Api>, opts: RunO
     streamFn: models.streamSimple.bind(models),
     toolExecution: 'sequential',
     beforeToolCall: async () => {
-      if (toolCalls.length > (opts.maxToolCalls ?? config.agentLimits.maxToolCalls)) {
+      if (aborted) return { block: true, terminate: true, reason: '执行已中止' };
+      if (toolCalls.length >= (opts.maxToolCalls ?? config.agentLimits.maxToolCalls)) {
         budgetExceeded = true;
         return { block: true, terminate: true, reason: '已达到工具调用次数上限' };
       }
@@ -52,10 +58,14 @@ export async function runAgentWith(models: Models, model: Model<Api>, opts: RunO
   // Pi checks the argument schema before beforeToolCall. Count every attempt,
   // including malformed or unknown tools, so those cannot loop past the budget.
   agent.subscribe((event) => {
+    if (finished) return;
+    if (event.type === 'message_start' && event.message.role === 'assistant') partialText = '';
+    if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') partialText += event.assistantMessageEvent.delta;
     if (event.type === 'tool_execution_start') {
       toolCalls.push(event.toolName);
       if (toolCalls.length > (opts.maxToolCalls ?? config.agentLimits.maxToolCalls)) budgetExceeded = true;
     }
+    opts.onEvent?.(event);
   });
   const abort = () => {
     aborted = true;
@@ -63,38 +73,47 @@ export async function runAgentWith(models: Models, model: Model<Api>, opts: RunO
     wake?.();
   };
   const stopped = new Promise<void>((resolve) => { wake = resolve; });
-  opts.signal?.addEventListener('abort', abort, { once: true });
-  const timer = setTimeout(abort, opts.wallClockMs ?? config.agentLimits.wallClockMs);
+  const cancel = () => { stopReason = 'stopped'; abort(); };
+  opts.signal?.addEventListener('abort', cancel, { once: true });
+  const timer = setTimeout(() => { stopReason = 'timeout'; abort(); }, opts.wallClockMs ?? config.agentLimits.wallClockMs);
   try {
-    if (opts.signal?.aborted) abort();
+    if (opts.signal?.aborted) cancel();
     else {
       const prompting = agent.prompt(opts.prompt);
       await Promise.race([prompting, stopped]);
-      // abort 会在 race 中先胜出；仍须等待 Pi 完成取消与消息落尾，避免读取到中间状态。
-      if (aborted) await prompting;
+      // 给 Pi 一小段落尾时间；不遵守 AbortSignal 的模型/工具不能无限阻塞停止。
+      if (aborted) {
+        let graceTimer: NodeJS.Timeout | undefined;
+        try {
+          await Promise.race([prompting.catch(() => undefined), new Promise<void>((resolve) => { graceTimer = setTimeout(resolve, 150); })]);
+        } finally { if (graceTimer) clearTimeout(graceTimer); }
+      }
     }
   } finally {
     clearTimeout(timer);
-    opts.signal?.removeEventListener('abort', abort);
+    opts.signal?.removeEventListener('abort', cancel);
+    finished = true;
   }
   const last = agent.state.messages.slice(historyLength).reverse().find((message) => message.role === 'assistant');
   if (last?.role === 'assistant') {
     // 超时/取消会把底层连接错误转换成 error；这类结果应如实标记 aborted，而不是误报为模型调用失败。
     if (last.stopReason === 'error' && aborted) {
       return {
-        text: last.content.filter((part) => part.type === 'text').map((part) => part.text).join(''),
+        text: last.content.filter((part) => part.type === 'text').map((part) => part.text).join('') || partialText,
         toolCalls,
         aborted: true,
+        stopReason,
       };
     }
     if (last.stopReason === 'error') throw new Error(last.errorMessage || '模型返回错误');
     return {
-      text: last.content.filter((part) => part.type === 'text').map((part) => part.text).join(''),
+      text: last.content.filter((part) => part.type === 'text').map((part) => part.text).join('') || (aborted ? partialText : ''),
       toolCalls,
       aborted: aborted || last.stopReason === 'aborted',
+      stopReason: budgetExceeded ? 'budget' : stopReason,
     };
   }
-  return { text: '', toolCalls, aborted };
+  return { text: partialText, toolCalls, aborted, stopReason: budgetExceeded ? 'budget' : stopReason };
 }
 
 /** Capture a schema-validated submission; invalid output never reaches persistence. */

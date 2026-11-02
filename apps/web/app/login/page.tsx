@@ -1,5 +1,5 @@
 'use client';
-// 登录/注册:左墨蓝图品牌面板 + 右表单
+// 登录/注册:左侧深色品牌面板 + 右侧表单
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, setToken } from '@/lib/api';
@@ -46,7 +46,7 @@ export default function LoginPage() {
           </div>
         </div>
         <div>
-          <div className="eyebrow mb-3" style={{ color: '#8ba7ff' }}>
+          <div className="eyebrow mb-3">
             岗位证据 → 能力档案 → 学期规划 → 任务证据
           </div>
           <h1 className="font-display max-w-md text-[32px] font-bold leading-snug">把职业目标,画成一张可以执行的成长蓝图。</h1>

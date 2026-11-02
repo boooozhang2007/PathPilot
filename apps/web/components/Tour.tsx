@@ -60,11 +60,15 @@ function rectOf(el: Element | null): DOMRect | null {
 export function Tour({ onClose }: { onClose: () => void }) {
   const [idx, setIdx] = useState(0);
   const [box, setBox] = useState<DOMRect | null>(null);
+  const [compact, setCompact] = useState(false);
   const step = STEPS[idx];
 
   const measure = useCallback(() => {
+    // 窄屏下侧栏是抽屉态(默认隐藏),锚点不可见:不做聚光,卡片居中展示
+    const narrow = window.innerWidth < 768;
+    setCompact(narrow);
     // 锚点契约与侧栏一致:layout 埋点为 `nav-${href}`
-    const el = document.querySelector(`[data-tour-anchor="nav-${step.href}"]`);
+    const el = narrow ? null : document.querySelector(`[data-tour-anchor="nav-${step.href}"]`);
     setBox(rectOf(el));
   }, [step.href]);
 
@@ -83,8 +87,11 @@ export function Tour({ onClose }: { onClose: () => void }) {
   }
 
   const last = idx === STEPS.length - 1;
-  // 引导卡片放侧栏右侧,垂直位置跟随聚光目标
-  const cardTop = box ? Math.min(Math.max(box.top + box.height / 2 - 130, 90), window.innerHeight - 360) : 120;
+  const viewportHeight = typeof window === 'undefined' ? 900 : window.innerHeight;
+  // 桌面:引导卡片放侧栏右侧,垂直位置跟随聚光目标;窄屏:垂直居中
+  const cardTop = compact
+    ? Math.max(24, Math.round((viewportHeight - 440) / 2))
+    : box ? Math.min(Math.max(box.top + box.height / 2 - 130, 90), viewportHeight - 360) : 120;
 
   return (
     <div className="fixed inset-0 z-[80]">
@@ -99,7 +106,7 @@ export function Tour({ onClose }: { onClose: () => void }) {
             height: box.height + 12,
             borderRadius: 14,
             boxShadow: '0 0 0 9999px rgba(7, 19, 32, 0.62)',
-            border: '1.5px solid rgba(66,110,254,0.9)',
+            border: '1.5px solid rgba(22,119,103,0.9)',
             transition: 'all .35s cubic-bezier(.22,.8,.32,1)',
           }}
         />
@@ -108,8 +115,8 @@ export function Tour({ onClose }: { onClose: () => void }) {
 
       {/* 步骤卡片 */}
       <div
-        className="glass reveal fixed w-[380px] overflow-hidden"
-        style={{ left: 276, top: cardTop }}
+        className={`glass reveal fixed overflow-hidden ${compact ? 'left-3 right-3 mx-auto max-w-[420px]' : 'w-[380px]'}`}
+        style={compact ? { top: cardTop } : { left: 276, top: cardTop }}
         key={idx}
       >
         <div className="ink-panel noise relative px-6 pb-5 pt-6 text-white">

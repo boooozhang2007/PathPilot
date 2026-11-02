@@ -209,7 +209,7 @@ async function persist(args: {
   const carryOver = args.revise ? args.ctx.currentTasks.filter((t) => t.status === 'done') : undefined;
   const saved = await saveRoadmapVersion({
     userId: args.userId,
-    parentVersionId: args.revise ? args.ctx.currentRoadmap!.id : null,
+    parentVersionId: args.ctx.currentRoadmap?.id ?? null,
     targetRole: args.targetRole,
     careerPath: args.careerPath,
     weeklyHours: args.weeklyHours,

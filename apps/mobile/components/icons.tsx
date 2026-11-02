@@ -7,7 +7,7 @@ export type IconName =
   | 'warn' | 'play' | 'pause' | 'expand' | 'collapse' | 'chevronUp' | 'chevronDown' | 'chevronRight'
   | 'close' | 'copy' | 'refresh' | 'arrowUp' | 'user' | 'settings' | 'info' | 'globe' | 'moon'
   | 'font' | 'folder' | 'trash' | 'door' | 'server' | 'compass' | 'download' | 'rocket' | 'star'
-  | 'chat' | 'roadmap' | 'target' | 'layers' | 'calendar' | 'trashSweep' | 'party';
+  | 'chat' | 'roadmap' | 'target' | 'layers' | 'calendar' | 'trashSweep' | 'party' | 'minus';
 
 const P = (d: string) => d;
 
@@ -23,6 +23,7 @@ const PATHS: Record<IconName, string[]> = {
   wrench: [P('M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z')],
   clock: [P('M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z'), P('M12 8v4.5l3 1.8')],
   check: [P('M20 6 9 17l-5-5')],
+  minus: [P('M5 12h14')],
   checkCircle: [P('M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z'), P('m8.6 12.3 2.3 2.3 4.5-4.9')],
   warn: [P('M12 4.5 21 19.5H3L12 4.5Z'), P('M12 10v4'), P('M12 17.2v.1')],
   play: [P('M8 5.5v13l11-6.5-11-6.5Z')],

@@ -3,7 +3,7 @@ import { buildApp } from '../../src/app.js';
 import { signToken } from '../../src/auth/index.js';
 import { db } from '../../src/db/client.js';
 import { users } from '../../src/db/schema.js';
-import { addRoadmapTask, listRoadmapTasks, saveRoadmapVersion, updateTask } from '../../src/services/roadmapService.js';
+import { addRoadmapTask, getRoadmap, listRoadmapTasks, listRoadmaps, saveRoadmapVersion, updateTask } from '../../src/services/roadmapService.js';
 import { GEN_ROADMAP } from '../fixtures/llmFixtures.js';
 import type { FastifyInstance } from 'fastify';
 
@@ -79,6 +79,20 @@ describe('任务关联隔离与状态一致性', () => {
     for (const id of [foreignTaskId, archivedTaskId]) {
       await expect(addRoadmapTask(userId, { title: 'invalid-dependency', semester: 3, description: 'test', estimatedHours: 1, priority: 'medium', dependencyIds: [id] })).rejects.toMatchObject({ statusCode: 400 });
     }
+  });
+
+  it('并发保存规划使用不同版本号且只保留一个生效版本', async () => {
+    const versions = await listRoadmaps(userId);
+    const parentVersionId = (await getRoadmap(userId, versions[0].id)).id;
+    const save = (generationReason: string) => saveRoadmapVersion({
+      userId, parentVersionId, targetRole: 'Java', careerPath: 'employment', weeklyHours: 10,
+      content: structuredClone(GEN_ROADMAP), engine: 'pi-llm', generationReason,
+    });
+    const saved = await Promise.all([save('concurrent-a'), save('concurrent-b')]);
+    expect(new Set(saved.map((item) => item.version)).size).toBe(2);
+    const after = await listRoadmaps(userId);
+    expect(after.filter((item) => item.status === 'active')).toHaveLength(1);
+    expect((await getRoadmap(userId, saved[0].roadmapId)).parentVersionId).toBe(parentVersionId);
   });
 
   it('并发更新使用同一版本时只有一次写入成功', async () => {

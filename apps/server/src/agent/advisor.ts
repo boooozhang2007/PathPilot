@@ -10,11 +10,13 @@ import { buildUserContext } from './context.js';
 import { isLlmConfigured } from './settings.js';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { flowPrompt, markFlowResult, prepareFlow } from './flow.js';
+import { beginSessionRequest, claimSessionExecution, stopSessionExecution, withSessionDeletion, withUserSessionCleanup } from './sessionExecution.js';
 
 export interface ToolTraceEntry {
   name: string;
+  toolCallId?: string;
   summary: string;
-  status?: 'done' | 'error';
+  status?: 'done' | 'error' | 'canceled';
 }
 
 /** 把工具结果转成用户可读摘要，避免把整段 JSON 直接塞进思考链。 */
@@ -149,6 +151,18 @@ export async function chat(
   userId: number,
   input: { sessionId?: number; message: string; answerStyle?: 'concise' | 'detailed'; thinking?: boolean; autoWrite?: boolean; regenerateFrom?: number }
 ): Promise<{ sessionId: number; reply: ChatMessageDTO; engine: 'pi-llm' | 'rules'; model?: string; fallbackReason?: string }> {
+  const request = beginSessionRequest(userId, input.sessionId);
+  try {
+    return await runChat(userId, input);
+  } finally {
+    request.release();
+  }
+}
+
+async function runChat(
+  userId: number,
+  input: { sessionId?: number; message: string; answerStyle?: 'concise' | 'detailed'; thinking?: boolean; autoWrite?: boolean; regenerateFrom?: number }
+): Promise<{ sessionId: number; reply: ChatMessageDTO; engine: 'pi-llm' | 'rules'; model?: string; fallbackReason?: string }> {
   // 会话管理（会话记忆不代替正式业务记录，PRD 4.8）
   let sessionId = input.sessionId;
   if (sessionId) {
@@ -163,10 +177,10 @@ export async function chat(
     sessionId = inserted[0].id;
   }
   const sid: number = sessionId;
+  const execution = claimSessionExecution(sid, userId);
+  try {
   if (typeof input.autoWrite === 'boolean') {
     setSessionAutoWrite(sid, input.autoWrite);
-  } else if (/开启自动写入|允许自动写入|开启写入|帮我写入任务|写入规划/i.test(input.message)) {
-    setSessionAutoWrite(sid, true);
   }
   const autoWriteActive = isSessionAutoWriteEnabled(sid);
   if (input.regenerateFrom) await truncateForRegenerate(sid, input.regenerateFrom);
@@ -229,6 +243,7 @@ export async function chat(
         toolStarted++;
       }),
       wallClockMs: 300_000,
+      signal: execution.signal,
       thinkingLevel: input.thinking ? 'low' : 'off',
     });
     if (!outcome.text) throw new Error(outcome.aborted ? '模型运行超时' : '模型返回为空');
@@ -286,6 +301,7 @@ export async function chat(
       createdAt: row.createdAt,
     },
   };
+  } finally { execution.release(); }
 }
 
 function analysis_sampleCount(a: { sampleCount: number }): number {
@@ -313,7 +329,7 @@ export async function chatHistory(userId: number, sessionId: number): Promise<Ch
   }));
 }
 
-export async function latestSession(userId: number): Promise<{ sessionId: number; messages: ChatMessageDTO[] } | null> {
+export async function latestSession(userId: number): Promise<{ sessionId: number; messages: ChatMessageDTO[]; autoWrite: boolean } | null> {
   const rows = await db
     .select()
     .from(agentChatSessions)
@@ -321,7 +337,7 @@ export async function latestSession(userId: number): Promise<{ sessionId: number
     .orderBy(desc(agentChatSessions.updatedAt), desc(agentChatSessions.id))
     .limit(1);
   if (!rows[0]) return null;
-  return { sessionId: rows[0].id, messages: await chatHistory(userId, rows[0].id) };
+  return { sessionId: rows[0].id, messages: await chatHistory(userId, rows[0].id), autoWrite: rows[0].autoWrite };
 }
 
 /** 会话摘要列表（侧栏）：标题取首条用户消息，按更新时间倒序 */
@@ -360,6 +376,7 @@ export async function listSessions(userId: number): Promise<ChatSessionSummaryDT
     updatedAt: s.updatedAt,
     flowState: s.flowState,
     selectedIntent: s.selectedIntent,
+    autoWrite: s.autoWrite,
   }));
 }
 
@@ -376,12 +393,17 @@ export async function renameSession(userId: number, sessionId: number, title: st
 
 /** 清空全部会话 */
 export async function clearAllSessions(userId: number): Promise<number> {
-  const rows = await db.select({ id: agentChatSessions.id }).from(agentChatSessions).where(eq(agentChatSessions.userId, userId));
-  for (const r of rows) {
-    await db.delete(agentChatMessages).where(eq(agentChatMessages.sessionId, r.id));
-  }
-  await db.delete(agentChatSessions).where(eq(agentChatSessions.userId, userId));
-  return rows.length;
+  return withUserSessionCleanup(userId, async () => {
+    const rows = await db.select({ id: agentChatSessions.id }).from(agentChatSessions).where(eq(agentChatSessions.userId, userId));
+    if (rows.length) {
+      const sessionIds = rows.map((row) => row.id);
+      db.transaction((tx) => {
+        tx.delete(agentChatMessages).where(inArray(agentChatMessages.sessionId, sessionIds)).run();
+        tx.delete(agentChatSessions).where(eq(agentChatSessions.userId, userId)).run();
+      });
+    }
+    return rows.length;
+  });
 }
 
 export async function deleteSession(userId: number, sessionId: number): Promise<void> {
@@ -391,8 +413,15 @@ export async function deleteSession(userId: number, sessionId: number): Promise<
     .where(and(eq(agentChatSessions.id, sessionId), eq(agentChatSessions.userId, userId)))
     .limit(1);
   if (!found[0]) throw notFound('会话不存在');
-  await db.delete(agentChatMessages).where(eq(agentChatMessages.sessionId, sessionId));
-  await db.delete(agentChatSessions).where(eq(agentChatSessions.id, sessionId));
+  await withSessionDeletion(userId, sessionId, async () => {
+    const stillExists = await db.select({ id: agentChatSessions.id }).from(agentChatSessions)
+      .where(and(eq(agentChatSessions.id, sessionId), eq(agentChatSessions.userId, userId))).limit(1);
+    if (!stillExists[0]) throw notFound('会话不存在');
+    db.transaction((tx) => {
+      tx.delete(agentChatMessages).where(eq(agentChatMessages.sessionId, sessionId)).run();
+      tx.delete(agentChatSessions).where(eq(agentChatSessions.id, sessionId)).run();
+    });
+  });
 }
 
 /** 校验会话归属（供路由层使用，如自动写入开关） */

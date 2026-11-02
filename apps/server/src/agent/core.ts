@@ -1,12 +1,17 @@
 // AgentService：PRD §6.2 六大业务接口的编排层
 // 引擎选择：配置 AGENT_API_KEY → Pi LLM 通道；否则规则引擎降级（响应标注 engine）
-import { and, eq, lt, or, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, lt, or, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { agentRuns } from '../db/schema.js';
 import { getLlmSettings, isLlmConfigured } from './settings.js';
 import { rateLimited, notFound } from '../services/errors.js';
 import type { AgentRunDTO } from '@pathpilot/shared';
 import type { AgentRunStatus } from '@pathpilot/shared';
+import { config } from '../config.js';
+
+const activeRun = () => or(eq(agentRuns.status, 'queued'), eq(agentRuns.status, 'running'));
+const runControllers = new Map<number, AbortController>();
+const retryTimers = new Map<number, NodeJS.Timeout>();
 
 export async function currentEngine(): Promise<'pi-llm' | 'rules'> {
   return (await isLlmConfigured()) ? 'pi-llm' : 'rules';
@@ -16,17 +21,14 @@ export async function createRun(userId: number, taskType: string, inputSummary: 
   // 历史进程崩溃或请求超时后，旧任务不能永久阻塞同类任务。
   await recoverStaleRuns();
   // 防重复提交（PRD 12：防止重复提交产生重复版本）
-  const running = await db
-    .select({ id: agentRuns.id })
-    .from(agentRuns)
-    .where(and(eq(agentRuns.userId, userId), eq(agentRuns.taskType, taskType), or(eq(agentRuns.status, 'queued'), eq(agentRuns.status, 'running'))))
-    .limit(1);
-  if (running[0]) throw rateLimited('同类任务正在执行中，请等待完成后再试');
-  const inserted = await db
-    .insert(agentRuns)
-    .values({ userId, taskType, status: 'queued', inputSummary, progress: 0, progressMessage: '等待执行' })
-    .returning();
-  return inserted[0].id;
+  return db.transaction((tx) => {
+    const running = tx.select({ id: agentRuns.id }).from(agentRuns)
+      .where(and(eq(agentRuns.userId, userId), eq(agentRuns.taskType, taskType), activeRun())).get();
+    if (running) throw rateLimited('同类任务正在执行中，请等待完成后再试');
+    return tx.insert(agentRuns)
+      .values({ userId, taskType, status: 'queued', inputSummary, progress: 0, progressMessage: '等待执行' })
+      .returning({ id: agentRuns.id }).get().id;
+  }, { behavior: 'immediate' });
 }
 
 export async function finishRun(
@@ -34,31 +36,36 @@ export async function finishRun(
   status: AgentRunStatus,
   extra: { errorCode?: string; errorDetail?: string; resultType?: string; resultId?: number } = {}
 ): Promise<void> {
-  // 用户已取消的 run 不允许被后台完成回调覆盖
+  // 终态不可被迟到的完成回调覆盖。
   await db
     .update(agentRuns)
-    .set({ status, finishedAt: new Date().toISOString(), progress: status === 'succeeded' ? 100 : undefined, progressMessage: status === 'succeeded' ? '已完成' : undefined, ...extra })
-    .where(and(eq(agentRuns.id, runId), ne(agentRuns.status, 'canceled')));
+    .set({ status, finishedAt: new Date().toISOString(), lockedAt: null, workerId: null, nextRetryAt: null,
+      progress: status === 'succeeded' ? 100 : undefined,
+      progressMessage: status === 'succeeded' ? '已完成' : status === 'failed' ? '执行失败' : '已取消', ...extra })
+    .where(and(eq(agentRuns.id, runId), activeRun())).run();
 }
 
 export async function updateRunProgress(runId: number, progress: number, progressMessage: string): Promise<void> {
   await db
     .update(agentRuns)
-    .set({ progress: Math.max(0, Math.min(100, Math.round(progress))), progressMessage, status: 'running' })
-    .where(and(eq(agentRuns.id, runId), ne(agentRuns.status, 'canceled')));
+    .set({ progress: Math.max(0, Math.min(99, Math.round(progress))), progressMessage })
+    .where(and(eq(agentRuns.id, runId), eq(agentRuns.status, 'running'))).run();
 }
 
-/** 运行中的任务控制器：取消时真正中止搜索/LLM/工具循环 */
-const runControllers = new Map<number, AbortController>();
-
 export async function cancelRun(userId: number, runId: number): Promise<void> {
-  const controller = runControllers.get(runId);
-  controller?.abort();
-  await db
+  await getRun(userId, runId);
+  const canceled = db
     .update(agentRuns)
-    .set({ status: 'canceled', finishedAt: new Date().toISOString(), progressMessage: '已取消' })
-    .where(and(eq(agentRuns.id, runId), eq(agentRuns.userId, userId), or(eq(agentRuns.status, 'queued'), eq(agentRuns.status, 'running'))));
-  runControllers.delete(runId);
+    .set({ status: 'canceled', finishedAt: new Date().toISOString(), progressMessage: '已取消',
+      lockedAt: null, workerId: null, nextRetryAt: null })
+    .where(and(eq(agentRuns.id, runId), eq(agentRuns.userId, userId), activeRun()))
+    .returning({ id: agentRuns.id }).get();
+  if (!canceled) return;
+  // 先确认归属并写入终态，才中止进程内工作与待执行的重试。
+  runControllers.get(runId)?.abort();
+  const timer = retryTimers.get(runId);
+  if (timer) clearTimeout(timer);
+  retryTimers.delete(runId);
 }
 
 export async function recoverStaleRuns(staleMs = 10 * 60 * 1000): Promise<number> {
@@ -67,17 +74,22 @@ export async function recoverStaleRuns(staleMs = 10 * 60 * 1000): Promise<number
     or(eq(agentRuns.status, 'queued'), eq(agentRuns.status, 'running')),
     or(lt(agentRuns.startedAt, cutoff), lt(agentRuns.lockedAt, cutoff), and(eq(agentRuns.status, 'running'), isNull(agentRuns.lockedAt)))
   );
-  const rows = await db.select({ id: agentRuns.id }).from(agentRuns).where(staleCondition);
-  if (!rows.length) return 0;
-  await db.update(agentRuns).set({
+  const rows = db.update(agentRuns).set({
     status: 'failed',
     finishedAt: new Date().toISOString(),
     errorCode: 'STALE_RUN',
     errorDetail: '任务超过允许执行时间，已自动结束',
     lockedAt: null,
     workerId: null,
+    nextRetryAt: null,
     progressMessage: '任务超时，已自动结束',
-  }).where(staleCondition);
+  }).where(staleCondition).returning({ id: agentRuns.id }).all();
+  for (const row of rows) {
+    runControllers.get(row.id)?.abort();
+    const timer = retryTimers.get(row.id);
+    if (timer) clearTimeout(timer);
+    retryTimers.delete(row.id);
+  }
   return rows.length;
 }
 
@@ -107,52 +119,62 @@ export interface RunJobContext {
 
 /** 异步执行（不阻塞请求；失败记录错误码；支持进度上报与真正取消） */
 export function executeRun(runId: number, taskType: string, job: (ctx: RunJobContext) => Promise<{ resultType: string; resultId: number }>): void {
+  // 原子认领；重复调度不能同时执行同一个任务。
+  const claimed = db.update(agentRuns).set({
+    status: 'running', startedAt: new Date().toISOString(), lockedAt: new Date().toISOString(),
+    workerId: `worker-${process.pid}`, attemptCount: sql`${agentRuns.attemptCount} + 1`,
+    progress: 5, progressMessage: '开始执行', nextRetryAt: null,
+  }).where(and(eq(agentRuns.id, runId), eq(agentRuns.status, 'queued')))
+    .returning({ id: agentRuns.id }).get();
+  if (!claimed) return;
   const controller = new AbortController();
   runControllers.set(runId, controller);
+  let timedOut = false;
+  let timer: NodeJS.Timeout | undefined;
   void (async (): Promise<{ resultType: string; resultId: number } | null> => {
-    const current = await db.select({ status: agentRuns.status }).from(agentRuns).where(eq(agentRuns.id, runId)).limit(1);
-    if (!current[0] || current[0].status === 'canceled') return null;
-    // Persist the running state before invoking the job. Without awaiting this
-    // write, a fast follow-up tool call can still see the run as queued.
-    await db
-      .update(agentRuns)
-      .set({
-        status: 'running',
-        startedAt: new Date().toISOString(),
-        lockedAt: new Date().toISOString(),
-        workerId: `worker-${process.pid}`,
-        attemptCount: sql`${agentRuns.attemptCount} + 1`,
-        progress: 5,
-        progressMessage: '开始执行',
-      })
-      .where(and(eq(agentRuns.id, runId), ne(agentRuns.status, 'canceled')));
-    return job({
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+        reject(Object.assign(new Error('任务执行超时，请重试'), { code: 'TIMEOUT' }));
+      }, config.agentLimits.chatWallClockMs);
+    });
+    const canceled = new Promise<null>((resolve) => {
+      controller.signal.addEventListener('abort', () => { if (!timedOut) resolve(null); }, { once: true });
+    });
+    const result = await Promise.race([job({
       signal: controller.signal,
       onProgress: (progress, message) => {
         if (!controller.signal.aborted) void updateRunProgress(runId, progress, message).catch(() => {});
       },
-    });
+    }), deadline, canceled]);
+    return controller.signal.aborted ? null : result;
   })()
     .then((r) => (r ? finishRun(runId, 'succeeded', r) : null))
     .catch(async (err) => {
-      if (controller.signal.aborted) return; // cancelRun 已经写入 canceled
+      if (controller.signal.aborted && !timedOut) return;
       const code = (err as { code?: string }).code ?? 'INTERNAL_ERROR';
       const detail = err instanceof Error ? err.message : String(err);
-      const retryable = /timeout|network|fetch failed|ECONN|50[234]/i.test(detail);
+      const retryable = !timedOut && /network|fetch failed|ECONN|50[234]/i.test(detail);
       if (retryable) {
         const rows = await db.select({ attemptCount: agentRuns.attemptCount, maxAttempts: agentRuns.maxAttempts, status: agentRuns.status }).from(agentRuns).where(eq(agentRuns.id, runId)).limit(1);
-        if (rows[0]?.status === 'canceled') return;
+        if (rows[0]?.status !== 'running') return;
         const attempt = rows[0]?.attemptCount ?? 1;
         const max = rows[0]?.maxAttempts ?? 2;
         if (attempt < max) {
-          await db.update(agentRuns).set({ status: 'queued', nextRetryAt: new Date(Date.now() + 5000).toISOString(), lockedAt: null, workerId: null, progressMessage: '网络错误，5 秒后重试' }).where(and(eq(agentRuns.id, runId), ne(agentRuns.status, 'canceled'))).catch(() => {});
-          setTimeout(() => executeRun(runId, taskType, job), 5000);
+          const queued = db.update(agentRuns).set({ status: 'queued', nextRetryAt: new Date(Date.now() + 5000).toISOString(), lockedAt: null, workerId: null, progressMessage: '网络错误，5 秒后重试' })
+            .where(and(eq(agentRuns.id, runId), eq(agentRuns.status, 'running'))).returning({ id: agentRuns.id }).get();
+          if (queued) retryTimers.set(runId, setTimeout(() => {
+            retryTimers.delete(runId);
+            executeRun(runId, taskType, job);
+          }, 5000));
         } else await finishRun(runId, 'failed', { errorCode: code, errorDetail: detail.slice(0, 500) }).catch(() => {});
       }
       else await finishRun(runId, 'failed', { errorCode: code, errorDetail: detail.slice(0, 500) }).catch(() => {});
       if (code === 'INTERNAL_ERROR') console.error(`[agent-run:${runId}:${taskType}]`, err);
     })
     .finally(() => {
+      if (timer) clearTimeout(timer);
       if (runControllers.get(runId) === controller) runControllers.delete(runId);
     });
 }

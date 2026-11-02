@@ -25,3 +25,10 @@ export const outputInvalid = (msg?: string) => new AppError('AGENT_OUTPUT_INVALI
 export const budgetExceeded = (msg?: string) => new AppError('BUDGET_EXCEEDED', 422, msg);
 export const sampleInsufficient = (msg?: string) => new AppError('SAMPLE_INSUFFICIENT', 422, msg);
 export const internal = (msg?: string) => new AppError('INTERNAL_ERROR', 500, msg);
+
+export function parsePositiveId(value: unknown, field = 'id'): number {
+  if (typeof value !== 'string' && typeof value !== 'number') throw badRequest(`${field} 必须是正整数`);
+  const parsed = typeof value === 'number' ? value : /^[1-9]\d*$/.test(value) ? Number(value) : NaN;
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) throw badRequest(`${field} 必须是正整数`);
+  return parsed;
+}

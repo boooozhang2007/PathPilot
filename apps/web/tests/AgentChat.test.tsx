@@ -7,6 +7,7 @@ import { api } from '../lib/api';
 vi.mock('../lib/api', () => ({
   api: vi.fn(),
   getToken: () => 'test-token',
+  clearToken: vi.fn(),
   API_BASE: 'http://localhost:3000',
 }));
 vi.mock('../components/Markdown', () => ({ Markdown: ({ text }: { text: string }) => <p data-message>{text}</p> }));
@@ -115,6 +116,40 @@ describe('AI 顾问流式会话', () => {
     expect(renderer.root.findAllByProps({ title: '停止生成' })).toHaveLength(0);
   });
 
+  it('以服务器保存的部分回复和正式消息 ID 覆盖流式预览', async () => {
+    const reply = stream();
+    reply.push({ type: 'session', sessionId: 7 });
+    reply.push({ type: 'text', delta: '未落库的流预览' });
+    reply.push({ type: 'done', errorCode: 'STOPPED', messageId: 46, reply: {
+      id: 46, sessionId: 7, role: 'assistant', content: '服务端确认的部分回复', engine: 'pi-llm',
+      errorCode: 'STOPPED', toolCalls: [], createdAt: new Date().toISOString(),
+    } });
+    reply.close();
+    fetchMock.mockResolvedValue(reply.response);
+    await mount();
+
+    await act(async () => { await scenario().props.onClick(); });
+
+    expect(replies()).toEqual(['服务端确认的部分回复']);
+  });
+
+  it('显式开启自动写入后，在本轮请求中发送授权状态', async () => {
+    const reply = stream();
+    reply.push({ type: 'session', sessionId: 7, autoWrite: true });
+    reply.push({ type: 'text', delta: '已完成' });
+    reply.push({ type: 'done', messageId: 47 });
+    reply.close();
+    fetchMock.mockResolvedValue(reply.response);
+    await mount();
+
+    await act(async () => {
+      renderer.root.findByProps({ title: '开启后允许 Agent 直接创建与修改任务/规划/档案' }).props.onClick();
+      await scenario().props.onClick();
+    });
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string).autoWrite).toBe(true);
+  });
+
   it('生成中开启新对话，旧请求的中止回调不能污染新会话', async () => {
     const oldReply = stream();
     fetchMock.mockImplementationOnce(async (_url, init) => {
@@ -220,5 +255,91 @@ describe('AI 顾问流式会话', () => {
     expect(replies()).toEqual(['重试成功']);
     const userMessages = renderer.root.findAllByType('div').filter((node) => node.props.className === 'mb-6 flex flex-col items-end');
     expect(userMessages).toHaveLength(1);
+  });
+
+  it('停止生成时流读取器抛出的普通 AbortError 也按停止处理，并对齐服务端落库内容', async () => {
+    const reply = stream();
+    // 不在 abort 时让流报错：模拟共享读取器自身因取消信号抛出的普通 Error（name=AbortError）
+    fetchMock.mockResolvedValue(reply.response);
+    vi.mocked(api).mockImplementation(async (path) => {
+      if (path === '/api/profile') return { targetRole: 'Java', grade: 'freshman', weeklyHours: 8 };
+      if (path === '/api/agent/sessions') return [];
+      if (path === '/api/agent/session/7') {
+        return [
+          { id: 48, sessionId: 7, role: 'user', content: '问题', engine: null, toolCalls: [], createdAt: new Date().toISOString() },
+          { id: 60, sessionId: 7, role: 'assistant', content: '服务端保留的部分回答', engine: 'pi-llm', errorCode: 'STOPPED', toolCalls: [], createdAt: new Date().toISOString() },
+        ];
+      }
+      return null;
+    });
+    await mount();
+    await act(async () => { void scenario().props.onClick(); });
+    await act(async () => {
+      reply.push({ type: 'session', sessionId: 7 });
+      reply.push({ type: 'text', delta: '未完成的回答' });
+    });
+
+    await act(async () => { renderer.root.findByProps({ title: '停止生成' }).props.onClick(); });
+
+    expect(text('操作已取消')).toHaveLength(0);
+    expect(text('发送失败')).toHaveLength(0);
+    expect(replies()).toEqual(['未完成的回答']);
+    expect(renderer.root.findAllByProps({ title: '停止生成' })).toHaveLength(0);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 450)); });
+    expect(replies()).toEqual(['服务端保留的部分回答']);
+  });
+
+  it('服务端拒绝请求时显示具体原因，而不是裸状态码', async () => {
+    fetchMock.mockResolvedValue(new Response(
+      JSON.stringify({ error: { code: 'CONFLICT', message: '此对话正在生成回复，请等待完成或停止后重试' } }),
+      { status: 409, headers: { 'Content-Type': 'application/json' } },
+    ));
+    await mount();
+
+    await act(async () => { await scenario().props.onClick(); });
+
+    expect(text('此对话正在生成回复，请等待完成或停止后重试').length).toBeGreaterThan(0);
+    expect(renderer.root.findAll((node) => typeof node.children[0] === 'string' && node.children[0].startsWith('请求失败'))).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ title: '停止生成' })).toHaveLength(0);
+  });
+
+  it('会话已在其他设备删除（404）时自动回到新对话，下一次发送不再带旧会话 ID', async () => {
+    const now = new Date().toISOString();
+    vi.mocked(api).mockImplementation(async (path) => {
+      if (path === '/api/profile') return { targetRole: 'Java', grade: 'freshman', weeklyHours: 8 };
+      if (path === '/api/agent/sessions') return [{ id: 7, title: '旧对话', messageCount: 2, updatedAt: now, autoWrite: true }];
+      if (path === '/api/agent/session') {
+        return { sessionId: 7, autoWrite: true, messages: [
+          { id: 1, sessionId: 7, role: 'user', content: '旧问题', engine: null, toolCalls: [], createdAt: now },
+          { id: 2, sessionId: 7, role: 'assistant', content: '旧回答', engine: 'pi-llm', toolCalls: [], createdAt: now },
+        ] };
+      }
+      return null;
+    });
+    const fresh = stream();
+    fresh.push({ type: 'session', sessionId: 8 });
+    fresh.push({ type: 'text', delta: '新会话的回答' });
+    fresh.push({ type: 'done', messageId: 70 });
+    fresh.close();
+    fetchMock
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({ error: { code: 'NOT_FOUND', message: '对话已删除或无法访问，请开启新对话' } }),
+        { status: 404, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(fresh.response);
+    await mount();
+    expect(replies()).toEqual(['旧回答']);
+    expect(renderer.root.findAllByProps({ 'aria-pressed': true })).toHaveLength(1);
+
+    await act(async () => { await scenario().props.onClick(); });
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string).sessionId).toBe(7);
+    expect(text('对话已删除或无法访问，请开启新对话').length).toBeGreaterThan(0);
+    expect(replies()).toEqual([]);
+    expect(renderer.root.findAllByProps({ 'aria-pressed': true })).toHaveLength(0);
+
+    await act(async () => { await scenario().props.onClick(); });
+    expect(JSON.parse(fetchMock.mock.calls[1][1]?.body as string).sessionId).toBeUndefined();
+    expect(replies()).toEqual(['新会话的回答']);
   });
 });

@@ -5,6 +5,7 @@ import { getUserId } from '../auth/index.js';
 import { listSources, getAnalysis, latestAnalysis, listAnalyses } from '../services/analysisService.js';
 import { analyzeJobs, analyzeManualJob } from '../agent/jobs.js';
 import { createRun, executeRun, getRun, cancelRun } from '../agent/core.js';
+import { parsePositiveId } from '../services/errors.js';
 
 export async function jobRoutes(app: FastifyInstance): Promise<void> {
   const auth = app.authPreHandler;
@@ -23,7 +24,7 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/agent/runs/:id', { preHandler: [auth] }, async (req) => {
     const { id } = req.params as { id: string };
-    const run = await getRun(getUserId(req), Number(id));
+    const run = await getRun(getUserId(req), parsePositiveId(id));
     // 附带结果引用数据，客户端轮询一次拿全
     if (run.status === 'succeeded' && run.resultRef?.type === 'job_analysis') {
       const analysis = await getAnalysis(getUserId(req), run.resultRef.id);
@@ -33,13 +34,13 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/api/agent/runs/:id/cancel', { preHandler: [auth] }, async (req) => {
-    await cancelRun(getUserId(req), Number((req.params as { id: string }).id));
+    await cancelRun(getUserId(req), parsePositiveId((req.params as { id: string }).id));
     return { ok: true };
   });
 
   app.get('/api/jobs/sources', { preHandler: [auth] }, async (req) => {
     const { analysisId } = req.query as { analysisId?: string };
-    return listSources(getUserId(req), analysisId ? Number(analysisId) : undefined);
+    return listSources(getUserId(req), analysisId ? parsePositiveId(analysisId, 'analysisId') : undefined);
   });
 
   app.get('/api/jobs/analysis/latest', { preHandler: [auth] }, async (req) => (await latestAnalysis(getUserId(req))) ?? null);
@@ -49,7 +50,7 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/jobs/analysis/:id', { preHandler: [auth] }, async (req) => {
     const { id } = req.params as { id: string };
-    return getAnalysis(getUserId(req), Number(id));
+    return getAnalysis(getUserId(req), parsePositiveId(id));
   });
 
   app.post('/api/jobs/manual', { preHandler: [auth] }, async (req, reply) => {

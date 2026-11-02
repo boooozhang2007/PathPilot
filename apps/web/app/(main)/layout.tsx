@@ -1,5 +1,5 @@
 'use client';
-// 主布局「墨线蓝图」:左侧墨蓝制图侧栏(路线节点导航),右侧纸面工作区
+// 主布局:左侧深色导航侧栏(桌面常驻、移动端抽屉),右侧浅色工作区;顾问页为全高布局
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -28,6 +28,8 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const [engine, setEngine] = useState<string>('');
   const [tourOpen, setTourOpen] = useState(false);
   const [dark, setDark] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const isAdvisor = pathname === '/advisor';
 
   useEffect(() => {
     setDark(document.documentElement.classList.contains('dark'));
@@ -38,6 +40,12 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     const onTheme = () => setDark(document.documentElement.classList.contains('dark'));
     window.addEventListener('pp:theme', onTheme);
     return () => window.removeEventListener('pp:theme', onTheme);
+  }, []);
+
+  useEffect(() => {
+    const openNavigation = () => setMobileNavOpen(true);
+    window.addEventListener('pp:nav', openNavigation);
+    return () => window.removeEventListener('pp:nav', openNavigation);
   }, []);
 
   function toggleTheme() {
@@ -82,8 +90,8 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <div className="flex min-h-screen">
-      {/* 墨蓝侧栏:品牌 → 路线节点导航 → 状态与账号 */}
-      <aside className="leather fixed inset-y-0 left-0 z-30 flex w-60 flex-col text-[#f3ead5]">
+      {/* 深色侧栏:品牌 → 路线节点导航 → 状态与账号;移动端从左侧滑出 */}
+      <aside className={`leather fixed inset-y-0 left-0 z-50 flex w-60 flex-col text-white transition-transform duration-200 md:translate-x-0 ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex items-center gap-3 px-5 pb-6 pt-6">
           <Logo size={36} />
           <div className="min-w-0">
@@ -100,39 +108,40 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                 key={item.href}
                 href={item.href}
                 data-tour-anchor={`nav-${item.href}`}
-                className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all ${active ? 'bg-[#f6efdc] text-[#3a2812] shadow-[0_3px_6px_rgba(15,8,2,.45),inset_0_1px_0_rgba(255,255,255,.9)]' : 'text-[#e8d9b8]/75 hover:bg-[#d8b276]/15 hover:text-[#f3ead5]'}`}
+                className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${active ? 'bg-white text-[#202d2b]' : 'text-white/70 hover:bg-white/10 hover:text-white'}`}
+                onClick={() => setMobileNavOpen(false)}
               >
                 {/* 活跃节点:蓝图路线上的当前站点 */}
-                {active && <span className="absolute -left-3 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-accent shadow-[0_0_10px_rgba(66,110,254,.9)] ring-4 ring-accent/25" />}
-                <Ic name={item.icon} size={17} className={active ? 'text-[#8a4a1f]' : 'opacity-70 transition group-hover:opacity-100'} />
+                {active && <span className="absolute -left-3 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-accent" />}
+                <Ic name={item.icon} size={17} className={active ? 'text-accent' : 'opacity-70 transition group-hover:opacity-100'} />
                 <span className="font-medium">{item.label}</span>
-                <span className={`num ml-auto text-[10px] tracking-widest ${active ? 'text-[#8a4a1f]' : 'text-[#d8b276]/35'}`}>{item.num}</span>
+                <span className={`num ml-auto text-[10px] ${active ? 'text-accent' : 'text-white/30'}`}>{item.num}</span>
               </Link>
             );
           })}
         </nav>
 
-        <div className="space-y-3 border-t border-[#d8b276]/20 px-4 py-4">
+        <div className="space-y-3 border-t border-white/10 px-4 py-4">
           <div className="flex items-center gap-2">
             <button
               onClick={() => window.dispatchEvent(new Event('pp:cmdk'))}
-              className="flex flex-1 items-center gap-2 rounded-lg border border-[#d8b276]/35 px-3 py-2 text-xs font-semibold text-[#e8d9b8]/80 transition hover:border-[#d8b276] hover:text-[#f6efdc]"
+              className="flex flex-1 items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-white/70 transition hover:border-white/40 hover:text-white"
               title="命令面板"
             >
               <Ic name="menu" size={13} />
               快速跳转
-              <span className="num ml-auto rounded border border-[#d8b276]/40 px-1 py-0.5 text-[9px] text-[#d8b276]/70">⌘K</span>
+              <span className="num ml-auto rounded border border-white/15 px-1 py-0.5 text-[9px] text-white/45">⌘K</span>
             </button>
-            <button onClick={toggleTheme} title={dark ? '切到浅色' : '切到深色'} className="rounded-lg border border-[#d8b276]/35 p-2 text-[#e8d9b8]/70 transition hover:border-[#d8b276] hover:text-[#f6efdc]">
+            <button onClick={toggleTheme} title={dark ? '切到浅色' : '切到深色'} className="rounded-lg border border-white/15 p-2 text-white/70 transition hover:border-white/40 hover:text-white">
               <Ic name={dark ? 'spark' : 'moon'} size={14} />
             </button>
           </div>
-          <button onClick={() => setTourOpen(true)} className="flex w-full items-center gap-2 rounded-lg border border-[#d8b276]/35 px-3 py-2 text-xs font-semibold text-[#e8d9b8]/80 transition hover:border-[#d8b276] hover:text-[#f6efdc]" data-tour="tour-entry">
+          <button onClick={() => setTourOpen(true)} className="flex w-full items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-white/70 transition hover:border-white/40 hover:text-white" data-tour="tour-entry">
             <Ic name="compass" size={14} />
             新手引导 · 五步上手
           </button>
-          <div className="flex items-center gap-2 text-[11px] text-white/50">
-            <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: engine === 'pi-llm' ? '#4ade80' : '#fbbf24', boxShadow: `0 0 8px ${engine === 'pi-llm' ? '#4ade80' : '#fbbf24'}` }} />
+          <div className="flex items-center gap-2 text-[11px] text-white/55">
+            <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: engine === 'pi-llm' ? '#71c6a8' : '#e9b65e' }} />
             {engine === 'pi-llm' ? 'AI 模型在线' : '模型未配置'}
           </div>
           <div className="flex items-center gap-2.5">
@@ -144,7 +153,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             )}
             <div className="min-w-0 flex-1">
               <div className="truncate text-xs font-semibold">{nickname}</div>
-              <Link href="/profile" className="text-[10px] text-white/45 transition hover:text-white/80">
+              <Link href="/profile" onClick={() => setMobileNavOpen(false)} className="text-[10px] text-white/45 transition hover:text-white/80">
                 编辑档案
               </Link>
             </div>
@@ -155,9 +164,19 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         </div>
       </aside>
 
-      {/* 纸面工作区:内容贴左排布(制图桌语义——纸件从左侧开始铺),宽屏最多 1200px */}
-      <main className="workspace ml-60 min-h-screen flex-1 px-9 py-8">
-        <div className="max-w-[1200px]">{children}</div>
+      {mobileNavOpen && <button aria-label="关闭导航菜单" className="fixed inset-0 z-40 bg-black/35 md:hidden" onClick={() => setMobileNavOpen(false)} />}
+
+      <main className={`workspace ml-0 flex-1 md:ml-60 ${isAdvisor ? 'flex h-[100dvh] flex-col overflow-hidden p-0' : 'min-h-screen px-4 py-3 md:px-9 md:py-8'}`}>
+        {!isAdvisor && (
+          <div className="mb-3 flex h-10 items-center gap-3 md:hidden">
+            <button aria-label="打开导航菜单" onClick={() => setMobileNavOpen(true)} className="rounded-md p-2 text-slate-1 hover:bg-paper-2">
+              <Ic name="menu" size={19} />
+            </button>
+            <Logo size={28} />
+            <span className="text-sm font-semibold text-ink">PathPilot</span>
+          </div>
+        )}
+        <div className={isAdvisor ? 'min-h-0 w-full flex-1' : 'max-w-[1200px]'}>{children}</div>
       </main>
 
       {tourOpen && <Tour onClose={() => setTourOpen(false)} />}

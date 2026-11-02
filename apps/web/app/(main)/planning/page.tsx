@@ -103,7 +103,7 @@ export default function PlanningPage() {
       setMsg('新版本已生成');
       await load();
     } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') return;
+      if ((e as { name?: string } | null)?.name === 'AbortError') return;
       setErr(e instanceof Error ? e.message : '重规划失败');
     } finally {
       if (!mountedRef.current) return;
@@ -125,7 +125,7 @@ export default function PlanningPage() {
       setMsg('规划已生成');
       await load();
     } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') return;
+      if ((e as { name?: string } | null)?.name === 'AbortError') return;
       setErr(e instanceof Error ? e.message : '生成失败');
     } finally {
       if (!mountedRef.current) return;

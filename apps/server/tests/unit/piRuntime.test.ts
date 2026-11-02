@@ -85,4 +85,17 @@ describe('Pi Agent 运行时（fauxProvider）', () => {
     expect(out.aborted).toBe(true);
     expect(out.text).toBe('');
   });
+
+  it('不响应取消的工具也不能无限阻塞超时结束', async () => {
+    const { models, model } = setupFaux([
+      fauxAssistantMessage([fauxToolCall('echo', { text: 'x' })], { stopReason: 'toolUse' }),
+    ]);
+    const started = Date.now();
+    const out = await runAgentWith(models, model, {
+      systemPrompt: 't', prompt: 'p', wallClockMs: 20,
+      tools: [{ ...echoTool, execute: () => new Promise(() => {}) }],
+    });
+    expect(out).toMatchObject({ aborted: true, stopReason: 'timeout', text: '' });
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
 });

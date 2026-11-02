@@ -184,7 +184,7 @@ export interface ChatMessageDTO {
   /** 本次回复失败/被停止时的错误码（正常回复为 null） */
   errorCode?: string | null;
   /** 工具调用链路（LLM 通道）：[{name, summary, status}] */
-  toolCalls: { name: string; summary: string; status?: 'done' | 'error' }[];
+  toolCalls: { name: string; toolCallId?: string; summary: string; status?: 'done' | 'error' | 'canceled' }[];
   createdAt: string;
 }
 
@@ -205,6 +205,7 @@ export interface ChatSessionSummaryDTO {
   updatedAt: string;
   flowState?: string;
   selectedIntent?: string | null;
+  autoWrite?: boolean;
 }
 
 export interface DashboardData {

@@ -236,6 +236,7 @@ export const agentChatSessions = sqliteTable(
     userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     /** 用户自定义标题（App 端重命名）；空则展示首条用户消息摘要 */
     title: text('title'),
+    autoWrite: integer('auto_write', { mode: 'boolean' }).notNull().default(false),
     flowState: text('flow_state').notNull().default('profile_check'),
     profileSnapshot: text('profile_snapshot', { mode: 'json' }).$type<Record<string, unknown> | null>(),
     selectedIntent: text('selected_intent'),
@@ -259,7 +260,7 @@ export const agentChatMessages = sqliteTable(
     /** 本次回复失败/被停止时的错误码（正常回复为空） */
     errorCode: text('error_code'),
     /** 工具调用链路 [{name, summary, status}]（LLM 通道） */
-    toolCalls: text('tool_calls', { mode: 'json' }).$type<{ name: string; summary: string; status?: 'done' | 'error' }[] | null>(),
+    toolCalls: text('tool_calls', { mode: 'json' }).$type<{ name: string; toolCallId?: string; summary: string; status?: 'done' | 'error' | 'canceled' }[] | null>(),
     createdAt: text('created_at').notNull().$defaultFn(isoNow),
   },
   (t) => [index('agent_chat_messages_session_idx').on(t.sessionId)]

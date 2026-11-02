@@ -15,7 +15,7 @@ import {
   deleteExperience,
   deleteAccount,
 } from '../services/profileService.js';
-import { badRequest } from '../services/errors.js';
+import { badRequest, parsePositiveId } from '../services/errors.js';
 
 export async function profileRoutes(app: FastifyInstance): Promise<void> {
   const auth = app.authPreHandler;
@@ -55,7 +55,8 @@ export async function profileRoutes(app: FastifyInstance): Promise<void> {
     if (!Object.keys(input).length) throw badRequest('无更新字段');
     const userId = getUserId(req);
     // 技能名变化 → 重建条目；其余字段就地更新（走统一 upsert 语义）
-    const existing = (await listProfileSkills(userId)).find((s) => s.id === Number(id));
+    const skillId = parsePositiveId(id);
+    const existing = (await listProfileSkills(userId)).find((s) => s.id === skillId);
     if (!existing) throw badRequest('技能记录不存在');
     const writtenId = await upsertProfileSkill(userId, {
       skillName: input.skillName ?? existing.name,
@@ -73,7 +74,7 @@ export async function profileRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete('/api/skills/:id', { preHandler: [auth] }, async (req) => {
     const { id } = req.params as { id: string };
-    await deleteProfileSkill(getUserId(req), Number(id));
+    await deleteProfileSkill(getUserId(req), parsePositiveId(id));
     return { ok: true };
   });
 
@@ -91,12 +92,12 @@ export async function profileRoutes(app: FastifyInstance): Promise<void> {
   app.patch('/api/experiences/:id', { preHandler: [auth] }, async (req) => {
     const { id } = req.params as { id: string };
     const input = experienceUpdate.parse(req.body);
-    return updateExperience(getUserId(req), Number(id), input as never);
+    return updateExperience(getUserId(req), parsePositiveId(id), input as never);
   });
 
   app.delete('/api/experiences/:id', { preHandler: [auth] }, async (req) => {
     const { id } = req.params as { id: string };
-    await deleteExperience(getUserId(req), Number(id));
+    await deleteExperience(getUserId(req), parsePositiveId(id));
     return { ok: true };
   });
 }

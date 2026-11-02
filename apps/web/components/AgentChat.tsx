@@ -3,22 +3,19 @@
 // full 模式 = 会话侧栏 + 全高消息流;紧凑模式供仪表盘嵌入
 // 流式:thinking(可折叠)/ 工具调用链 / 增量文本 / 停止生成 / 逐条复制与重新生成
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, API_BASE, getToken } from '@/lib/api';
+import { api, API_BASE, clearToken, getToken } from '@/lib/api';
+import { AGENT_PHASE_LABELS, AGENT_TOOL_LABELS, applyAgentEvent, completedAgentTools, readAgentStream, type AgentStreamEvent, type AgentStreamState } from '@pathpilot/shared';
 import { Markdown } from '@/components/Markdown';
 import { Ic } from '@/components/Icon';
 import type { ChatMessageDTO, ChatSessionSummaryDTO, ProfileDTO } from '@pathpilot/shared';
 
 export const DEFAULT_SUGGESTIONS = ['我目前最应该学习什么？', '帮我分析北京的 Java 岗位', '把每周改成 8 小时并重新规划', '在规划里加一个 Redis 学习任务'];
 
-type ToolState = { name: string; status: 'running' | 'done' | 'error'; summary?: string };
-type Streaming = { text: string; thinking: string; tools: ToolState[]; startedAt: number; engine?: 'pi-llm' | 'rules' };
+type ToolState = AgentStreamState['tools'][number];
+type Streaming = AgentStreamState;
 type RetryState = { message: string; truncateTo: number; regenerateFrom?: number };
 
-function completedToolCalls(tools: ToolState[]): ChatMessageDTO['toolCalls'] {
-  return tools
-    .filter((tool) => tool.status !== 'running')
-    .map((tool) => ({ name: tool.name, summary: tool.summary ?? '', status: tool.status === 'error' ? 'error' : 'done' }));
-}
+const completedToolCalls = completedAgentTools;
 
 const SUGGEST_ICONS = ['compass', 'globe', 'calendar', 'pen'];
 
@@ -113,6 +110,8 @@ export function AgentChat({
   const [guideReady, setGuideReady] = useState(false);
   const [guideStep, setGuideStep] = useState<'profile' | 'choice' | 'done'>('profile');
   const [autoWrite, setAutoWrite] = useState(false);
+  const autoWriteRef = useRef(false);
+  const [sessionBusy, setSessionBusy] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
   const loadSessions = useCallback(() => {
@@ -134,12 +133,14 @@ export function AgentChat({
     if (full) {
       loadSessions();
       const revision = viewRevisionRef.current;
-      api<{ sessionId: number; messages: ChatMessageDTO[] } | null>('/api/agent/session')
+      api<{ sessionId: number; messages: ChatMessageDTO[]; autoWrite: boolean } | null>('/api/agent/session')
         .then((s) => {
           if (s && mountedRef.current && viewRevisionRef.current === revision) {
             sessionIdRef.current = s.sessionId;
             setSessionId(s.sessionId);
             setMessages(s.messages);
+            autoWriteRef.current = s.autoWrite ?? false;
+            setAutoWrite(autoWriteRef.current);
           }
         })
         .catch(() => {});
@@ -181,9 +182,12 @@ export function AgentChat({
     viewRevisionRef.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
+    setSessionBusy(false);
     if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
     setBusy(false);
     sessionIdRef.current = undefined;
+    autoWriteRef.current = false;
+    setAutoWrite(false);
     setSessionId(undefined);
     setMessages([]);
     setStreaming(null);
@@ -194,21 +198,51 @@ export function AgentChat({
     setInput('');
   }
 
+  function toggleAutoWrite() {
+    const next = !autoWriteRef.current;
+    autoWriteRef.current = next;
+    setAutoWrite(next);
+    const activeSession = sessionIdRef.current;
+    if (activeSession) {
+      void api(`/api/agent/sessions/${activeSession}/auto-write`, { method: 'POST', json: { enabled: next } }).catch((error) => {
+        if (sessionIdRef.current === activeSession && autoWriteRef.current === next) {
+          autoWriteRef.current = !next;
+          setAutoWrite(!next);
+          setErr(error instanceof Error ? error.message : '自动写入设置未保存');
+        }
+      });
+    }
+  }
+
   async function openSession(id: number) {
-    if (abortRef.current) return;
     setSidebarOpen(false);
-    if (id === sessionId) return;
+    if (id === sessionIdRef.current) return;
     const revision = ++viewRevisionRef.current;
+    setSessionBusy(true);
+    setErr('');
+    setRetry(null);
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setBusy(false);
+    setStreaming(null);
     try {
-      const msgs = await api<ChatMessageDTO[]>(`/api/agent/session/${id}`);
+      const [msgs, sessions] = await Promise.all([
+        api<ChatMessageDTO[]>(`/api/agent/session/${id}`),
+        api<ChatSessionSummaryDTO[]>('/api/agent/sessions'),
+      ]);
       if (!mountedRef.current || viewRevisionRef.current !== revision) return;
+      const selected = sessions.find((session) => session.id === id);
       sessionIdRef.current = id;
       setSessionId(id);
       setMessages(msgs);
+      autoWriteRef.current = selected?.autoWrite ?? false;
+      setAutoWrite(autoWriteRef.current);
       setErr('');
       setRetry(null);
     } catch (e) {
       if (mountedRef.current && viewRevisionRef.current === revision) setErr(e instanceof Error ? e.message : '加载会话失败');
+    } finally {
+      if (mountedRef.current && viewRevisionRef.current === revision) setSessionBusy(false);
     }
   }
 
@@ -217,8 +251,8 @@ export function AgentChat({
       await api(`/api/agent/sessions/${id}`, { method: 'DELETE' });
       setSessions((prev) => prev.filter((s) => s.id !== id));
       if (id === sessionId) newChat();
-    } catch {
-      /* 忽略 */
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : '删除会话失败，请重试');
     }
   }
 
@@ -248,7 +282,7 @@ export function AgentChat({
     const isCurrent = () => mountedRef.current && abortRef.current === controller;
     // Keep this request's accumulated reply outside React's deferred state queue.
     // React may execute a state updater after the stream has already completed.
-    let streamState: Streaming = { text: '', thinking: '', tools: [], startedAt: Date.now() };
+    let streamState: Streaming = { text: '', thinking: '', tools: [], startedAt: Date.now(), phase: 'connecting' };
     const baseIndex = opts?.truncateTo ?? messages.length;
     setInput('');
     requestAnimationFrame(() => {
@@ -280,131 +314,103 @@ export function AgentChat({
       const res = await fetch(`${API_BASE}/api/agent/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ sessionId: activeSessionId, message, autoWrite, ...(opts?.regenerateFrom ? { regenerateFrom: opts.regenerateFrom } : {}) }),
+        body: JSON.stringify({ sessionId: activeSessionId, message, autoWrite: autoWriteRef.current, ...(opts?.regenerateFrom ? { regenerateFrom: opts.regenerateFrom } : {}) }),
         signal: controller.signal,
       });
       if (!isCurrent()) return;
       if (res.status === 401 && typeof window !== 'undefined') {
+        clearToken();
         location.href = '/login';
         return;
       }
-      if (!res.ok || !res.body) throw new Error(`请求失败(${res.status})`);
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = '';
-      let doneEngine: 'pi-llm' | 'rules' | undefined;
-      let doneMessageId: number | undefined;
-      let fallback = '';
+      if (!res.ok || !res.body) {
+        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        const reason = body?.error?.message || `请求失败（${res.status}）`;
+        // 会话已在其他设备删除（404）：回到新对话状态，避免之后每次发送都失败
+        if (res.status === 404 && activeSessionId && sessionIdRef.current === activeSessionId) {
+          sessionIdRef.current = undefined;
+          autoWriteRef.current = false;
+          activeSessionId = undefined;
+          setSessionId(undefined);
+          setAutoWrite(false);
+          setMessages([]);
+          setRetry(null);
+        }
+        throw new Error(reason);
+      }
+      let completion: AgentStreamEvent | undefined;
       let hadError = false;
       let hadToolError = false;
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (!isCurrent()) return;
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const parts = buf.split('\n\n');
-        buf = parts.pop() ?? '';
-        for (const part of parts) {
-          const line = part.split('\n').find((l) => l.startsWith('data: '));
-          if (!line) continue;
-          let ev: { type: string; delta?: string; name?: string; summary?: string; isError?: boolean; engine?: 'pi-llm' | 'rules'; model?: string; fallbackReason?: string; sessionId?: number; messageId?: number };
-          try {
-            ev = JSON.parse(line.slice(6));
-          } catch {
-            continue;
-          }
+      await readAgentStream(res.body, (ev) => {
+          if (!isCurrent()) return;
           if (ev.type === 'tool_end' && ev.isError) hadToolError = true;
           if (ev.sessionId) {
             activeSessionId = ev.sessionId;
             sessionIdRef.current = ev.sessionId;
             setSessionId(ev.sessionId);
-          }
-          streamState = (() => {
-            const cur = streamState;
-            switch (ev.type) {
-              case 'thinking':
-                return { ...cur, thinking: cur.thinking + (ev.delta ?? '') };
-              case 'text':
-                return { ...cur, text: cur.text + (ev.delta ?? '') };
-              case 'tool_start':
-                return { ...cur, tools: [...cur.tools, { name: ev.name ?? '', status: 'running' }] };
-              case 'tool_progress': {
-                const tools = [...cur.tools];
-                for (let i = tools.length - 1; i >= 0; i--) {
-                  if (tools[i].status === 'running' && (!ev.name || tools[i].name === ev.name)) {
-                    tools[i] = { ...tools[i], summary: ev.summary };
-                    break;
-                  }
-                }
-                return { ...cur, tools };
-              }
-              case 'tool_end': {
-                const tools = cur.tools.map((t) => (t.name === ev.name && t.status === 'running' ? { ...t, status: ev.isError ? 'error' as const : 'done' as const, summary: ev.summary } : t));
-                return { ...cur, tools };
-              }
-              default:
-                return cur;
+            if (typeof ev.autoWrite === 'boolean') {
+              autoWriteRef.current = ev.autoWrite;
+              setAutoWrite(ev.autoWrite);
             }
-          })();
+          }
+          streamState = applyAgentEvent(streamState, ev);
           setStreaming(streamState);
           if (ev.type === 'error') {
             hadError = true;
             setErr(ev.delta ?? '生成出错');
           }
           if (ev.type === 'done') {
-            doneEngine = ev.engine;
-            doneMessageId = ev.messageId;
-            if (ev.fallbackReason) fallback = ev.fallbackReason;
-            if ((hadError || hadToolError) && ev.messageId) {
+            completion = ev;
+            if (ev.errorCode && ev.errorCode !== 'STOPPED') hadError = true;
+            const failed = hadError || hadToolError;
+            const retryId = ev.reply?.id ?? ev.messageId;
+            if (failed && retryId) {
               if (!hadError) setErr('部分工具调用失败，可重试本次生成');
-              setRetry({ message, truncateTo: baseIndex, regenerateFrom: ev.messageId });
+              setRetry({ message, truncateTo: baseIndex, regenerateFrom: retryId });
             }
           }
-        }
-      }
-      if (hadError) {
-        // 错误回复由服务端持久化；重新读取可避免本地部分内容与服务端错误消息不一致。
-        await syncSession();
+      }, controller.signal);
+      const completed = completion;
+      if (!completed) throw new Error('本次回复没有保存成功，请重新加载会话后再试');
+      const final = completed.reply;
+      if (final) {
+        setMessages((prev) => {
+          const base = opts && opts.truncateTo !== undefined ? prev.slice(0, opts.truncateTo + 1) : prev;
+          return [...base, final];
+        });
       } else if (streamState.text.trim() || streamState.thinking.trim()) {
-        const finalMessage: ChatMessageDTO = {
-          id: doneMessageId ?? Date.now(),
-          sessionId: activeSessionId ?? 0,
-          role: 'assistant',
-          content: streamState.text.trim() || '（模型未返回内容）',
-          engine: doneEngine ?? null,
-          thinking: streamState.thinking.trim() || null,
-          toolCalls: completedToolCalls(streamState.tools),
-          createdAt: new Date().toISOString(),
-        };
-        setMessages((prev) => [...prev, finalMessage]);
-      }
+        setMessages((prev) => {
+          const base = opts && opts.truncateTo !== undefined ? prev.slice(0, opts.truncateTo + 1) : prev;
+          return [...base, {
+            id: completed.messageId ?? Date.now(), sessionId: activeSessionId ?? 0, role: 'assistant',
+            content: streamState.text.trim() || '（模型未返回文字内容）', engine: completed.engine ?? null,
+            thinking: streamState.thinking.trim() || null, toolCalls: completedToolCalls(streamState.tools),
+            createdAt: new Date().toISOString(),
+          }];
+        });
+      } else if (activeSessionId) await syncSession();
       setStreaming(null);
+      const fallback = completed.fallbackReason;
       if (fallback && !hadError && !fallback.startsWith('已停止')) setNotice(fallback);
     } catch (e) {
       if (!isCurrent()) return;
-      if (e instanceof DOMException && e.name === 'AbortError') {
-        // 用户停止:保留已生成的部分
+      // 共享流读取器在取消时抛出的是普通 Error（name=AbortError），不能只认 DOMException
+      if ((e as { name?: string } | null)?.name === 'AbortError') {
         if (streamState.text.trim() || streamState.thinking.trim()) {
-          const partialMessage: ChatMessageDTO = {
-            id: Date.now(),
-            sessionId: activeSessionId ?? 0,
-            role: 'assistant',
-            content: streamState.text || '已停止生成',
-            engine: null,
-            thinking: streamState.thinking.trim() || null,
-            toolCalls: completedToolCalls(streamState.tools),
-            createdAt: new Date().toISOString(),
-          };
-          setMessages((prev) => [...prev, partialMessage]);
+          setMessages((prev) => [...prev, {
+            id: -Date.now(), sessionId: activeSessionId ?? 0, role: 'assistant',
+            content: streamState.text.trim() || '已停止生成', engine: null,
+            thinking: streamState.thinking.trim() || null, errorCode: 'STOPPED',
+            toolCalls: completedToolCalls(streamState.tools), createdAt: new Date().toISOString(),
+          }]);
         }
         setStreaming(null);
-        // 服务端也已中止并落库：稍后同步一次，用真实消息 id 替换本地临时 id（供重新生成使用）
         if (mountedRef.current) {
           if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
           syncTimerRef.current = window.setTimeout(() => {
             syncTimerRef.current = null;
-            if (!abortRef.current) void syncSession();
-          }, 500);
+            if (sessionIdRef.current === activeSessionId) void syncSession();
+          }, 350);
         }
       } else {
         setErr(e instanceof Error ? e.message : '发送失败');
@@ -489,11 +495,30 @@ export function AgentChat({
         {/* 顶栏:菜单 / 模型选择 / 简历草稿 */}
         <div className="flex items-center gap-2 border-b border-line bg-paper/60 px-4 py-2.5 backdrop-blur">
           {full && (
+            <button
+              className="rounded-lg p-2 text-slate-1 transition hover:bg-white md:hidden"
+              onClick={() => window.dispatchEvent(new Event('pp:nav'))}
+              title="产品导航"
+              aria-label="打开产品导航"
+            >
+              <Ic name="layers" size={17} />
+            </button>
+          )}
+          {full && (
             <button className="rounded-lg p-2 text-slate-1 transition hover:bg-white lg:hidden" onClick={() => setSidebarOpen(true)} title="会话列表">
               <Ic name="menu" size={17} />
             </button>
           )}
-          <div className="flex-1" />
+          {full ? (
+            <div className="min-w-0 flex-1" aria-live="polite">
+              <div className="truncate text-sm font-semibold text-ink">
+                {sessionBusy ? '正在加载会话…' : sessions.find((session) => session.id === sessionId)?.title ?? '新对话'}
+              </div>
+              <div className="text-[11px] text-slate-2">
+                {busy ? (streaming ? AGENT_PHASE_LABELS[streaming.phase ?? 'connecting'] : '正在准备回复…') : 'AI 职业顾问'}
+              </div>
+            </div>
+          ) : <div className="flex-1" />}
           {full && (
             <button className="pp-btn pp-btn-ghost px-3 py-1.5 text-xs" onClick={draftResume} disabled={resumeBusy}>
               <Ic name="download" size={13} /> {resumeBusy ? '生成中…' : '简历草稿'}
@@ -505,8 +530,14 @@ export function AgentChat({
         <div className="relative min-h-0 flex-1">
           <div ref={listRef} onScroll={onListScroll} className={`h-full overflow-y-auto ${full ? '' : heightClass}`}>
             <div className={`mx-auto w-full px-4 ${full ? 'max-w-3xl py-6' : 'max-w-2xl py-4'}`}>
+              {sessionBusy && (
+                <div role="status" className="flex min-h-48 items-center justify-center gap-3 text-sm text-slate-1">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent/20 border-t-accent" />
+                  正在加载会话内容…
+                </div>
+              )}
               {/* 空状态:问候 + 建议卡片 */}
-              {messages.length === 0 && !streaming && (
+              {!sessionBusy && messages.length === 0 && !streaming && (
                 <div className="reveal flex flex-col items-center px-2 pt-[8vh] text-center">
                   <AgentMark size={52} />
                   <div className="font-display mt-4 text-2xl font-bold text-ink">{greeting()},同学</div>
@@ -551,7 +582,7 @@ export function AgentChat({
                 </div>
               )}
 
-              {messages.map((m, i) => (
+              {!sessionBusy && messages.map((m, i) => (
                 <div key={m.id} className={`mb-6 flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
                   {m.role === 'user' ? (
                     <div className="max-w-[80%] whitespace-pre-wrap rounded-lg rounded-br-sm bg-ink px-4 py-2.5 text-sm leading-6 text-white">{m.content}</div>
@@ -579,10 +610,11 @@ export function AgentChat({
                       </div>
                       {/* 操作条:复制 / 重新生成(每条回复) */}
                       <div className="mt-1.5 flex items-center gap-1">
+                        {m.engine && <span className="mr-1 text-[10px] text-slate-2">{m.engine === 'pi-llm' ? 'AI 模型' : '规则引擎'}</span>}
                         <ActionBtn onClick={() => copyMessage(m)} label={copiedId === m.id ? '已复制' : '复制'}>
                           <Ic name={copiedId === m.id ? 'check' : 'copy'} size={13} />
                         </ActionBtn>
-                        {full && !busy && m.id > 0 && (
+                        {full && !busy && !sessionBusy && m.id > 0 && (
                           <ActionBtn onClick={() => regenerateAt(i)} label="重新生成">
                             <Ic name="refresh" size={13} />
                           </ActionBtn>
@@ -594,8 +626,8 @@ export function AgentChat({
               ))}
 
               {/* 流式中的 assistant 消息 */}
-              {streaming && <StreamingMessage s={streaming} />}
-              {busy && !streaming && (
+              {!sessionBusy && streaming && <StreamingMessage s={streaming} />}
+              {!sessionBusy && busy && !streaming && (
                 <div className="mb-6 flex items-start gap-2">
                   <AgentMark size={22} />
                   <div className="flex gap-1 rounded-lg border border-line bg-white px-4 py-3">
@@ -635,7 +667,7 @@ export function AgentChat({
             <div className="flex items-center gap-1.5 rounded-lg bg-[#fdf1ef] px-3 py-1.5 text-xs text-[#b3271d]">
               <Ic name="warn" size={12} />
               <span className="min-w-0 flex-1">{err}</span>
-              {retry && !busy && (
+              {retry && !busy && !sessionBusy && (
                 <button
                   className="shrink-0 rounded-md border border-[#e7b7b1] px-2 py-1 font-semibold transition hover:bg-white"
                   onClick={() => {
@@ -654,14 +686,14 @@ export function AgentChat({
         {/* 输入区 */}
         <div className={`mx-auto w-full px-4 pb-4 pt-1 ${full ? 'max-w-3xl' : 'max-w-2xl'}`}>
           {/* 场景指令:一键进入专门对话模式 */}
-          {full && !busy && (
+          {full && !busy && !sessionBusy && (
             <div className="mb-2 flex flex-wrap gap-1.5">
               {SCENARIOS.map((s) => (
                 <button
                   key={s.label}
                   className="flex items-center gap-1.5 rounded-md border border-line bg-white px-3 py-1.5 text-[11.5px] font-semibold text-slate-1 transition hover:border-accent hover:text-accent-deep"
                   onClick={() => send(s.prompt)}
-                  disabled={busy}
+                  disabled={busy || sessionBusy}
                   title={s.prompt.slice(0, 40) + '…'}
                 >
                   <Ic name={s.icon} size={12} />
@@ -699,7 +731,8 @@ export function AgentChat({
               className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition ${
                 autoWrite ? 'bg-accent/15 text-accent border border-accent/40 shadow-xs' : 'bg-paper-2 text-slate-2 border border-line hover:text-ink'
               }`}
-              onClick={() => setAutoWrite((v) => !v)}
+              onClick={toggleAutoWrite}
+              aria-pressed={autoWrite}
               title="开启后允许 Agent 直接创建与修改任务/规划/档案"
             >
               <Ic name="checkCircle" size={13} className={autoWrite ? 'text-accent' : 'text-slate-2'} />
@@ -741,29 +774,6 @@ function ActionBtn({ children, label, onClick }: { children: React.ReactNode; la
   );
 }
 
-const TOOL_LABELS: Record<string, string> = {
-  get_user_profile: '获取能力档案',
-  upsert_skill: '更新技能评分',
-  create_experience: '创建经历凭证',
-  get_tasks: '查询待办任务',
-  update_task_status: '更新任务状态',
-  get_current_roadmap: '获取成长路线',
-  get_roadmap_versions: '查询路线历史',
-  generate_roadmap: '生成成长路线',
-  create_roadmap_revision: '修订成长路线',
-  roadmap_add_task: '路线添加任务',
-  roadmap_update_task: '更新路线任务',
-  roadmap_remove_task: '移除路线任务',
-  get_job_analysis: '查询岗位洞察',
-  analyze_jobs: '分析招聘需求',
-  analyze_skill_gap: '评估技能差距',
-  search_jobs: '搜索招聘市场',
-  fetch_job_page: '获取岗位详情',
-  extract_requirements: '提取任职要求',
-  normalize_skills: '匹配标准化技能',
-  generate_resume_draft: '生成简历草稿',
-};
-
 /** DeepSeek 式思考过程与内嵌工具调用组件（Web 端） */
 function DeepSeekReasoning({
   thinking,
@@ -786,7 +796,7 @@ function DeepSeekReasoning({
   let headerLabel = '';
   if (isStreaming) {
     if (runningTool) {
-      headerLabel = `正在调用工具：${TOOL_LABELS[runningTool.name] || runningTool.name}…`;
+      headerLabel = `正在调用工具：${AGENT_TOOL_LABELS[runningTool.name] || runningTool.name}…`;
     } else {
       headerLabel = elapsedSeconds !== undefined ? `思考中… ${elapsedSeconds}s` : '思考中…';
     }
@@ -807,7 +817,8 @@ function DeepSeekReasoning({
         {hasTools && (
           <div className="space-y-1.5">
             {tools.map((t, i) => {
-              const label = TOOL_LABELS[t.name] || t.name;
+              const label = AGENT_TOOL_LABELS[t.name] || t.name;
+              const isCanceled = t.status === 'canceled';
               return (
                 <div key={i} className={`rounded-md border bg-white/80 p-2 text-[11px] ${t.status === 'error' ? 'border-[#efc3bd]' : 'border-line/60'}`}>
                   <div className="flex items-center justify-between">
@@ -816,14 +827,16 @@ function DeepSeekReasoning({
                         <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
                       ) : t.status === 'error' ? (
                         <Ic name="warn" size={12} className="shrink-0 text-[#b3271d]" />
+                      ) : isCanceled ? (
+                        <Ic name="minus" size={12} className="shrink-0 text-slate-2" />
                       ) : (
                         <Ic name="checkCircle" size={12} className="shrink-0 text-teal" />
                       )}
                       <span>{label}</span>
                       <span className="text-[10px] font-normal text-slate-2">({t.name})</span>
                     </span>
-                    <span className={`text-[10px] font-semibold ${t.status === 'running' ? 'text-accent' : t.status === 'error' ? 'text-[#b3271d]' : 'text-teal'}`}>
-                      {t.status === 'running' ? '执行中…' : t.status === 'error' ? '调用失败' : '调用成功'}
+                    <span className={`text-[10px] font-semibold ${t.status === 'running' ? 'text-accent' : t.status === 'error' ? 'text-[#b3271d]' : isCanceled ? 'text-slate-2' : 'text-teal'}`}>
+                      {t.status === 'running' ? '执行中…' : t.status === 'error' ? '调用失败' : isCanceled ? '已停止' : '调用成功'}
                     </span>
                   </div>
                   {t.summary && (
@@ -876,8 +889,9 @@ function StreamingMessage({ s }: { s: Streaming }) {
               <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-accent align-middle" />
             </>
           ) : (
-            !s.thinking &&
-            s.tools.length === 0 && <span className="inline-block h-3 w-3 animate-bounce rounded-full bg-slate-2" />
+            !s.thinking && s.tools.length === 0 && (
+              <span className="text-xs text-slate-2">{AGENT_PHASE_LABELS[s.phase ?? 'connecting']}…</span>
+            )
           )}
         </div>
       </div>
