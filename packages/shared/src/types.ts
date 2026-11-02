@@ -14,6 +14,7 @@ import type {
   SourceType,
   TaskStatus,
   AgentRunStatus,
+  ReminderType,
 } from './enums';
 import type { JobAnalysisResult, RoadmapResult, RoadmapDiff, SkillGapItem, SkillGapResult } from './schemas';
 
@@ -241,4 +242,65 @@ export interface ResumeDraftDTO {
   sections: { heading: string; items: string[] }[];
   notes: string[];
   engine: Engine;
+}
+
+// ---------- 学习提醒 / 周期总结（PRD P1） ----------
+export interface ReminderDTO {
+  id: number;
+  type: ReminderType;
+  title: string;
+  message: string;
+  taskId: number | null;
+  scheduledAt: string;
+  dismissedAt: string | null;
+  createdAt: string;
+}
+
+export interface WeeklySummaryDTO {
+  period: { start: string; end: string; label: string };
+  tasksCompletedThisWeek: number;
+  hoursPlannedThisWeek: number;
+  hoursActualThisWeek: number;
+  semesterCompletionRate: number;
+  totalDoneTasks: number;
+  highlights: string[];
+  upcomingCriticalTasks: RoadmapTaskDTO[];
+  generatedAt: string;
+}
+
+export interface ReminderPayloadDTO {
+  reminders: ReminderDTO[];
+  weeklySummary: WeeklySummaryDTO | null;
+}
+
+// ---------- 规划分享（PRD P2：只读链接，不公开个人隐私） ----------
+export interface RoadmapShareDTO {
+  token: string;
+  url: string;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export interface SharedRoadmapTaskDTO {
+  title: string;
+  semester: number;
+  status: TaskStatus;
+  estimatedHours: number;
+  priority: Priority;
+  deliverable: string | null;
+  acceptanceCriteria: string | null;
+}
+
+/** 公开只读的规划快照：不含 userId/email 等个人信息 */
+export interface SharedRoadmapDTO {
+  targetRole: string;
+  version: number;
+  weeklyHours: number;
+  careerPath: CareerPath;
+  status: RoadmapStatus;
+  engine: Engine;
+  content: RoadmapResult;
+  tasks: SharedRoadmapTaskDTO[];
+  sharedAt: string;
+  expiresAt: string | null;
 }

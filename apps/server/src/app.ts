@@ -9,6 +9,9 @@ import { authRoutes } from './routes/auth.js';
 import { profileRoutes } from './routes/profile.js';
 import { jobRoutes } from './routes/jobs.js';
 import { roadmapRoutes } from './routes/roadmaps.js';
+import { reminderRoutes } from './routes/reminders.js';
+import { shareRoutes } from './routes/shares.js';
+import { resumeRoutes } from './routes/resume.js';
 import { adminRoutes } from './routes/admin.js';
 import { ERROR_MESSAGES, type ErrorCode } from '@pathpilot/shared';
 
@@ -61,6 +64,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(profileRoutes);
   await app.register(jobRoutes);
   await app.register(roadmapRoutes);
+  await app.register(reminderRoutes);
+  await app.register(shareRoutes);
+  await app.register(resumeRoutes);
   await app.register(adminRoutes);
 
   return app;

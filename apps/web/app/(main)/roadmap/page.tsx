@@ -5,13 +5,17 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Loading, Empty, ErrorState, Tag, PageHeader, Stat } from '@/components/ui';
 import { Ic } from '@/components/Icon';
-import type { RoadmapDTO, RoadmapTaskDTO } from '@pathpilot/shared';
+import type { RoadmapDTO, RoadmapTaskDTO, RoadmapShareDTO } from '@pathpilot/shared';
 import { TASK_STATUS_LABELS } from '@pathpilot/shared';
 
 export default function RoadmapPage() {
   const [data, setData] = useState<{ roadmap: RoadmapDTO; tasks: RoadmapTaskDTO[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+  const [share, setShare] = useState<RoadmapShareDTO | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareMsg, setShareMsg] = useState('');
 
   function load() {
     setLoading(true);
@@ -19,6 +23,7 @@ export default function RoadmapPage() {
       .then((d) => {
         setData(d);
         setErr('');
+        if (d) loadShare(d.roadmap.id);
       })
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false));
@@ -26,6 +31,47 @@ export default function RoadmapPage() {
   useEffect(() => {
     load();
   }, []);
+
+  function loadShare(roadmapId: number) {
+    api<RoadmapShareDTO | null>(`/api/roadmaps/${roadmapId}/share`)
+      .then(setShare)
+      .catch(() => {});
+  }
+
+  async function createShare() {
+    if (!data) return;
+    setShareBusy(true);
+    setShareMsg('');
+    try {
+      const s = await api<RoadmapShareDTO>(`/api/roadmaps/${data.roadmap.id}/share`, { method: 'POST', json: { expiresInDays: 7 } });
+      setShare(s);
+    } catch (e) {
+      setShareMsg(e instanceof Error ? e.message : '创建失败');
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  async function revokeShare() {
+    if (!data) return;
+    setShareBusy(true);
+    try {
+      await api(`/api/roadmaps/${data.roadmap.id}/share`, { method: 'DELETE' });
+      setShare(null);
+      setShareMsg('');
+    } catch (e) {
+      setShareMsg(e instanceof Error ? e.message : '撤销失败');
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  async function copyShare() {
+    if (!share) return;
+    await navigator.clipboard.writeText(share.url).catch(() => {});
+    setShareMsg('链接已复制');
+    setTimeout(() => setShareMsg(''), 1500);
+  }
 
   if (loading) return <Loading />;
   if (err) return <ErrorState message={err} onRetry={load} />;
@@ -56,7 +102,14 @@ export default function RoadmapPage() {
         eyebrow="03 · ROADMAP"
         title="成长路线"
         desc={roadmap.content.goal}
-        right={<Tag tone="ink">v{roadmap.version} · {roadmap.content.semesters.length} 学期 · {tasks.length} 任务</Tag>}
+        right={
+          <>
+            <button className="pp-btn pp-btn-ghost px-4 py-2 text-xs" onClick={() => setShareOpen(true)}>
+              <Ic name="share" size={13} /> 分享
+            </button>
+            <Tag tone="ink">v{roadmap.version} · {roadmap.content.semesters.length} 学期 · {tasks.length} 任务</Tag>
+          </>
+        }
       />
 
       {/* 概览数字带 */}
@@ -134,6 +187,45 @@ export default function RoadmapPage() {
           <Ic name="refresh" size={14} /> 条件变化?重新规划
         </Link>
       </div>
+
+      {shareOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShareOpen(false)}>
+          <div className="w-full max-w-md rounded-card bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-1 flex items-center justify-between">
+              <h3 className="font-display text-base font-bold">分享成长路线</h3>
+              <button className="rounded-md p-1 text-slate-2 hover:bg-paper-2" onClick={() => setShareOpen(false)}>
+                <Ic name="close" size={15} />
+              </button>
+            </div>
+            <p className="mb-4 text-xs leading-5 text-slate-1">生成只读链接,对方可查看你的规划(不含账号等隐私)。链接 7 天后自动失效。</p>
+
+            {share ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 rounded-lg border border-line bg-paper/60 px-3 py-2.5">
+                  <span className="min-w-0 flex-1 truncate text-xs text-slate-1">{share.url}</span>
+                  <button className="pp-btn pp-btn-ghost px-3 py-1.5 text-xs" onClick={copyShare}>
+                    <Ic name="copy" size={12} /> 复制
+                  </button>
+                </div>
+                <div className="num text-[11px] text-slate-2">创建于 {new Date(share.createdAt).toLocaleString()} · 7 天后过期</div>
+                <div className="flex gap-2">
+                  <Link href={`/share/${share.token}`} target="_blank" className="pp-btn pp-btn-primary flex-1 px-3 py-2 text-xs">
+                    <Ic name="globe" size={13} /> 预览
+                  </Link>
+                  <button className="pp-btn pp-btn-ghost px-3 py-2 text-xs" onClick={revokeShare} disabled={shareBusy}>
+                    <Ic name="trash" size={13} /> 撤销分享
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button className="pp-btn pp-btn-primary w-full py-2.5 text-sm" onClick={createShare} disabled={shareBusy}>
+                {shareBusy ? '创建中…' : '生成分享链接'}
+              </button>
+            )}
+            {shareMsg && <div className="mt-3 text-center text-xs text-teal">{shareMsg}</div>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

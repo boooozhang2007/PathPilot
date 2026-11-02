@@ -8,6 +8,8 @@ function requireEnv(name: string, fallback?: string): string {
 
 export const config = {
   port: Number(process.env.PORT ?? 3000),
+  /** 分享链接 / 公开页的对外访问地址（Web 前端），用于生成只读分享 URL */
+  publicBaseUrl: (process.env.PUBLIC_BASE_URL ?? 'http://localhost:3001').trim().replace(/\/$/, ''),
   jwtSecret: requireEnv('JWT_SECRET'),
   jwtExpiresIn: '7d',
   dbPath: process.env.DB_PATH ?? './data/pathpilot.db',

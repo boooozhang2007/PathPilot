@@ -329,3 +329,27 @@ export const roadmapDiff = z.object({
   reasons: z.array(z.string()),
 });
 export type RoadmapDiff = z.infer<typeof roadmapDiff>;
+
+// ---------- 规划分享（PRD P2：只读链接） ----------
+export const shareRoadmapInput = z.object({
+  /** 分享有效期（天），默认 7，最长 30 */
+  expiresInDays: z.number().int().min(1).max(30).default(7),
+});
+export type ShareRoadmapInput = z.infer<typeof shareRoadmapInput>;
+
+// ---------- 简历 PDF 导出（PRD 4.9，P1） ----------
+export const resumePdfInput = z.object({
+  targetRole: z.string().min(1).max(50),
+  summary: z.string().max(2000),
+  sections: z
+    .array(
+      z.object({
+        heading: z.string().max(60),
+        items: z.array(z.string().max(500)).max(40),
+      })
+    )
+    .max(20),
+  notes: z.array(z.string().max(300)).max(20).default([]),
+  nickname: z.string().max(30).optional(),
+});
+export type ResumePdfInput = z.infer<typeof resumePdfInput>;

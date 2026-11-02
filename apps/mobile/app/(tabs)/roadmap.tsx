@@ -1,10 +1,12 @@
 // 成长路线：分学期时间轴 + 任务状态 + 页内生成/重新规划（轮询 agent run）
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ScrollView, View, Text, RefreshControl, ActivityIndicator } from 'react-native';
+import { ScrollView, View, Text, RefreshControl, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
 import { useFocusEffect } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 import { api, pollRun } from '../../lib/api';
 import { C, SF, Card, Tag, Loading, ErrorBox, EmptyBox, Btn, useSettings } from '../../components/ui';
-import type { RoadmapDTO, RoadmapTaskDTO } from '@pathpilot/shared';
+import { Icon } from '../../components/icons';
+import type { RoadmapDTO, RoadmapTaskDTO, RoadmapShareDTO } from '@pathpilot/shared';
 import { TASK_STATUS_LABELS } from '@pathpilot/shared';
 
 export default function RoadmapTab() {
@@ -14,6 +16,7 @@ export default function RoadmapTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busyText, setBusyText] = useState('');
+  const [shareBusy, setShareBusy] = useState(false);
   // 页面卸载时取消仍在进行的 run 轮询，避免后台空转 15 分钟
   const pollAbortRef = useRef<AbortController | null>(null);
   useEffect(
@@ -60,6 +63,24 @@ export default function RoadmapTab() {
       setErr(e instanceof Error ? e.message : '生成失败');
     } finally {
       setBusyText('');
+    }
+  }
+
+  /** 分享规划（只读链接，7 天有效） */
+  async function shareRoadmap() {
+    if (!data || shareBusy) return;
+    setShareBusy(true);
+    try {
+      let share = await api<RoadmapShareDTO | null>(`/api/roadmaps/${data.roadmap.id}/share`).catch(() => null);
+      if (!share) share = await api<RoadmapShareDTO>(`/api/roadmaps/${data.roadmap.id}/share`, { method: 'POST', json: { expiresInDays: 7 } });
+      Alert.alert('分享成长路线', '只读链接已生成（7 天有效）：\n\n' + share.url, [
+        { text: '复制链接', onPress: () => Clipboard.setStringAsync(share.url) },
+        { text: '关闭', style: 'cancel' },
+      ]);
+    } catch (e) {
+      Alert.alert('分享失败', e instanceof Error ? e.message : '请稍后重试');
+    } finally {
+      setShareBusy(false);
     }
   }
 
@@ -115,7 +136,12 @@ export default function RoadmapTab() {
     <ScrollView style={{ flex: 1, ...SF.page }} contentContainerStyle={{ padding: 16, paddingTop: 54, paddingBottom: 28 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); setTimeout(() => setRefreshing(false), 800); }} tintColor={C.accent} />}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <Text style={{ fontSize: 20, fontWeight: '800', color: C.ink }}>成长路线</Text>
-        <Tag tone="ink">v{roadmap.version}</Tag>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity onPress={shareRoadmap} disabled={shareBusy} style={{ padding: 6, borderRadius: 8, borderWidth: 1, borderColor: C.line }}>
+            <Icon name="share" size={15} color={shareBusy ? C.slate2 : C.accent} />
+          </TouchableOpacity>
+          <Tag tone="ink">v{roadmap.version}</Tag>
+        </View>
       </View>
       <Text style={{ fontSize: 12, color: C.slate, marginTop: 4, marginBottom: 14, lineHeight: 17 }}>
         {roadmap.content.goal}

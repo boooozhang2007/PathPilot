@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 import { Loading, Ring } from '@/components/ui';
 import { AgentChat } from '@/components/AgentChat';
 import { Ic, type IconName } from '@/components/Icon';
-import type { DashboardData, RoadmapTaskDTO } from '@pathpilot/shared';
+import type { DashboardData, RoadmapTaskDTO, WeeklySummaryDTO } from '@pathpilot/shared';
 import { TASK_STATUS_LABELS, EVIDENCE_STATUS_LABELS, GRADE_LABELS } from '@pathpilot/shared';
 
 function greeting(): string {
@@ -35,6 +35,7 @@ export default function DashboardPage() {
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
   const [motto, setMotto] = useState('向着热爱深处，慢慢长成自己的答案。');
+  const [summary, setSummary] = useState<WeeklySummaryDTO | null>(null);
 
   function load() {
     setLoading(true);
@@ -48,6 +49,11 @@ export default function DashboardPage() {
   }
   useEffect(load, []);
   useEffect(() => { api<{ text: string }>('/api/motto').then((x) => setMotto(x.text)).catch(() => {}); }, []);
+  useEffect(() => {
+    api<{ weeklySummary: WeeklySummaryDTO | null }>('/api/reminders')
+      .then((r) => setSummary(r.weeklySummary))
+      .catch(() => {});
+  }, []);
 
   if (loading) return <Loading />;
   const d = data;
@@ -133,6 +139,31 @@ export default function DashboardPage() {
           <div className="flex flex-1 items-center justify-center text-xs text-slate-2">生成规划后显示</div>
         )}
       </section>
+
+      {/* ---------- 本周总结格 ---------- */}
+      {summary && (
+        <section className="pp-card reveal col-span-12 p-5 lg:col-span-4" style={{ '--d': '90ms' } as never}>
+          <TileHead icon="calendar" title="本周总结" right={<Link href="/reminders" className="u-link text-xs">全部提醒</Link>} />
+          <ul className="space-y-1.5">
+            {summary.highlights.slice(0, 3).map((h, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs leading-5 text-slate-1">
+                <Ic name="check" size={12} className="mt-0.5 shrink-0 text-teal" strokeWidth={2.6} />
+                {h}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 flex items-center gap-3 border-t border-line/70 pt-3">
+            <div className="flex-1">
+              <div className="num text-[10px] tracking-widest text-slate-2">本周完成</div>
+              <div className="num text-lg font-bold text-ink">{summary.tasksCompletedThisWeek} 项</div>
+            </div>
+            <div className="flex-1">
+              <div className="num text-[10px] tracking-widest text-slate-2">学期完成率</div>
+              <div className="num text-lg font-bold text-teal">{summary.semesterCompletionRate}%</div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ---------- 对话大格(2 行高) ---------- */}
       <section className="pp-card reveal col-span-12 overflow-hidden p-0 lg:col-span-7 lg:row-span-2" style={{ '--d': '80ms' } as never}>

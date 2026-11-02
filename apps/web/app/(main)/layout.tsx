@@ -28,6 +28,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const [engine, setEngine] = useState<string>('');
   const [tourOpen, setTourOpen] = useState(false);
   const [dark, setDark] = useState(false);
+  const [remCount, setRemCount] = useState(0);
 
   useEffect(() => {
     setDark(document.documentElement.classList.contains('dark'));
@@ -62,6 +63,9 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
           setAvatar(p.avatar);
         }
       })
+      .catch(() => {});
+    api<{ reminders: unknown[] }>('/api/reminders')
+      .then((r) => setRemCount((r.reminders ?? []).length))
       .catch(() => {});
     // 首次访问自动开启手把手引导
     if (!localStorage.getItem(TOUR_KEY)) {
@@ -123,6 +127,14 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
               快速跳转
               <span className="num ml-auto rounded border border-[#d8b276]/40 px-1 py-0.5 text-[9px] text-[#d8b276]/70">⌘K</span>
             </button>
+            <Link href="/reminders" title="学习提醒" className="relative rounded-lg border border-[#d8b276]/35 p-2 text-[#e8d9b8]/70 transition hover:border-[#d8b276] hover:text-[#f6efdc]">
+              <Ic name="bell" size={14} />
+              {remCount > 0 && (
+                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#e5484d] px-1 text-[9px] font-bold leading-none text-white shadow">
+                  {remCount > 99 ? '99+' : remCount}
+                </span>
+              )}
+            </Link>
             <button onClick={toggleTheme} title={dark ? '切到浅色' : '切到深色'} className="rounded-lg border border-[#d8b276]/35 p-2 text-[#e8d9b8]/70 transition hover:border-[#d8b276] hover:text-[#f6efdc]">
               <Ic name={dark ? 'spark' : 'moon'} size={14} />
             </button>
