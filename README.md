@@ -57,7 +57,7 @@ cd apps/mobile/android
 
 发布 APK 位于 GitHub Releases，不写入仓库。当前版本发布页：
 
-https://github.com/boooozhang2007/PathPilot/releases/tag/v1.3.2
+https://github.com/boooozhang2007/PathPilot/releases/tag/v1.3.5
 
 ## 文档
 
