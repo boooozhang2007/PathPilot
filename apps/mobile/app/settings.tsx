@@ -1,13 +1,14 @@
 // 设置页（DeepSeek 式）：账号管理 / 语言 / 外观 / 字体大小 / 个性化 / 关于 / 退出登录
-import { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, Modal, Alert, ToastAndroid, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, Modal, Alert, ToastAndroid, Platform, Image } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 import { api, clearAuth, getApiBase, setApiBase, DEFAULT_BASE, isGuest, getNickname } from '../lib/api';
 import { C, SF, useSettings, SettingRow, SettingGroup, GroupTitle } from '../components/ui';
 import { Icon } from '../components/icons';
 import { makeT } from '../lib/i18n';
 import type { AppearanceMode, LanguageMode, FontSizeMode, AnswerStyle, ThemeStyle } from '../lib/prefs';
+import type { ProfileDTO } from '@pathpilot/shared';
 
 /** 主题风格卡片：三选一，缩略图直接画出该风格的卡片/输入槽质感 */
 function StylePicker() {
@@ -120,6 +121,7 @@ export default function Settings() {
   const t = makeT(lang);
 
   const [nickname, setNickname] = useState('');
+  const [avatar, setAvatar] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [guest, setGuest] = useState(false);
   const [sheet, setSheet] = useState<'none' | 'language' | 'appearance' | 'fontSize' | 'answerStyle'>('none');
@@ -130,12 +132,29 @@ export default function Settings() {
 
   useEffect(() => {
     getApiBase().then(setBase);
-    isGuest().then(setGuest);
-    getNickname().then(setNickname);
     api<{ user?: { email?: string }; email?: string }>('/api/auth/me')
       .then((r) => setEmail(String(r.user?.email ?? r.email ?? '')))
       .catch(() => {});
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      getNickname().then((name) => { if (active) setNickname(name); }).catch(() => {});
+      isGuest().then((guestMode) => {
+        if (!active) return;
+        setGuest(guestMode);
+        if (guestMode) {
+          setAvatar(null);
+          return;
+        }
+        api<ProfileDTO | null>('/api/profile')
+          .then((profile) => { if (active) setAvatar(profile?.avatar ?? null); })
+          .catch(() => { if (active) setAvatar(null); });
+      }).catch(() => { if (active) setAvatar(null); });
+      return () => { active = false; };
+    }, [])
+  );
 
   function toast(msg: string) {
     if (Platform.OS === 'android') ToastAndroid.show(msg, ToastAndroid.SHORT);
@@ -233,9 +252,13 @@ export default function Settings() {
           disabled={guest}
           activeOpacity={guest ? 1 : 0.6}
         >
-          <View style={{ width: 48, height: 48, borderRadius: 999, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ color: C.onAccent, fontSize: 18, fontWeight: '800' }}>{(guest ? '客' : nickname || '同')[0]}</Text>
-          </View>
+          {!guest && avatar ? (
+            <Image source={{ uri: avatar }} style={{ width: 48, height: 48, borderRadius: 999 }} />
+          ) : (
+            <View style={{ width: 48, height: 48, borderRadius: 999, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: C.onAccent, fontSize: 18, fontWeight: '800' }}>{(guest ? '客' : nickname || '同')[0]}</Text>
+            </View>
+          )}
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: fs(16), fontWeight: '800', color: C.ink }}>{guest ? t('guest') : nickname || '同学'}</Text>
             <Text style={{ fontSize: fs(12), color: C.slate2, marginTop: 2 }} numberOfLines={1}>
