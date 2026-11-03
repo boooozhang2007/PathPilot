@@ -102,3 +102,27 @@ cd promo && npm run draft
 - **引导遮罩**：Web 端首次进入会弹产品引导层（`z-[80]` 全屏遮罩），脚本会注入 CSS 隐藏并在点击时用 `force`，否则点击会被拦截。
 - **录屏出帧规律**：CDP screencast 只在画面变化时出帧，静态页面几乎没有帧；所以 `timing.ts` 里的场景时长要与素材实际时长对齐（素材比场景短时，播完就没有画面了），必要时调 `FOOTAGE.*.playbackRate`。
 - **APK 签名**：发布包必须补签 v1 签名（见仓库根 `README.md` 的发布注意）。
+
+## 交付校验记录（2026-11-04）
+
+- 成片：`out/pathpilot-promo.mp4`，60.00 秒 / 1920×1080 / 30fps / H.264 + AAC 立体声。
+- 整片完整解码无错误：`ffmpeg -v error -i out/pathpilot-promo.mp4 -f null -` 没有任何输出。
+- 三版（默认 pad / piano / rhythm）视频流完全一致，`ffmpeg -map 0:v:0 -c copy -f md5 -` 均为
+  `7c7f4732478b4dd9f2f366f905083361`，证明换配乐只重混音轨、画面没有被重新编码。
+- 音轨电平：默认版 mean -16.6 dB / max -2.0 dB；配乐文件峰值 0.88，首 1.5 秒淡入、末 5 秒淡出。
+- 素材真实性：Web 段是本地真实运行录屏（真实模型 + 真实岗位数据，画面含「已深度思考」与工具链）；
+  移动端段由 `design/app.html` 驱动录制，片中标注「MOBILE UI · 设计还原」，不以真机录屏表述。
+
+## 换配乐的两种方式
+
+1. 现成音频（剪映导出的音乐、无版权素材库下载的曲子等）：
+
+```bash
+node promo/tools/replace-audio.mjs <音频文件> 0.9
+```
+
+2. 重新生成合成配乐（三种风格）：
+
+```bash
+BED_STYLE=piano python promo/tools/make_bed.py 60 promo/public/audio/bed.wav
+```
