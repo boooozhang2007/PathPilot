@@ -1,0 +1,5 @@
+node_modules/
+out/
+raw/
+# 音床由 tools/make_bed.py 生成，不进仓库
+public/audio/bed.wav
