@@ -57,7 +57,7 @@ cd apps/mobile/android
 
 发布 APK 位于 GitHub Releases，不写入仓库。当前版本发布页：
 
-https://github.com/boooozhang2007/PathPilot/releases/tag/v1.3.7
+https://github.com/boooozhang2007/PathPilot/releases/tag/v1.3.8
 
 Android 设置页的“检查更新”读取 GitHub 最新正式 Release。发布新版时，请使用 `vX.Y.Z` 格式的标签，上传 `PathPilot-vX.Y.Z.apk`，并沿用现有 Android 签名，以便用户覆盖安装。旧版应用需要先手动安装包含此功能的版本。
 
