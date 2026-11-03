@@ -7,7 +7,7 @@
 | 素材 | 来源 | 说明 |
 | --- | --- | --- |
 | Web 端 Agent 画面 | **本地真实运行录屏** | `localhost:3001/advisor`，真实模型 + 真实岗位数据；录屏里能看到真实工具调用与流式回复 |
-| 移动端画面 | `design/app.html` 设计稿页面驱动的界面录制 | 本机没有连接真机、也没有安装模拟器（Expo Web 端在本机渲染不出内容），所以片中标注为「移动端界面 · 设计还原」，不按真机录屏表述。要换成真机录屏，只要覆盖 `promo/public/media/app-agent.mp4` 即可，成片无需改动 |
+| 移动端画面 | `design/app.html` 设计稿页面驱动的界面录制 | 本机没有连接真机、也没有安装模拟器（Expo Web 端在本机渲染不出内容），所以片中标注为「移动端界面 · 设计还原」，不按真机录屏表述。换真机录屏见下方「换成真机录屏」 |
 | 音轨 | `promo/tools/make_bed.py` 合成的配乐（I–vi–IV–V 垫底 + 铃铛琶音 + 低频脉冲，60 秒） | 想换正式配乐：`node promo/tools/replace-audio.mjs <音频文件>`，只重混音轨、不重编码画面 |
 | 图形与字幕 | Remotion 合成（`promo/src/`） | 深墨蓝底 + 橙色点缀，与产品设计令牌一致 |
 
@@ -125,4 +125,31 @@ node promo/tools/replace-audio.mjs <音频文件> 0.9
 
 ```bash
 BED_STYLE=piano python promo/tools/make_bed.py 60 promo/public/audio/bed.wav
+```
+
+## 换成真机录屏（移动端 18 秒）
+
+1. 手机开 USB 调试并连上，装好 APK、登录演示账号，停在 AI 顾问页：
+
+```bash
+adb devices
+```
+
+2. 开始录制，然后在手机上正常操作（提问、切页面）：
+
+```bash
+adb shell screenrecord --time-limit 25 /sdcard/pp-promo.mp4
+```
+
+3. 拉回本地并覆盖素材：
+
+```bash
+adb pull /sdcard/pp-promo.mp4 promo/public/media/app-agent.mp4
+```
+
+4. 把 `promo/src/timing.ts` 里 `FOOTAGE.app.hasBezel` 改成 `false`（真机录屏没有手机外框，
+   场景会自动套上 `PhoneFrame`），按实际时长调整 `SCENES.appAgent`，然后：
+
+```bash
+cd promo && npm run render
 ```
