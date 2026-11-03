@@ -1,6 +1,6 @@
 // 档案路由：个人资料 / 技能 / 经历 / 账号（PRD §9）
 import type { FastifyInstance } from 'fastify';
-import { profilePatchInput, profileSkillInput, experienceInput, experienceUpdate } from '@pathpilot/shared';
+import { profilePatchInput, profileSkillInput, profileSkillUpdate, experienceInput, experienceUpdate } from '@pathpilot/shared';
 import { getUserId } from '../auth/index.js';
 import {
   getProfile,
@@ -51,7 +51,7 @@ export async function profileRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch('/api/skills/:id', { preHandler: [auth] }, async (req) => {
     const { id } = req.params as { id: string };
-    const input = profileSkillInput.partial().parse(req.body);
+    const input = profileSkillUpdate.parse(req.body);
     if (!Object.keys(input).length) throw badRequest('无更新字段');
     const userId = getUserId(req);
     // 技能名变化 → 重建条目；其余字段就地更新（走统一 upsert 语义）
@@ -63,7 +63,7 @@ export async function profileRoutes(app: FastifyInstance): Promise<void> {
       level: input.level ?? existing.level,
       evidenceStatus: input.evidenceStatus ?? existing.evidenceStatus,
       evidenceDescription: input.evidenceDescription ?? existing.evidenceDescription ?? undefined,
-      evidenceUrl: input.evidenceUrl ?? existing.evidenceUrl ?? undefined,
+      evidenceUrl: input.evidenceUrl === undefined ? existing.evidenceUrl ?? undefined : input.evidenceUrl ?? undefined,
     });
     // 仅当新名落到另一条记录时才删除旧行；别名归一化命中同一行时（id 相同）不能删，否则整条记录丢失
     if (input.skillName && input.skillName !== existing.name && writtenId !== existing.id) {

@@ -2,6 +2,7 @@
 // 能力档案:个人资料(头像/MBTI/年月) + 技能分组(专业/通用) + 经历 + 雷达 + 缺口学习顺序
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
+import { createCareerPathSaveQueue } from '@/lib/careerPathSaveQueue';
 import { Loading, ErrorState, Tag, PageHeader, SectionTitle } from '@/components/ui';
 import { SkillRadar } from '@/components/charts';
 import { Ic } from '@/components/Icon';
@@ -34,6 +35,33 @@ export default function ProfilePage() {
   const [expOpen, setExpOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const careerQueueRef = useRef<ReturnType<typeof createCareerPathSaveQueue<ProfileDTO>> | null>(null);
+  const careerDraftDirtyRef = useRef(false);
+  if (!careerQueueRef.current) {
+    careerQueueRef.current = createCareerPathSaveQueue(
+      (careerPath) => api<ProfileDTO>('/api/profile', { method: 'PUT', json: { careerPath } }),
+      (updated) => {
+        setProfile((current) => current ? { ...current, careerPath: updated.careerPath, updatedAt: updated.updatedAt } : current);
+        setMsg('资料已自动保存');
+        setTimeout(() => setMsg(''), 2500);
+      },
+      (error) => setErr(error instanceof Error ? error.message : '保存失败'),
+    );
+  }
+
+  function editCareerPath(value: string) {
+    careerDraftDirtyRef.current = true;
+    careerQueueRef.current?.invalidate();
+    setProfile((current) => current ? { ...current, careerPath: value } : current);
+  }
+
+  function saveCareerPath(value: string) {
+    careerDraftDirtyRef.current = false;
+    setErr('');
+    setMsg('');
+    setProfile((current) => current ? { ...current, careerPath: value } : current);
+    void careerQueueRef.current?.save(value);
+  }
 
   async function load() {
     setLoading(true);
@@ -389,11 +417,10 @@ export default function ProfilePage() {
                 <label className="pp-label">发展路径</label>
                 <select
                   className="pp-input"
-                  value={profile?.careerPath ?? 'undecided'}
+                  value={CAREER_PATHS.some((p) => p === profile?.careerPath) ? profile?.careerPath : '__custom__'}
                   onChange={(e) => {
-                    const val = e.target.value as never;
-                    setProfile(profile ? { ...profile, careerPath: val } : profile);
-                    saveProfile({ careerPath: val });
+                    const val = e.target.value;
+                    saveCareerPath(val);
                   }}
                 >
                   {CAREER_PATHS.map((p) => (
@@ -401,7 +428,22 @@ export default function ProfilePage() {
                       {CAREER_PATH_LABELS[p]}
                     </option>
                   ))}
+                  {!CAREER_PATHS.some((p) => p === profile?.careerPath) && <option value="__custom__">自定义</option>}
                 </select>
+                <input
+                  className="pp-input mt-2"
+                  aria-label="自定义发展路径"
+                  maxLength={50}
+                  value={profile && !CAREER_PATHS.some((p) => p === profile.careerPath) ? profile.careerPath : ''}
+                  onChange={(e) => editCareerPath(e.target.value)}
+                  onBlur={(e) => {
+                    if (careerDraftDirtyRef.current) {
+                      const val = e.target.value.trim() || 'undecided';
+                      saveCareerPath(val);
+                    }
+                  }}
+                  placeholder="或输入自定义发展路径"
+                />
               </div>
               <div>
                 <label className="pp-label">MBTI</label>

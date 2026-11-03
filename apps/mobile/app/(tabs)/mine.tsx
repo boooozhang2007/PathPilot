@@ -8,7 +8,7 @@ import { toLocalDateStr } from '../../lib/date';
 import { C, SF, Card, Panel, Tag, Btn, Body, Loading, SettingGroup, SettingRow, useSettings } from '../../components/ui';
 import { Icon } from '../../components/icons';
 import type { ProfileDTO, ProfileSkillDTO, RoadmapVersionSummary, RoadmapTaskDTO } from '@pathpilot/shared';
-import { CAREER_PATH_LABELS, EVIDENCE_STATUS_LABELS, TASK_STATUS_LABELS, skillGroupOf, SKILL_GROUP_LABELS } from '@pathpilot/shared';
+import { careerPathLabel, EVIDENCE_STATUS_LABELS, TASK_STATUS_LABELS, skillGroupOf, SKILL_GROUP_LABELS } from '@pathpilot/shared';
 
 export default function MineTab() {
   const router = useRouter();
@@ -142,7 +142,7 @@ export default function MineTab() {
             <View style={{ ...SF.inset, padding: 14 }}>
               <Text style={{ fontSize: 18, fontWeight: '800', color: C.ink }}>{profile?.targetRole || '未设定目标岗位'}</Text>
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                <Tag tone="ink">{profile ? CAREER_PATH_LABELS[profile.careerPath] : '—'}</Tag>
+                <Tag tone="ink">{profile ? careerPathLabel(profile.careerPath) : '—'}</Tag>
                 <Tag tone="teal">技能 {skills.length} 项 · 有证据 {evidenced} 项</Tag>
               </View>
             </View>

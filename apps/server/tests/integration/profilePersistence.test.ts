@@ -16,9 +16,11 @@ describe('个人资料字段持久化回归', () => {
       expect(reloaded?.weeklyHours).toBe(weeklyHours);
       expect(reloaded?.graduationDate).toBe('2028-06-01');
     }
+    await upsertProfile(user.id, profilePatchInput.parse({ careerPath: '出国深造' }));
     await upsertProfile(user.id, profilePatchInput.parse({ graduationDate: '2031-11-01' }));
     const reloaded = await getProfile(user.id);
     expect(reloaded?.graduationDate).toBe('2031-11-01');
+    expect(reloaded?.careerPath).toBe('出国深造');
     expect(reloaded?.weeklyHours).toBe(168);
     expect(reloaded?.targetRole).toBe('Java 后端开发');
     expect(reloaded?.nickname).toBe('测试同学');

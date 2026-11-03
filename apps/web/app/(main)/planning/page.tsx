@@ -16,7 +16,7 @@ export default function PlanningPage() {
   const [counts, setCounts] = useState<{ oldCount: number; newCount: number } | null>(null);
   const [weekly, setWeekly] = useState(8);
   const [role, setRole] = useState('');
-  const [path, setPath] = useState<'employment' | 'graduate_school' | 'undecided'>('employment');
+  const [path, setPath] = useState<string>('employment');
   const [busy, setBusy] = useState('');
   const [progress, setProgress] = useState(0);
   const [err, setErr] = useState('');
@@ -185,6 +185,7 @@ export default function PlanningPage() {
                 </button>
               ))}
             </div>
+            <input className="pp-input mt-2" aria-label="自定义发展路径" maxLength={50} value={CAREER_PATHS.some((p) => p === path) ? '' : path} onChange={(e) => setPath(e.target.value || 'undecided')} placeholder="或输入自定义发展路径" />
           </div>
           <div className="flex gap-2">
             <button className="pp-btn pp-btn-ghost flex-1 py-2.5 text-xs" onClick={saveConditions} disabled={!!busy || !profile}>

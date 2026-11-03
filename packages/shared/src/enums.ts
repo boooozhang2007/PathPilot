@@ -23,12 +23,21 @@ export const MBTI_DIMENSIONS = [
 export const MBTI_RE = /^[EI][SN][TF][JP]$/;
 
 export const CAREER_PATHS = ['employment', 'graduate_school', 'undecided'] as const;
-export type CareerPath = (typeof CAREER_PATHS)[number];
-export const CAREER_PATH_LABELS: Record<CareerPath, string> = {
+export type PresetCareerPath = (typeof CAREER_PATHS)[number];
+/** Presets remain stable; users may also supply their own path. */
+export type CareerPath = string;
+export const MAX_CAREER_PATH_LENGTH = 50;
+export const CAREER_PATH_LABELS: Record<PresetCareerPath, string> = {
   employment: '直接就业',
   graduate_school: '考研',
   undecided: '暂未确定',
 };
+
+export function careerPathLabel(path: CareerPath): string {
+  return Object.prototype.hasOwnProperty.call(CAREER_PATH_LABELS, path)
+    ? CAREER_PATH_LABELS[path as PresetCareerPath]
+    : path;
+}
 
 export const TASK_STATUSES = ['not_started', 'in_progress', 'done', 'deferred'] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];

@@ -9,8 +9,9 @@ import { createProfileSaveQueue } from '../lib/profileSaveQueue';
 import { C, SF, Btn, Loading, useSettings } from '../components/ui';
 import { Icon } from '../components/icons';
 import { MonthPicker } from '../components/MonthPicker';
+import { SkillEditor } from '../components/SkillEditor';
 import type { ProfileDTO } from '@pathpilot/shared';
-import { GRADES, GRADE_LABELS, CAREER_PATHS, CAREER_PATH_LABELS, MBTI_DIMENSIONS, MIN_WEEKLY_HOURS, MAX_WEEKLY_HOURS, weeklyHoursSchema } from '@pathpilot/shared';
+import { GRADES, GRADE_LABELS, CAREER_PATH_LABELS, MBTI_DIMENSIONS, MIN_WEEKLY_HOURS, MAX_WEEKLY_HOURS, weeklyHoursSchema } from '@pathpilot/shared';
 
 export default function ProfileEdit() {
   const router = useRouter();
@@ -32,6 +33,9 @@ export default function ProfileEdit() {
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [weeklyHoursDraft, setWeeklyHoursDraft] = useState('');
   const weeklyHoursDraftRef = useRef('');
+  const [careerDraft, setCareerDraft] = useState('');
+  const careerDraftRef = useRef('');
+  const careerDraftDirtyRef = useRef(false);
   const debounceTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const debouncePatchesRef = useRef<Record<string, Partial<ProfileDTO>>>({});
   // MBTI 逐维选择状态（独立于 profile.mbti：选到一半也能保持高亮，凑齐 4 位才入库）
@@ -73,7 +77,7 @@ export default function ProfileEdit() {
         focusedInputRef.current = inputRefs.current[key];
         requestAnimationFrame(revealFocusedInput);
       },
-      accessibilityLabel: ({ nickname: '昵称', school: '学校', major: '专业', targetRole: '目标岗位', weeklyHours: '每周可投入时间（小时）' } as Record<string, string>)[key],
+      accessibilityLabel: ({ nickname: '昵称', school: '学校', major: '专业', targetRole: '目标岗位', careerPath: '自定义发展路径', weeklyHours: '每周可投入时间（小时）' } as Record<string, string>)[key],
       editable: !finishing,
     };
   }
@@ -96,6 +100,9 @@ export default function ProfileEdit() {
           setProfile(p);
           setWeeklyHoursDraft(String(p.weeklyHours));
           weeklyHoursDraftRef.current = String(p.weeklyHours);
+          const customPath = ['employment', 'graduate_school', 'undecided'].includes(p.careerPath) ? '' : p.careerPath;
+          setCareerDraft(customPath);
+          careerDraftRef.current = customPath;
           const m = p.mbti ?? '';
           setMbtiSel(m.length === 4 ? [m[0], m[1], m[2], m[3]] : [null, null, null, null]);
         }
@@ -185,6 +192,32 @@ export default function ProfileEdit() {
     return savePatch(patch);
   }
 
+  function handleCareerChange(value: string) {
+    setCareerDraft(value);
+    careerDraftRef.current = value;
+    careerDraftDirtyRef.current = true;
+    clearTimeout(debounceTimersRef.current.careerPath);
+    delete debounceTimersRef.current.careerPath;
+    delete debouncePatchesRef.current.careerPath;
+    if (value.trim()) debounceSave('careerPath', { careerPath: value.trim() });
+  }
+
+  function commitCareerDraft() {
+    if (!careerDraftDirtyRef.current) return;
+    careerDraftDirtyRef.current = false;
+    commitField('careerPath', { careerPath: careerDraftRef.current.trim() || 'undecided' });
+  }
+
+  function selectCareerPath(value: 'employment' | 'graduate_school') {
+    clearTimeout(debounceTimersRef.current.careerPath);
+    delete debounceTimersRef.current.careerPath;
+    delete debouncePatchesRef.current.careerPath;
+    careerDraftDirtyRef.current = false;
+    careerDraftRef.current = '';
+    setCareerDraft('');
+    savePatch({ careerPath: value });
+  }
+
   function handleWeeklyHoursChange(val: string) {
     setWeeklyHoursDraft(val);
     weeklyHoursDraftRef.current = val;
@@ -209,6 +242,7 @@ export default function ProfileEdit() {
 
   async function finishEditing() {
     if (finishing || !commitWeeklyHours()) return;
+    commitCareerDraft();
     setFinishing(true);
     Keyboard.dismiss();
     for (const [key, patch] of Object.entries(debouncePatchesRef.current)) commitField(key, patch);
@@ -450,14 +484,28 @@ export default function ProfileEdit() {
           />
         </View>
 
+        <SkillEditor focusProps={focusProps} />
+
         <View>
           <Text style={s.label}>发展路径</Text>
           <View style={{ flexDirection: 'row', gap: 6 }}>
-            {CAREER_PATHS.map((p) => (
-              <TouchableOpacity key={p} onPress={() => savePatch({ careerPath: p })} style={{ ...SF.chip, flex: 1, borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: profile.careerPath === p ? C.accent : C.group, borderWidth: 0 }}>
-                <Text style={{ fontSize: 12, fontWeight: '600', color: profile.careerPath === p ? C.onAccent : C.slate }}>{CAREER_PATH_LABELS[p]}</Text>
+            {(['employment', 'graduate_school'] as const).map((p) => (
+              <TouchableOpacity key={p} onPress={() => selectCareerPath(p)} style={{ ...SF.chip, flex: 1, borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: profile.careerPath === p && !careerDraft ? C.accent : C.group, borderWidth: 0 }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: profile.careerPath === p && !careerDraft ? C.onAccent : C.slate }}>{CAREER_PATH_LABELS[p]}</Text>
               </TouchableOpacity>
             ))}
+            <TextInput
+              {...focusProps('careerPath')}
+              style={{ ...inputSt, flex: 1, minWidth: 0 }}
+              value={careerDraft}
+              onChangeText={handleCareerChange}
+              onBlur={commitCareerDraft}
+              onSubmitEditing={commitCareerDraft}
+              placeholder="自定义"
+              placeholderTextColor={C.slate2}
+              maxLength={50}
+              returnKeyType="done"
+            />
           </View>
         </View>
 

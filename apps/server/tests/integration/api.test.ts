@@ -419,6 +419,20 @@ describe('审查修复回归', () => {
     expect(kept.level).toBe(4);
   });
 
+  it('技能 PATCH 可清除证据链接，未提交链接时保留原值', async () => {
+    const headers = { authorization: `Bearer ${token}` };
+    await app.inject({ method: 'POST', url: '/api/skills', headers, payload: {
+      skillName: '证据链接测试', level: 2, evidenceStatus: 'evidenced', evidenceUrl: 'https://example.com/proof',
+    } });
+    const list = async () => (await app.inject({ method: 'GET', url: '/api/skills', headers })).json();
+    const skill = (await list()).find((s: { name: string }) => s.name === '证据链接测试');
+    expect(skill.evidenceUrl).toBe('https://example.com/proof');
+    expect((await app.inject({ method: 'PATCH', url: `/api/skills/${skill.id}`, headers, payload: { level: 3 } })).statusCode).toBe(200);
+    expect((await list()).find((s: { id: number }) => s.id === skill.id).evidenceUrl).toBe('https://example.com/proof');
+    expect((await app.inject({ method: 'PATCH', url: `/api/skills/${skill.id}`, headers, payload: { evidenceUrl: null } })).statusCode).toBe(200);
+    expect((await list()).find((s: { id: number }) => s.id === skill.id).evidenceUrl).toBeNull();
+  });
+
   it('注销账号后旧 token 立即失效（401）', async () => {
     const t = await register(`bye${Date.now()}@t.cn`);
     const del = await app.inject({ method: 'DELETE', url: '/api/account', headers: { authorization: `Bearer ${t}` } });

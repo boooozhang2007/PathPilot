@@ -3,7 +3,7 @@ import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { Type, type TSchema } from 'typebox';
 import { z } from 'zod';
 import {
-  CAREER_PATHS, EVIDENCE_STATUSES, EXPERIENCE_TYPES, TASK_STATUSES,
+  MAX_CAREER_PATH_LENGTH, EVIDENCE_STATUSES, EXPERIENCE_TYPES, TASK_STATUSES,
   experienceInput, generateRoadmapInput, jobAnalyzeInput, profileSkillInput,
   resumeDraftInput, reviseRoadmapInput, taskUpdateInput,
 } from '@pathpilot/shared';
@@ -31,7 +31,7 @@ const enumeration = (...values: string[]) => Type.Union(values.map((value) => Ty
 const planningFields = {
   weekly_hours: optional(Type.Integer({ minimum: 1, maximum: 168 })),
   target_role: optional(text(50)),
-  career_path: optional(enumeration(...CAREER_PATHS)),
+  career_path: optional(text(MAX_CAREER_PATH_LENGTH)),
 };
 const taskFields = {
   title: optional(text(100)), semester: optional(Type.Integer({ minimum: 1, maximum: 14 })),

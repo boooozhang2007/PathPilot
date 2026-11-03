@@ -1,5 +1,6 @@
 // 经历档案交叉校验：endDate 不得早于 startDate（新增 superRefine 的回归用例）
 import { describe, expect, it } from 'vitest';
+import { careerPathLabel } from './enums';
 import { experienceInput, experienceUpdate, profileInput, profilePatchInput, generateRoadmapInput, reviseRoadmapInput, roadmapResult } from './schemas';
 
 const base = { type: 'project', title: '示例项目' } as const;
@@ -56,5 +57,29 @@ describe('每周投入时长在档案与规划中保持一致', () => {
   it.each([0, -1, 169, 8.5])('各入口均拒绝非法时长 %s', (hours) => {
     for (const schema of inputs) expect(schema.safeParse({ weeklyHours: hours }).success).toBe(false);
     expect(roadmapResult.pick({ weekly_hours: true }).safeParse({ weekly_hours: hours }).success).toBe(false);
+  });
+});
+
+
+describe('自定义发展路径', () => {
+  const inputs = [profileInput.pick({ careerPath: true }), profilePatchInput, generateRoadmapInput, reviseRoadmapInput];
+
+  it.each(['employment', 'graduate_school', 'undecided', '出国深造'])('所有入口接受路径 %s', (careerPath) => {
+    for (const schema of inputs) expect(schema.parse({ careerPath }).careerPath).toBe(careerPath);
+  });
+
+  it.each(['', '   ', 'a'.repeat(51)])('所有入口拒绝空值和超长路径', (careerPath) => {
+    for (const schema of inputs) expect(schema.safeParse({ careerPath }).success).toBe(false);
+  });
+
+  it('显示旧路径的中文标签和原样显示自定义内容', () => {
+    expect(careerPathLabel('employment')).toBe('直接就业');
+    expect(careerPathLabel('undecided')).toBe('暂未确定');
+    expect(careerPathLabel('出国深造')).toBe('出国深造');
+    expect(careerPathLabel('constructor')).toBe('constructor');
+  });
+
+  it('保存前去除路径首尾空格', () => {
+    expect(profilePatchInput.parse({ careerPath: ' 留学 ' }).careerPath).toBe('留学');
   });
 });

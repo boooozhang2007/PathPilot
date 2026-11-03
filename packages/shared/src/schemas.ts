@@ -3,7 +3,7 @@
 import { z } from 'zod';
 import { MAX_SEMESTER } from './semester';
 import {
-  CAREER_PATHS,
+  MAX_CAREER_PATH_LENGTH,
   EVIDENCE_STATUSES,
   EXPERIENCE_TYPES,
   GRADES,
@@ -20,6 +20,8 @@ export const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式�
 export const MIN_WEEKLY_HOURS = 1;
 export const MAX_WEEKLY_HOURS = 7 * 24;
 export const weeklyHoursSchema = z.number().int().min(MIN_WEEKLY_HOURS).max(MAX_WEEKLY_HOURS);
+
+export const careerPathSchema = z.string().trim().min(1, '发展路径不能为空').max(MAX_CAREER_PATH_LENGTH);
 
 // ---------- 认证 ----------
 export const registerInput = z.object({
@@ -43,7 +45,7 @@ export const profileInput = z.object({
   grade: z.enum(GRADES),
   graduationDate: dateString,
   targetRole: z.string().min(1, '目标岗位不能为空').max(50),
-  careerPath: z.enum(CAREER_PATHS),
+  careerPath: careerPathSchema,
   weeklyHours: weeklyHoursSchema,
   /** MBTI 人格类型（16 型，如 INTJ）；未测可为空 */
   mbti: z.string().regex(MBTI_RE, 'MBTI 格式应为 4 位（如 INTJ）').nullable().optional(),
@@ -66,7 +68,9 @@ export const profileSkillInput = z.object({
   evidenceDescription: z.string().max(500).optional(),
   evidenceUrl: z.string().url().optional(),
 });
-export const profileSkillUpdate = profileSkillInput.partial();
+export const profileSkillUpdate = profileSkillInput.partial().extend({
+  evidenceUrl: z.string().url().nullable().optional(),
+});
 
 // ---------- 经历档案（PRD 8.4） ----------
 const experienceBase = z.object({
@@ -206,7 +210,7 @@ export const generateRoadmapInput = z.object({
   /** 缺省使用 profile 中的当前值 */
   weeklyHours: weeklyHoursSchema.optional(),
   targetRole: z.string().min(1).max(50).optional(),
-  careerPath: z.enum(CAREER_PATHS).optional(),
+  careerPath: careerPathSchema.optional(),
   jobAnalysisId: z.number().int().positive().optional(),
 });
 export type GenerateRoadmapInput = z.infer<typeof generateRoadmapInput>;
@@ -214,7 +218,7 @@ export type GenerateRoadmapInput = z.infer<typeof generateRoadmapInput>;
 export const reviseRoadmapInput = z.object({
   weeklyHours: weeklyHoursSchema.optional(),
   targetRole: z.string().min(1).max(50).optional(),
-  careerPath: z.enum(CAREER_PATHS).optional(),
+  careerPath: careerPathSchema.optional(),
   reason: z.string().max(200).optional(),
 });
 export type ReviseRoadmapInput = z.infer<typeof reviseRoadmapInput>;
