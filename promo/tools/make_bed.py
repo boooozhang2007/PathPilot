@@ -1,6 +1,7 @@
 """生成宣传片背景音乐（纯标准库合成；正式配乐可直接替换本文件产物）。
 结构：I-vi-IV-V 走向的暖色垫底 + 铃铛式琶音 + 低频脉冲 + 轻微空气感，首尾淡入淡出。
 用法: python promo/tools/make_bed.py [时长秒=60] [输出=promo/public/audio/bed.wav]
+风格: BED_STYLE=pad|piano|rhythm（默认 pad）
 """
 import array
 import math
@@ -15,6 +16,15 @@ OUT = sys.argv[2] if len(sys.argv) > 2 else os.path.join('promo', 'public', 'aud
 
 BAR = 3.75          # 每小节 3.75 秒（舒缓的 64 BPM，4/4）
 STEP = BAR / 5      # 琶音步长
+STYLE = os.environ.get('BED_STYLE', 'pad')   # pad | piano | rhythm
+STEPS_PER_BAR = {'pad': 5, 'piano': 3, 'rhythm': 8}[STYLE]
+STEP = BAR / STEPS_PER_BAR
+TONE_GAIN = {'pad': 0.24, 'piano': 0.20, 'rhythm': 0.22}[STYLE]
+TONE_DECAY = {'pad': 3.4, 'piano': 2.6, 'rhythm': 4.0}[STYLE]
+PULSE_GAIN = {'pad': 0.26, 'piano': 0.14, 'rhythm': 0.34}[STYLE]
+AIR_GAIN = {'pad': 0.004, 'piano': 0.003, 'rhythm': 0.006}[STYLE]
+LP_K = {'pad': 0.85, 'piano': 0.70, 'rhythm': 1.05}[STYLE]
+PAD_GAIN = {'pad': 0.62, 'piano': 0.70, 'rhythm': 0.58}[STYLE]
 CHORDS = [
     [261.63, 329.63, 392.00, 493.88],   # C
     [220.00, 261.63, 329.63, 392.00],   # Am
@@ -41,7 +51,7 @@ def main():
     n = int(SR * DUR)
     lp_l = lp_r = 0.0
     samples = array.array('h')
-    k = 0.85  # 一极低通，截止约 6.5kHz：暖但不闷
+    k = LP_K  # 一极低通：越大越亮
     for i in range(n):
         t = i / SR
         bar = int(t / BAR)
@@ -61,10 +71,10 @@ def main():
         step = int(bar_t / STEP)
         st = bar_t - step * STEP
         tone = 0.0
-        if step < 5:
+        if step < STEPS_PER_BAR:
             f = tones[(step + bar) % len(tones)] * 2.0
-            dec = math.exp(-st * 3.4)
-            tone = 0.24 * dec * (
+            dec = math.exp(-st * TONE_DECAY)
+            tone = TONE_GAIN * dec * (
                 math.sin(2 * math.pi * f * t)
                 + 0.28 * math.sin(2 * math.pi * f * 2 * t)
                 + 0.06 * math.sin(2 * math.pi * f * 3 * t)
@@ -73,14 +83,14 @@ def main():
         # 低频脉冲：小节头轻轻一下
         pulse = 0.0
         if bar_t < 0.9:
-            pulse = 0.26 * math.exp(-bar_t * 6.0) * math.sin(2 * math.pi * 58.0 * t)
+            pulse = PULSE_GAIN * math.exp(-bar_t * 6.0) * math.sin(2 * math.pi * 58.0 * t)
 
         # 空气感：极轻的高频微光 + 慢速呼吸
-        air = 0.004 * math.sin(2 * math.pi * 1568.0 * t) * (0.5 + 0.5 * math.sin(2 * math.pi * 0.07 * t))
+        air = AIR_GAIN * math.sin(2 * math.pi * 1568.0 * t) * (0.5 + 0.5 * math.sin(2 * math.pi * 0.07 * t))
 
         pan = 0.25 if step % 2 == 0 else -0.25
-        left = pad * 0.62 + tone * (0.5 - pan) + pulse * 0.55 + air
-        right = pad * 0.62 + tone * (0.5 + pan) + pulse * 0.55 + air * 0.9
+        left = pad * PAD_GAIN + tone * (0.5 - pan) + pulse * 0.55 + air
+        right = pad * PAD_GAIN + tone * (0.5 + pan) + pulse * 0.55 + air * 0.9
 
         lp_l += k * (left - lp_l)
         lp_r += k * (right - lp_r)
