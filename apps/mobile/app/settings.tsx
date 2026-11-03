@@ -1,9 +1,11 @@
 // 设置页（DeepSeek 式）：账号管理 / 语言 / 外观 / 字体大小 / 个性化 / 关于 / 退出登录
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, Modal, Alert, ToastAndroid, Platform, Image } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import Constants from 'expo-constants';
+import * as Linking from 'expo-linking';
 import { api, clearAuth, getApiBase, setApiBase, DEFAULT_BASE, isGuest, getNickname } from '../lib/api';
+import { checkForUpdates, RELEASES_URL } from '../lib/appUpdate';
 import { C, SF, useSettings, SettingRow, SettingGroup, GroupTitle } from '../components/ui';
 import { Icon } from '../components/icons';
 import { makeT } from '../lib/i18n';
@@ -129,6 +131,8 @@ export default function Settings() {
   const [base, setBase] = useState('');
   const [serverMsg, setServerMsg] = useState('');
   const [testing, setTesting] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const updateCheckInFlight = useRef(false);
 
   useEffect(() => {
     getApiBase().then(setBase);
@@ -159,6 +163,50 @@ export default function Settings() {
   function toast(msg: string) {
     if (Platform.OS === 'android') ToastAndroid.show(msg, ToastAndroid.SHORT);
     else Alert.alert('', msg);
+  }
+
+  async function openReleaseLink(url: string) {
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert(t('checkUpdate'), `${t('updateOpenFailed')}\n${url}`);
+    }
+  }
+
+  async function checkUpdate() {
+    if (updateCheckInFlight.current) return;
+    if (Platform.OS !== 'android') {
+      Alert.alert(t('checkUpdate'), t('updateAndroidOnly'));
+      return;
+    }
+
+    updateCheckInFlight.current = true;
+    setCheckingUpdate(true);
+    try {
+      const currentVersion = Constants.expoConfig?.version;
+      const result = await checkForUpdates(currentVersion);
+      if (result.kind === 'latest') {
+        toast(t('alreadyLatest'));
+        return;
+      }
+      const description = result.downloadUrl ? t('updateDownloadPrompt') : t('updateNoApk');
+      Alert.alert(
+        t('updateAvailable'),
+        `${t('updateCurrentVersion')}: v${currentVersion}\n${t('updateLatestVersion')}: v${result.version}\n\n${description}`,
+        [
+          { text: t('cancel'), style: 'cancel' },
+          { text: result.downloadUrl ? t('downloadUpdate') : t('openRelease'), onPress: () => { void openReleaseLink(result.downloadUrl ?? RELEASES_URL); } },
+        ],
+      );
+    } catch {
+      Alert.alert(t('updateCheckFailed'), t('updateCheckFailedDesc'), [
+        { text: t('cancel'), style: 'cancel' },
+        { text: t('openRelease'), onPress: () => { void openReleaseLink(RELEASES_URL); } },
+      ]);
+    } finally {
+      updateCheckInFlight.current = false;
+      setCheckingUpdate(false);
+    }
   }
 
   async function testConn() {
@@ -362,7 +410,7 @@ export default function Settings() {
         <GroupTitle>{t('about')}</GroupTitle>
         <SettingGroup>
           <SettingRow icon={<Icon name="info" size={16} color={C.ink} />} title={t('aboutPathPilot')} onPress={() => router.push('/about')} />
-          <SettingRow icon={<Icon name="download" size={16} color={C.ink} />} title={t('checkUpdate')} value={`v${Constants.expoConfig?.version ?? '1.0.0'}`} onPress={() => toast(t('alreadyLatest'))} last />
+          <SettingRow icon={<Icon name="download" size={16} color={C.ink} />} title={t(checkingUpdate ? 'checkingUpdate' : 'checkUpdate')} value={`v${Constants.expoConfig?.version ?? '1.0.0'}`} onPress={checkingUpdate ? undefined : checkUpdate} last />
         </SettingGroup>
 
         <Text style={{ fontSize: fs(11), color: C.slate2, textAlign: 'center', marginTop: 6 }}>PathPilot v{Constants.expoConfig?.version ?? '1.0.0'}</Text>

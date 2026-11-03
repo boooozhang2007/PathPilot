@@ -59,6 +59,8 @@ cd apps/mobile/android
 
 https://github.com/boooozhang2007/PathPilot/releases/tag/v1.3.5
 
+Android 设置页的“检查更新”读取 GitHub 最新正式 Release。发布新版时，请使用 `vX.Y.Z` 格式的标签，上传 `PathPilot-vX.Y.Z.apk`，并沿用现有 Android 签名，以便用户覆盖安装。旧版应用需要先手动安装包含此功能的版本。
+
 ## 文档
 
 - [产品成熟度提升计划](./PRODUCT_MATURITY_PLAN.md)
