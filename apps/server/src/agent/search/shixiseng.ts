@@ -7,6 +7,7 @@ import type { JobSample, EmploymentType } from '@pathpilot/shared';
 import { config } from '../../config.js';
 import { fetchText, HTML_PAGE_MAX_BYTES } from './webSearch.js';
 import { pickRelevantByRole } from './nowcoder.js';
+import type { Limiter } from './limit.js';
 
 export interface ShixisengSearchOutcome {
   samples: JobSample[];
@@ -144,13 +145,13 @@ export function parseShixisengDetail(html: string): ParsedShixisengJob | null {
  */
 export async function shixisengSearchJobs(
   input: { targetRole: string; city?: string; employmentType: EmploymentType; sampleLimit: number },
-  opts: { signal?: AbortSignal; onProgress?: (message: string) => void; timeoutMs?: number } = {}
+  opts: { signal?: AbortSignal; onProgress?: (message: string) => void; timeoutMs?: number; limiter?: Limiter } = {}
 ): Promise<ShixisengSearchOutcome> {
   if (!shixisengConfigured()) return { samples: [], ok: false, failedCount: 0, note: '实习僧通道已关闭（SHIXISENG_DISABLE=1）。' };
   if (input.employmentType === 'full_time') {
     return { samples: [], ok: false, failedCount: 0, note: '实习僧仅提供实习岗位，全职检索已跳过。' };
   }
-  // 上层会传入发现阶段剩余预算的一半，这里取更小者，避免单通道吃掉全部时间。
+  // 上层传入的是发现阶段剩余预算（并行下各通道起点相同），这里取更小者，避免单通道吃掉全部时间。
   const timeoutMs = Math.min(config.search.timeoutMs, opts.timeoutMs ?? Number.POSITIVE_INFINITY);
   const signal = opts.signal;
   const role = input.targetRole.trim().replace(/\s+/g, ' ');
@@ -167,7 +168,7 @@ export async function shixisengSearchJobs(
   opts.onProgress?.('正在读取实习僧搜索页…');
   let searchHtml: string;
   try {
-    searchHtml = await fetchText(searchUrl, Math.min(timeoutMs, 9000), HTML_PAGE_MAX_BYTES, { signal, failOnTruncate: true });
+    searchHtml = await fetchText(searchUrl, Math.min(timeoutMs, 9000), HTML_PAGE_MAX_BYTES, { signal, failOnTruncate: true, limiter: opts.limiter });
   } catch (err) {
     return {
       samples: [],
@@ -182,7 +183,8 @@ export async function shixisengSearchJobs(
     return { samples: [], ok: false, failedCount: 0, note: '实习僧搜索页未解析到岗位链接（可能为风控/结构变化），已回退其它通道。' };
   }
 
-  const cap = Math.min(Math.max(input.sampleLimit * 3, 12), 24);
+  // 每平台要抓满 sampleLimit，详情失败率不低，候选放宽到 36（全局在途 8 兜底，礼貌性可控）。
+  const cap = Math.min(Math.max(input.sampleLimit * 3, 12), 36);
   const targets = uuids.slice(0, cap);
   const now = new Date().toISOString();
   const parsed: { job: ParsedShixisengJob; url: string }[] = [];
@@ -190,9 +192,11 @@ export async function shixisengSearchJobs(
   let index = 0;
   let reachedDeadline = false;
 
-  const workers = Array.from({ length: Math.min(4, targets.length) }, async () => {
+  // 并发 3：并行抓取时全局在途上限为 8，单通道不必再开 4 个 worker。
+  const workers = Array.from({ length: Math.min(3, targets.length) }, async () => {
     while (index < targets.length) {
-      if (signal?.aborted) throw new Error('已取消');
+      // 取消/超时：保留已解析的岗位，不再继续抓。
+      if (signal?.aborted) return;
       if (Date.now() > deadline) {
         reachedDeadline = true;
         return;
@@ -201,7 +205,7 @@ export async function shixisengSearchJobs(
       const url = `${DETAIL_PREFIX}${id}`;
       opts.onProgress?.(`正在抓取实习僧岗位 ${index}/${targets.length}…`);
       try {
-        const html = await fetchText(url, Math.min(timeoutMs, 8000), HTML_PAGE_MAX_BYTES, { signal, failOnTruncate: true });
+        const html = await fetchText(url, Math.min(timeoutMs, 8000), HTML_PAGE_MAX_BYTES, { signal, failOnTruncate: true, limiter: opts.limiter });
         const job = parseShixisengDetail(html);
         if (!job) {
           failures.push('正文解析不足（页面结构变化或岗位下线）');
@@ -209,6 +213,8 @@ export async function shixisengSearchJobs(
         }
         parsed.push({ job, url });
       } catch (err) {
+        // 取消/超时导致的失败不计入解析失败，避免污染 failedCount 与 note。
+        if (signal?.aborted || Date.now() > deadline) return;
         failures.push(err instanceof Error ? err.message : '抓取失败');
       }
     }

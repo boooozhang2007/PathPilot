@@ -72,8 +72,13 @@ export async function analyzeJobs(userId: number, input: AnalyzeJobsInput, opts:
   if (await isLlmConfigured()) {
     opts.onProgress?.(55, `正在用 AI 抽取 ${samples.length} 条样本的技能要求…`);
     try {
-      extracted = await extractRequirementsByLlm(samples, opts.signal);
-      limitations.push('技能抽取由 AI 模型完成（仅从真实岗位文本抽取，未推断）。');
+      const llmResult = await extractRequirementsByLlm(samples, opts.signal);
+      extracted = llmResult.extracted;
+      limitations.push(
+        llmResult.usedLlm < llmResult.total
+          ? `技能抽取由 AI 模型完成（覆盖前 ${llmResult.usedLlm}/${llmResult.total} 条样本，其余用技能词典抽取）。`
+          : '技能抽取由 AI 模型完成（仅从真实岗位文本抽取，未推断）。'
+      );
     } catch (err) {
       checkAborted(opts.signal);
       limitations.push(`AI 抽取失败（${err instanceof Error ? err.message : '未知'}），已回退词典关键词抽取。`);
@@ -165,7 +170,8 @@ export async function analyzeManualJob(
   if (await isLlmConfigured()) {
     opts.onProgress?.(40, '正在用 AI 抽取岗位要求…');
     try {
-      extracted = (await extractRequirementsByLlm([sample], opts.signal)).get(0) ?? keywordForOne(sample, normalize, catalogTerms);
+      const llmResult = await extractRequirementsByLlm([sample], opts.signal);
+      extracted = llmResult.extracted.get(0) ?? keywordForOne(sample, normalize, catalogTerms);
     } catch {
       checkAborted(opts.signal);
       extracted = keywordForOne(sample, normalize, catalogTerms);

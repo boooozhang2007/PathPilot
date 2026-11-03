@@ -6,6 +6,7 @@ import type { JobSample, EmploymentType } from '@pathpilot/shared';
 import { config } from '../../config.js';
 import { fetchText, HTML_PAGE_MAX_BYTES } from './webSearch.js';
 import { extractInitialState, pickRelevantByRole } from './nowcoder.js';
+import type { Limiter } from './limit.js';
 
 export interface ZhaopinSearchOutcome {
   samples: JobSample[];
@@ -167,10 +168,10 @@ function extractPositionList(html: string): unknown[] {
  */
 export async function zhaopinSearchJobs(
   input: { targetRole: string; city?: string; employmentType: EmploymentType; sampleLimit: number },
-  opts: { signal?: AbortSignal; onProgress?: (message: string) => void; timeoutMs?: number } = {}
+  opts: { signal?: AbortSignal; onProgress?: (message: string) => void; timeoutMs?: number; limiter?: Limiter } = {}
 ): Promise<ZhaopinSearchOutcome> {
   if (!zhaopinConfigured()) return { samples: [], ok: false, failedCount: 0, note: '智联通道已关闭（ZHAOPIN_DISABLE=1）。' };
-  // 上层会传入发现阶段剩余预算的一半，这里取更小者，避免单通道吃掉全部时间。
+  // 上层传入的是发现阶段剩余预算（并行下各通道起点相同），这里取更小者，避免单通道吃掉全部时间。
   const timeoutMs = Math.min(config.search.timeoutMs, opts.timeoutMs ?? Number.POSITIVE_INFINITY);
   const signal = opts.signal;
   const role = input.targetRole.trim().replace(/\s+/g, ' ');
@@ -186,7 +187,8 @@ export async function zhaopinSearchJobs(
   let reachedDeadline = false;
 
   for (let page = 1; page <= maxPages; page++) {
-    if (signal?.aborted) throw new Error('已取消');
+    // 取消/超时：停止翻页，保留已解析的样本。
+    if (signal?.aborted) break;
     if (Date.now() > deadline) {
       reachedDeadline = true;
       break;
@@ -200,8 +202,10 @@ export async function zhaopinSearchJobs(
     opts.onProgress?.(`正在读取智联搜索页（第 ${page} 页）…`);
     let html: string;
     try {
-      html = await fetchText(url, Math.min(timeoutMs, 9000, Math.max(deadline - Date.now(), 1000)), HTML_PAGE_MAX_BYTES, { signal, failOnTruncate: true });
+      html = await fetchText(url, Math.min(timeoutMs, 9000, Math.max(deadline - Date.now(), 1000)), HTML_PAGE_MAX_BYTES, { signal, failOnTruncate: true, limiter: opts.limiter });
     } catch (err) {
+      // 取消/超时导致的失败不计入抓取异常，避免污染 failedCount 与 note。
+      if (signal?.aborted || Date.now() > deadline) break;
       failures.push(err instanceof Error ? err.message : '抓取失败');
       continue;
     }

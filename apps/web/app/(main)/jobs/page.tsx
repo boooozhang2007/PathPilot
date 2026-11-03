@@ -25,6 +25,8 @@ export default function JobsPage() {
   const [role, setRole] = useState('Java 后端开发');
   const [city, setCity] = useState('');
   const [type, setType] = useState<'internship' | 'full_time'>('internship');
+  // 每个平台各自抓满该数量（四平台合并后总量可达约 4 倍）
+  const [sampleLimit, setSampleLimit] = useState(18);
   const [manualOpen, setManualOpen] = useState(false);
   const [manual, setManual] = useState({ title: '', company: '', description: '' });
   // 岗位对比
@@ -105,7 +107,7 @@ export default function JobsPage() {
     setErr('');
     setBusy('正在联网搜索真实招聘信息…');
     try {
-      const res = await api<{ run_id: number }>('/api/jobs/analyze', { method: 'POST', json: { targetRole: role, city: city || undefined, employmentType: type, sampleLimit: 18 } });
+      const res = await api<{ run_id: number }>('/api/jobs/analyze', { method: 'POST', json: { targetRole: role, city: city || undefined, employmentType: type, sampleLimit } });
       setBusy('采集岗位样本并抽取技能要求…');
       pollAbortRef.current = new AbortController();
       await pollRun(
@@ -186,6 +188,16 @@ export default function JobsPage() {
             <select className="pp-input" value={type} onChange={(e) => setType(e.target.value as never)}>
               <option value="internship">实习</option>
               <option value="full_time">正式就业</option>
+            </select>
+          </div>
+          <div className="w-28">
+            <label className="pp-label">每平台样本</label>
+            <select className="pp-input" value={sampleLimit} onChange={(e) => setSampleLimit(Number(e.target.value))}>
+              {[10, 18, 30, 50].map((n) => (
+                <option key={n} value={n}>
+                  {n} 条
+                </option>
+              ))}
             </select>
           </div>
           <button className="pp-btn pp-btn-primary px-5 py-2.5 text-sm" onClick={analyze} disabled={!!busy}>
@@ -310,12 +322,12 @@ export default function JobsPage() {
       {loading ? (
         <Loading text="读取岗位分析…" />
       ) : !analysis ? (
-        <Empty icon="globe" title="开始第一次岗位分析" hint="点击「联网分析」,约 10-30 秒出结果;搜索受限时也可粘贴岗位描述解析" />
+        <Empty icon="globe" title="开始第一次岗位分析" hint="点击「联网分析」，四平台并行抓取，约 30-60 秒出结果；搜索受限时也可粘贴岗位描述解析" />
       ) : (
         <>
           <div className="reveal mb-5 flex flex-wrap items-center gap-2 text-xs text-slate-1">
             <Tag tone="ink">{analysis.targetRole}</Tag>
-            <Tag tone="teal">有效样本 {analysis.sampleCount} 条</Tag>
+            <Tag tone="teal">有效样本 {analysis.sampleCount} 条（多平台合计）</Tag>
             <span className="num">{new Date(analysis.createdAt).toLocaleString('zh-CN')}</span>
           </div>
 

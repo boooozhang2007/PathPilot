@@ -27,7 +27,12 @@ export const config = {
     model: process.env.AGENT_MODEL ?? 'glm-4.6',
   },
   search: {
-    timeoutMs: Number(process.env.SEARCH_TIMEOUT_MS ?? 15000),
+    /** 一次联网搜索（四个平台通道并行）的总预算；各通道内部还有更小的 deadline。 */
+    timeoutMs: Number(process.env.SEARCH_TIMEOUT_MS ?? 60_000),
+    /** 所有通道共享的在途 HTTP 请求上限，避免并行抓取时同时打爆四个平台触发风控。 */
+    maxInFlight: Number(process.env.SEARCH_MAX_INFLIGHT ?? 8),
+    /** 单页抓取超时（fetch_job_page 与搜索引擎回退的详情页）；与总预算分开，避免一个挂死页面吃掉整个预算。 */
+    pageTimeoutMs: Number(process.env.SEARCH_PAGE_TIMEOUT_MS ?? 15_000),
   },
   /** Agent 运行限制（PRD 6.6） */
   agentLimits: {

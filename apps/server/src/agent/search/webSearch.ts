@@ -9,6 +9,7 @@ import { liepinConfigured, liepinSearchJobs } from './liepin.js';
 import { nowcoderConfigured, nowcoderSearchJobs } from './nowcoder.js';
 import { zhaopinConfigured, zhaopinSearchJobs } from './zhaopin.js';
 import { shixisengConfigured, shixisengSearchJobs } from './shixiseng.js';
+import { createLimiter, type Limiter } from './limit.js';
 
 export interface SearchAttempt {
   title: string;
@@ -37,8 +38,45 @@ interface ChannelOutcome {
 /** 单个通道至少要有这么多剩余预算才值得启动（否则跳过并在 note 里如实说明）。 */
 const MIN_CHANNEL_BUDGET_MS = 1500;
 
-/** 通道样本达到这个数量（且不超过 sampleLimit）就算够用，可以即时收工，不必再试后面的通道。 */
+/** 四通道并行后，样本达到这个数量（且不超过 sampleLimit）就不再走搜索引擎回退。 */
 const MIN_USEFUL_SAMPLES = 5;
+
+/** 进度聚合的最小上报间隔：并行下各通道会同时上报，节流避免前端文案抖动与事件过多。 */
+const PROGRESS_THROTTLE_MS = 700;
+
+/** 跨通道去重键：与 jobs.ts 的 dedupeSamples 同一规则（URL 优先，无 URL 用标题+公司+正文前缀）。 */
+function keyOfSample(sample: JobSample): string {
+  return sample.source_url
+    ? sample.source_url.replace(/\/$/, '').toLowerCase()
+    : `${sample.title}|${sample.company ?? ''}|${sample.description.slice(0, 200)}`.toLowerCase();
+}
+
+/**
+ * 轮转交错合并各通道样本：每个平台最多贡献 perChannelLimit 条，按通道轮流取一条，
+ * 保证每个有样本的平台都进入结果；跨通道按 URL 优先去重。
+ * 不做重复项回填——同一岗位计两次会扭曲技能频次统计。
+ */
+function mergeChannelSamples(groups: JobSample[][], perChannelLimit: number): JobSample[] {
+  const queues = groups.map((group) => group.slice(0, Math.max(0, perChannelLimit)));
+  const seen = new Set<string>();
+  const merged: JobSample[] = [];
+  let added = true;
+  while (added) {
+    added = false;
+    for (const queue of queues) {
+      while (queue.length) {
+        const sample = queue.shift()!;
+        const key = keyOfSample(sample);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push(sample);
+        added = true;
+        break;
+      }
+    }
+  }
+  return merged;
+}
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
@@ -170,7 +208,18 @@ export async function fetchText(
   url: string,
   timeoutMs: number,
   maxBytes = 800_000,
-  opts: { signal?: AbortSignal; failOnTruncate?: boolean } = {}
+  opts: { signal?: AbortSignal; failOnTruncate?: boolean; limiter?: Limiter } = {}
+): Promise<string> {
+  // 并发闸门：整条重定向链只占一个槽位；排队期间不启动超时计时，避免排队本身把请求算成超时。
+  if (!opts.limiter) return fetchTextInner(url, timeoutMs, maxBytes, opts);
+  return opts.limiter.run(() => fetchTextInner(url, timeoutMs, maxBytes, opts));
+}
+
+async function fetchTextInner(
+  url: string,
+  timeoutMs: number,
+  maxBytes: number,
+  opts: { signal?: AbortSignal; failOnTruncate?: boolean }
 ): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -276,7 +325,13 @@ interface SearchHit {
 }
 
 /** Tavily 搜索 API（配置 TAVILY_API_KEY 时启用），接受任意公开招聘域名结果 */
-async function tavilySearch(query: string, limit: number, timeoutMs: number, signal?: AbortSignal): Promise<SearchHit[]> {
+async function tavilySearch(query: string, limit: number, timeoutMs: number, signal?: AbortSignal, limiter?: Limiter): Promise<SearchHit[]> {
+  // Tavily 用自己的 fetch，不经 fetchText，因此单独占用并发闸门的槽位。
+  const run = () => tavilySearchInner(query, limit, timeoutMs, signal);
+  return limiter ? limiter.run(run) : run();
+}
+
+async function tavilySearchInner(query: string, limit: number, timeoutMs: number, signal?: AbortSignal): Promise<SearchHit[]> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const onAbort = () => controller.abort();
@@ -347,9 +402,9 @@ function normalizeSearchHit(rawHref: string, title: string, base: string): Searc
 }
 
 /** 通过必应网页搜索发现招聘页链接；支持直接链接与必应跳转链接。 */
-export async function searchJobPages(query: string, limit: number, timeoutMs: number, signal?: AbortSignal): Promise<SearchHit[]> {
+export async function searchJobPages(query: string, limit: number, timeoutMs: number, signal?: AbortSignal, limiter?: Limiter): Promise<SearchHit[]> {
   const url = `https://cn.bing.com/search?q=${encodeURIComponent(query)}&count=${Math.min(limit * 2, 30)}`;
-  const html = await fetchText(url, timeoutMs, undefined, { signal });
+  const html = await fetchText(url, timeoutMs, undefined, { signal, limiter });
   const hits: SearchHit[] = [];
   const seen = new Set<string>();
   const collect = (pattern: RegExp) => {
@@ -397,10 +452,10 @@ export function extractJdFromHtml(html: string): { description: string; educatio
 
 /**
  * 真实联网搜索岗位样本。任何一步失败都如实记录在 attempts/note 里，绝不填充虚构样本。
- * 通道优先级：猎聘官方 MCP（配置 LIEPIN_MCP_TOKEN 时）→ 牛客 → 智联 → 实习僧（后三者均为免 token 的 SSR 直出通道）
- * → Tavily 搜索 API → 必应 HTML（尽力而为）→ 如实报告失败。
- * 发现阶段（上述全部通道）共享 SEARCH_TIMEOUT_MS 这一条总预算：每个通道最多用掉剩余预算的一半，
- * 预算不足的通道跳过并在 note 里说明；命中链接后的详情抓取阶段另按每页 SEARCH_TIMEOUT_MS 并发执行。
+ * 发现阶段：猎聘官方 MCP、牛客、智联、实习僧四个通道**并行**抓取，各平台各自抓满 sampleLimit；
+ * 共享一条绝对截止线（SEARCH_TIMEOUT_MS）与一个全局在途请求闸门（SEARCH_MAX_INFLIGHT）。
+ * 合并去重后仍不足 5 条时才回退 Tavily / 必应（受同一截止线约束）。
+ * 任一通道抛错只记为该通道异常，不影响其它通道；取消=整次失败，超时=保留已抓到的部分样本并如实说明。
  */
 export async function webSearchJobs(
   input: {
@@ -450,207 +505,234 @@ export async function webSearchJobs(
     }
   };
 
-  // 发现阶段总预算：所有通道共享一条绝对截止线，避免每个通道各留一份超时、累计耗时远超 SEARCH_TIMEOUT_MS。
-  const discoveryDeadline = Date.now() + timeout;
-  const budgetLeft = () => discoveryDeadline - Date.now();
+  // 发现阶段：一条绝对截止线 + 一个全局在途闸门，四个平台通道并行抓取（并行后总耗时≈最慢通道）。
+  const deadlineAt = Date.now() + timeout;
+  const deadlineController = new AbortController();
+  const deadlineTimer = setTimeout(() => deadlineController.abort(), timeout);
+  // 用户取消与超时共用一个信号；二者在通道跑完后按 opts.signal 区分（取消=整次失败，超时=保留部分结果）。
+  const internal = signal ? AbortSignal.any([signal, deadlineController.signal]) : deadlineController.signal;
+  const budgetLeft = () => deadlineAt - Date.now();
+  const limiter = createLimiter(config.search.maxInFlight);
   const skippedChannels: string[] = [];
-  /** 每个通道最多用掉剩余预算的一半，保证后续通道与搜索引擎回退仍有时间。 */
-  const channelShare = () => Math.max(MIN_CHANNEL_BUDGET_MS, Math.floor(budgetLeft() / 2));
-  /** 在剩余预算内运行一个通道；预算不足则跳过，通道抛错按通道异常记录，而不是让整次搜索失败。 */
-  const runChannel = async <T extends ChannelOutcome>(label: string, run: (timeoutMs: number) => Promise<T>): Promise<T | null> => {
-    if (budgetLeft() < MIN_CHANNEL_BUDGET_MS) {
-      skippedChannels.push(label);
-      return null;
-    }
-    try {
-      return await run(channelShare());
-    } catch (err) {
-      addError(label, err);
-      return null;
-    }
+
+  // 进度聚合：并行下各通道会同时上报，聚合成一行并节流，避免前端文案互相抢写。
+  const channelProgress = new Map<string, { done: boolean; count: number }>();
+  let lastProgressAt = 0;
+  const report = (short: string, done: boolean, count: number) => {
+    channelProgress.set(short, { done, count });
+    const now = Date.now();
+    if (!done && now - lastProgressAt < PROGRESS_THROTTLE_MS) return;
+    lastProgressAt = now;
+    const parts = [...channelProgress.entries()].map(([name, s]) => `${name} ${s.done ? `${s.count} 条` : '进行中'}`);
+    opts.onProgress?.(`并行抓取中：${parts.join(' · ')}…`);
   };
 
-  // 通道样本不足 sampleLimit 时不急着收工：继续尝试后面的通道，最后采用样本最多的一次结果。
-  // 只看第一个“有结果”的通道会让收尾过紧——实测首个通道只返回 1 条时，后面的通道本可给出 5 条。
-  const best: { current: { samples: JobSample[]; failedCount: number; note: string } | null } = { current: null };
-  const accept = (outcome: ChannelOutcome): boolean => {
-    if (!outcome.ok || !outcome.samples.length) return false;
-    const cur = best.current;
-    if (!cur || outcome.samples.length > cur.samples.length) {
-      best.current = { samples: outcome.samples, failedCount: outcome.failedCount ?? 0, note: outcome.note };
-    }
-    return outcome.samples.length >= Math.min(input.sampleLimit, MIN_USEFUL_SAMPLES);
-  };
-
-  // 通道 0：猎聘官方 MCP（岗位数据 + 来源链接，最高优先）
-  let liepinNote = '';
-  const liepin = liepinConfigured()
-    ? await runChannel('猎聘官方通道', () => liepinSearchJobs(input, { signal, onProgress: opts.onProgress }))
-    : null;
-  if (liepin) {
-    if (accept(liepin)) {
-      return { samples: liepin.samples, attempts: [], failedCount: liepin.failedCount ?? 0, ok: true, note: liepin.note };
-    }
-    liepinNote = liepin.note;
-    if (!liepin.ok) addError('猎聘官方通道', liepin.note);
+  interface ChannelTask {
+    short: string;
+    label: string;
+    note: string;
+    samples: JobSample[];
+    failedCount: number;
+    /** ok=正常返回；skipped=策略性跳过（全职跳过实习僧）；disabled=未配置或预算不足 */
+    state: 'ok' | 'skipped' | 'disabled';
   }
-  checkAborted();
 
-  // 通道 0.5：牛客（免 token；列表页/详情页都把完整 JD 以结构化 JSON 内嵌在 window.__INITIAL_STATE__ 里，
-  // 列表页 SSR 直出且每条含正文，稳定、无需搜索引擎；猎聘不可用时作为首选实时通道）
-  let nowcoderNote = '';
-  const nowcoder = nowcoderConfigured()
-    ? await runChannel('牛客通道', (ms) => nowcoderSearchJobs(input, { signal, onProgress: opts.onProgress, timeoutMs: ms }))
-    : null;
-  if (nowcoder) {
-    if (accept(nowcoder)) {
-      return { samples: nowcoder.samples, attempts: [], failedCount: nowcoder.failedCount ?? 0, ok: true, note: nowcoder.note };
-    }
-    nowcoderNote = nowcoder.note;
-    if (!nowcoder.ok) addError('牛客通道', nowcoder.note);
-  }
-  checkAborted();
-
-  // 通道 0.6：智联招聘（搜索页 SSR 直出 positionList，每条已含完整 JD，免详情抓取、无需搜索引擎）
-  let zhaopinNote = '';
-  const zhaopin = zhaopinConfigured()
-    ? await runChannel('智联通道', (ms) => zhaopinSearchJobs(input, { signal, onProgress: opts.onProgress, timeoutMs: ms }))
-    : null;
-  if (zhaopin) {
-    if (accept(zhaopin)) {
-      return { samples: zhaopin.samples, attempts: [], failedCount: zhaopin.failedCount ?? 0, ok: true, note: zhaopin.note };
-    }
-    zhaopinNote = zhaopin.note;
-    if (!zhaopin.ok) addError('智联通道', zhaopin.note);
-  }
-  checkAborted();
-
-  // 通道 0.7：实习僧（Nuxt SSR；搜索页抓 uuid → 详情页取明文标题/正文，仅提供实习岗位）
-  let shixisengNote = '';
-  if (shixisengConfigured()) {
-    if (input.employmentType === 'full_time') {
+  const channels: {
+    short: string;
+    label: string;
+    enabled: boolean;
+    preNote?: string;
+    run: (timeoutMs: number) => Promise<ChannelOutcome>;
+  }[] = [
+    {
+      short: '猎聘',
+      label: '猎聘官方通道',
+      enabled: liepinConfigured(),
+      run: (ms) => liepinSearchJobs(input, { signal: internal, onProgress: opts.onProgress, timeoutMs: ms, limiter }),
+    },
+    {
+      short: '牛客',
+      label: '牛客通道',
+      enabled: nowcoderConfigured(),
+      run: (ms) => nowcoderSearchJobs(input, { signal: internal, onProgress: opts.onProgress, timeoutMs: ms, limiter }),
+    },
+    {
+      short: '智联',
+      label: '智联通道',
+      enabled: zhaopinConfigured(),
+      run: (ms) => zhaopinSearchJobs(input, { signal: internal, onProgress: opts.onProgress, timeoutMs: ms, limiter }),
+    },
+    {
+      short: '实习僧',
+      label: '实习僧通道',
+      enabled: shixisengConfigured() && input.employmentType !== 'full_time',
       // 实习僧只有实习岗：全职检索直接跳过是预期行为，不能记成通道异常（否则每次全职搜索都会多报一条失败）。
-      shixisengNote = '实习僧仅提供实习岗位，全职检索已跳过该通道。';
-    } else {
-      const shixiseng = await runChannel('实习僧通道', (ms) => shixisengSearchJobs(input, { signal, onProgress: opts.onProgress, timeoutMs: ms }));
-      if (shixiseng) {
-        if (accept(shixiseng)) {
-          return { samples: shixiseng.samples, attempts: [], failedCount: shixiseng.failedCount ?? 0, ok: true, note: shixiseng.note };
-        }
-        shixisengNote = shixiseng.note;
-        if (!shixiseng.ok) addError('实习僧通道', shixiseng.note);
-      }
+      preNote: shixisengConfigured() && input.employmentType === 'full_time'
+        ? '实习僧仅提供实习岗位，全职检索已跳过该通道。'
+        : undefined,
+      run: (ms) => shixisengSearchJobs(input, { signal: internal, onProgress: opts.onProgress, timeoutMs: ms, limiter }),
+    },
+  ];
+
+  // 结果预分配：每个通道把自己的结果写进 settled[i]。即便某个通道忽略 abort 信号，到点也能按
+  // 已返回的结果继续，不会被它拖住整次搜索。
+  const settled: ChannelTask[] = channels.map((channel) => ({
+    short: channel.short,
+    label: channel.label,
+    note: channel.preNote ?? '',
+    samples: [],
+    failedCount: 0,
+    state: channel.preNote ? 'skipped' : channel.enabled ? 'ok' : 'disabled',
+  }));
+
+  const tasks = channels.map(async (channel, i): Promise<void> => {
+    const slot = settled[i];
+    if (slot.state !== 'ok') return;
+    if (budgetLeft() < MIN_CHANNEL_BUDGET_MS) {
+      skippedChannels.push(channel.label);
+      slot.state = 'disabled';
+      return;
     }
-  }
+    report(channel.short, false, 0);
+    try {
+      const outcome = await channel.run(budgetLeft());
+      report(channel.short, true, outcome.samples.length);
+      if (!outcome.ok) addError(channel.label, outcome.note);
+      slot.note = outcome.note;
+      slot.samples = outcome.samples;
+      slot.failedCount = outcome.failedCount ?? 0;
+    } catch (err) {
+      // 单通道抛错（网络/结构变化/编程错误）只记为该通道异常，不影响其它通道。
+      report(channel.short, true, 0);
+      addError(channel.label, err);
+    }
+  });
+
+  await Promise.race([
+    Promise.all(tasks),
+    new Promise<void>((resolve) => setTimeout(resolve, Math.max(budgetLeft(), 0) + 250)),
+  ]);
+  clearTimeout(deadlineTimer);
+  const channelResults = settled;
+
+  // 取消 vs 超时：用户取消整次失败；超时则保留各通道已抓到的部分样本并如实说明。
   checkAborted();
 
-  // 所有通道都试过：已有可用结果（哪怕少于 sampleLimit）就直接采用，不再走搜索引擎回退。
-  const earlier = best.current;
-  if (earlier) {
-    return { samples: earlier.samples, attempts: [], failedCount: earlier.failedCount, ok: true, note: earlier.note };
-  }
+  const merged = mergeChannelSamples(channelResults.map((r) => r.samples), input.sampleLimit);
+  samples.push(...merged);
+  const channelFailed = channelResults.reduce((sum, r) => sum + r.failedCount, 0);
+  const platformSummary = `联网搜索（四通道并行）：${channelResults
+    .map((r) => (r.state === 'skipped' ? `${r.short} 跳过` : r.state === 'disabled' ? `${r.short} 未启用` : `${r.short} ${r.samples.length} 条`))
+    .join('、')}；合并去重后 ${merged.length} 条`;
+  const channelNotes = channelResults
+    .filter((r) => r.note && !providerErrors.some((e) => e.includes(r.note)))
+    .map((r) => r.note);
+  if (deadlineController.signal.aborted) channelNotes.push(`已达搜索总时长预算（${timeout}ms），部分通道被截断。`);
+  if (skippedChannels.length) channelNotes.push(`预算不足，已跳过 ${skippedChannels.join('、')}。`);
 
-  // 通道 1：Tavily 搜索 API（可选）——同样受发现阶段总预算约束
-  if (process.env.TAVILY_API_KEY) {
-    if (budgetLeft() < MIN_CHANNEL_BUDGET_MS) {
-      skippedChannels.push('Tavily');
-    } else {
-      const budget = channelShare();
-      opts.onProgress?.('正在通过 Tavily 搜索招聘页…');
-      const rounds = await Promise.allSettled(
-        roleTerms.map((term) => tavilySearch(`${term} ${input.city ?? ''} ${typeTerms.join(' ')}`.trim(), input.sampleLimit, budget, signal))
-      );
-      for (const round of rounds) {
-        if (round.status === 'fulfilled') addHits(round.value);
-        else addError('Tavily', round.reason);
+  // 阶段二：仅在平台样本不足时才回退搜索引擎（平台通道是结构化数据，质量更高，也少打扰引擎）。
+  const pageBudget = () => Math.max(Math.min(budgetLeft(), config.search.pageTimeoutMs), 1_000);
+  let attemptsFailed = 0;
+  let pageSamples = 0;
+  if (samples.length < Math.min(input.sampleLimit, MIN_USEFUL_SAMPLES)) {
+    // 通道 1：Tavily 搜索 API（可选）——受同一截止线约束，单次请求不超过 pageTimeoutMs
+    if (process.env.TAVILY_API_KEY) {
+      if (budgetLeft() < MIN_CHANNEL_BUDGET_MS) {
+        skippedChannels.push('Tavily');
+      } else {
+        opts.onProgress?.('正在通过 Tavily 搜索招聘页…');
+        const rounds = await Promise.allSettled(
+          roleTerms.map((term) => tavilySearch(`${term} ${input.city ?? ''} ${typeTerms.join(' ')}`.trim(), input.sampleLimit, pageBudget(), internal, limiter))
+        );
+        for (const round of rounds) {
+          if (round.status === 'fulfilled') addHits(round.value);
+          else addError('Tavily', round.reason);
+        }
+        checkAborted();
       }
-      checkAborted();
     }
-  }
 
-  // 通道 2：必应 HTML（尽力而为，可能被反爬拦截）——同样受发现阶段总预算约束
-  if (hits.length < input.sampleLimit) {
-    if (budgetLeft() < MIN_CHANNEL_BUDGET_MS) {
-      skippedChannels.push('必应');
-    } else {
-      const budget = channelShare();
-      opts.onProgress?.('正在通过必应搜索招聘页…');
-      const queries = roleTerms.map((term, i) =>
-        `${term} ${input.city ?? ''} ${typeTerms[i % typeTerms.length]} 岗位 招聘 职位详情`.trim()
-      );
-      const rounds = await Promise.allSettled(queries.map((q) => searchJobPages(q, input.sampleLimit, budget, signal)));
-      for (const round of rounds) {
-        if (round.status === 'fulfilled') addHits(round.value);
-        else addError('Bing', round.reason);
+    // 通道 2：必应 HTML（尽力而为，可能被反爬拦截）——同样受截止线与单页超时约束
+    if (hits.length < input.sampleLimit) {
+      if (budgetLeft() < MIN_CHANNEL_BUDGET_MS) {
+        skippedChannels.push('必应');
+      } else {
+        opts.onProgress?.('正在通过必应搜索招聘页…');
+        const queries = roleTerms.map((term, i) =>
+          `${term} ${input.city ?? ''} ${typeTerms[i % typeTerms.length]} 岗位 招聘 职位详情`.trim()
+        );
+        const rounds = await Promise.allSettled(queries.map((q) => searchJobPages(q, input.sampleLimit, pageBudget(), internal, limiter)));
+        for (const round of rounds) {
+          if (round.status === 'fulfilled') addHits(round.value);
+          else addError('Bing', round.reason);
+        }
+        checkAborted();
       }
+    }
+
+    if (hits.length) {
+      const now = new Date().toISOString();
+      const candidates = hits.slice(0, Math.min(input.sampleLimit, 50));
+      opts.onProgress?.(`正在抓取 ${candidates.length} 个岗位页面…`);
+      const parsed = await Promise.all(
+        candidates.map(async (hit): Promise<{ sample?: JobSample; attempt: SearchAttempt }> => {
+          try {
+            const html = await fetchText(hit.url, pageBudget(), undefined, { signal: internal, limiter });
+            const jd = extractJdFromHtml(html);
+            if (!jd) return { attempt: { title: hit.title, url: hit.url, parse_status: 'failed', note: '正文提取不足（可能需要登录或 JS 渲染）' } };
+            return {
+              attempt: { title: hit.title, url: hit.url, parse_status: 'ok' },
+              sample: {
+                title: hit.title.slice(0, 100),
+                company: null,
+                location: input.city ?? null,
+                employment_type: input.employmentType,
+                education_requirement: jd.education,
+                experience_requirement: jd.experience,
+                skills: [],
+                description: jd.description,
+                source_url: hit.url,
+                fetched_at: now,
+                source_type: 'web',
+              },
+            };
+          } catch (err) {
+            return { attempt: { title: hit.title, url: hit.url, parse_status: 'failed', note: err instanceof Error ? err.message : '抓取失败' } };
+          }
+        })
+      );
       checkAborted();
+      const seenKeys = new Set(samples.map(keyOfSample));
+      for (const item of parsed) {
+        attempts.push(item.attempt);
+        if (!item.sample) continue;
+        const key = keyOfSample(item.sample);
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        samples.push(item.sample);
+        pageSamples++;
+      }
+      attemptsFailed = attempts.filter((a) => a.parse_status === 'failed').length;
     }
   }
 
   const details = providerErrors.join('；');
-  const channelNotes = [liepinNote, nowcoderNote, zhaopinNote, shixisengNote].filter((n) => n && !providerErrors.some((e) => e.includes(n)));
-  if (skippedChannels.length) channelNotes.push(`搜索总时长预算（${timeout}ms）已用尽，已跳过 ${skippedChannels.join('、')}。`);
-  const prefix = channelNotes.length ? `${channelNotes.join(' ')} ` : '';
-  if (!hits.length) {
-    return {
-      samples: [],
-      attempts: [],
-      failedCount: 0,
-      ok: false,
-      note: `${prefix}联网搜索未返回可抓取岗位链接${details ? `（${details}）` : '（搜索服务未返回岗位结果）'}。当前结果未混入预置样本；岗位分析可另行选择预置样本库或手动粘贴岗位描述。`,
-    };
-  }
-  const now = new Date().toISOString();
-  const candidates = hits.slice(0, Math.min(input.sampleLimit, 50));
-  opts.onProgress?.(`正在抓取 ${candidates.length} 个岗位页面…`);
-  const parsed = await Promise.all(
-    candidates.map(async (hit): Promise<{ sample?: JobSample; attempt: SearchAttempt }> => {
-      try {
-        const html = await fetchText(hit.url, timeout, undefined, { signal });
-        const jd = extractJdFromHtml(html);
-        if (!jd) return { attempt: { title: hit.title, url: hit.url, parse_status: 'failed', note: '正文提取不足（可能需要登录或 JS 渲染）' } };
-        return {
-          attempt: { title: hit.title, url: hit.url, parse_status: 'ok' },
-          sample: {
-            title: hit.title.slice(0, 100),
-            company: null,
-            location: input.city ?? null,
-            employment_type: input.employmentType,
-            education_requirement: jd.education,
-            experience_requirement: jd.experience,
-            skills: [],
-            description: jd.description,
-            source_url: hit.url,
-            fetched_at: now,
-            source_type: 'web',
-          },
-        };
-      } catch (err) {
-        return { attempt: { title: hit.title, url: hit.url, parse_status: 'failed', note: err instanceof Error ? err.message : '抓取失败' } };
-      }
-    })
-  );
-  checkAborted();
-  for (const item of parsed) {
-    attempts.push(item.attempt);
-    if (item.sample) samples.push(item.sample);
-  }
-  const failedCount = attempts.filter((a) => a.parse_status === 'failed').length;
+  const failedCount = channelFailed + attemptsFailed;
+  const parts = [platformSummary];
+  if (channelNotes.length) parts.push(channelNotes.join(' '));
+  if (hits.length) parts.push(`搜索引擎回退命中 ${hits.length} 个岗位页面，成功解析 ${pageSamples} 条，失败 ${attemptsFailed} 条`);
   if (!samples.length) {
     const firstErrors = attempts.filter((a) => a.note).slice(0, 3).map((a) => a.note).join('；');
     return {
-      samples,
+      samples: [],
       attempts,
       failedCount,
       ok: false,
-      note: `${prefix}联网搜索命中 ${hits.length} 个岗位页面，但均未能解析出有效正文${firstErrors ? `（${firstErrors}）` : ''}${details ? `；搜索通道异常：${details}` : ''}。`,
+      note: hits.length
+        ? `${parts.join('；')}；均未能解析出有效正文${firstErrors ? `（${firstErrors}）` : ''}${details ? `；搜索通道异常：${details}` : ''}。`
+        : `${parts.join('；')}。联网搜索未返回可抓取岗位链接${details ? `（${details}）` : '（搜索服务未返回岗位结果）'}。当前结果未混入预置样本；岗位分析可另行选择预置样本库或手动粘贴岗位描述。`,
     };
   }
-  return {
-    samples,
-    attempts,
-    failedCount,
-    ok: true,
-    note: `${prefix}联网搜索命中 ${hits.length} 个岗位页面，成功解析 ${samples.length} 条，失败 ${failedCount} 条${details ? `；部分通道异常：${details}` : ''}。`,
-  };
+  if (details) parts.push(`通道异常：${details}`);
+  return { samples, attempts, failedCount, ok: true, note: `${parts.join('；')}。` };
 }

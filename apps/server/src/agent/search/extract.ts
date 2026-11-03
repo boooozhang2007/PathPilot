@@ -61,6 +61,28 @@ export function extractRequirementsByKeywords(sample: JobSample, normalize: Skil
 }
 
 // ---------- LLM 通道（Pi-ai 直连批量抽取，无工具循环） ----------
+
+/**
+ * LLM 抽取预算：四平台并行后样本可达 4×sampleLimit，必须收敛进一次 prompt 的体量。
+ * 超预算的样本由词典关键词通道兜底，并在 limitations 里如实说明覆盖条数。
+ */
+export const MAX_LLM_SAMPLES = 24;
+export const MAX_LLM_CHARS = 40_000;
+const LLM_DESCRIPTION_CHARS = 800;
+
+/** 选出交给 LLM 的样本前缀（保持入参顺序，即管线里的轮转交错顺序，天然跨平台）与其余样本。 */
+export function selectLlmSamples(samples: JobSample[]): { llm: JobSample[]; keyword: JobSample[] } {
+  const llm: JobSample[] = [];
+  let chars = 0;
+  for (const sample of samples) {
+    const cost = sample.title.length + Math.min(sample.description.length, LLM_DESCRIPTION_CHARS);
+    if (llm.length >= MAX_LLM_SAMPLES || chars + cost > MAX_LLM_CHARS) break;
+    llm.push(sample);
+    chars += cost;
+  }
+  return { llm, keyword: samples.slice(llm.length) };
+}
+
 const llmExtractionSchema = z.object({
   jobs: z.array(
     z.object({
@@ -74,16 +96,20 @@ const llmExtractionSchema = z.object({
   ),
 });
 
-export async function extractRequirementsByLlm(samples: JobSample[], signal?: AbortSignal): Promise<Map<number, ExtractedJob>> {
+export async function extractRequirementsByLlm(
+  samples: JobSample[],
+  signal?: AbortSignal
+): Promise<{ extracted: Map<number, ExtractedJob>; usedLlm: number; total: number }> {
   const { runStructuredAgent } = await import('../pi/runtime.js');
-  const listing = samples
-    .map((s, i) => `【样本${i}】标题: ${s.title}\n描述: ${s.description.slice(0, 1200)}`)
+  const { llm } = selectLlmSamples(samples);
+  const listing = llm
+    .map((s, i) => `【样本${i}】标题: ${s.title}\n描述: ${s.description.slice(0, LLM_DESCRIPTION_CHARS)}`)
     .join('\n\n');
   const { data } = await runStructuredAgent(
     {
       systemPrompt:
         '你是岗位需求抽取器。从给定的招聘描述中抽取结构化要求。只抽取描述中真实出现的内容，不得推断或补全；技能用通用规范名（如 JavaScript、Spring Boot、SQL）。education/experience 无明确说明时为 null。必须调用 submit_result 提交。',
-      prompt: `抽取以下 ${samples.length} 条岗位描述的要求，返回 jobs 数组，每条含 index（对应样本序号）、skills、education、experience、bonus、soft。\n\n${listing}`,
+      prompt: `抽取以下 ${llm.length} 条岗位描述的要求，返回 jobs 数组，每条含 index（对应样本序号）、skills、education、experience、bonus、soft。\n\n${listing}`,
       schema: llmExtractionSchema,
       wallClockMs: 120_000,
       signal,
@@ -93,7 +119,9 @@ export async function extractRequirementsByLlm(samples: JobSample[], signal?: Ab
     throw modelCallFailed(`LLM 技能抽取失败: ${err instanceof Error ? err.message : err}`);
   });
   const map = new Map<number, ExtractedJob>();
-  for (const job of data.jobs) {
+  // 忽略越界 index：模型偶发返回不存在的样本序号时不能让整批抽取失败。
+  for (const job of data.jobs ?? []) {
+    if (!Number.isInteger(job.index) || job.index < 0 || job.index >= llm.length) continue;
     map.set(job.index, {
       skills: job.skills ?? [],
       education: job.education ?? null,
@@ -102,5 +130,5 @@ export async function extractRequirementsByLlm(samples: JobSample[], signal?: Ab
       soft: job.soft ?? [],
     });
   }
-  return map;
+  return { extracted: map, usedLlm: llm.length, total: samples.length };
 }

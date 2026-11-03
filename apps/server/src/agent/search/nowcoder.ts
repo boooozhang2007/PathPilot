@@ -8,6 +8,7 @@
 import type { JobSample, EmploymentType } from '@pathpilot/shared';
 import { config } from '../../config.js';
 import { fetchText, HTML_PAGE_MAX_BYTES, searchJobPages } from './webSearch.js';
+import type { Limiter } from './limit.js';
 
 export interface NowcoderSearchOutcome {
   samples: JobSample[];
@@ -233,7 +234,8 @@ async function discoverListPageJobs(
   employmentType: EmploymentType,
   timeoutMs: number,
   signal?: AbortSignal,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  limiter?: Limiter
 ): Promise<DiscoveredJob[]> {
   onProgress?.('正在读取牛客岗位列表页…');
   // 只抓与请求类型一致的列表页：全职检索不再抓实习中心（其中的岗位随后也会被类型过滤掉，只是白跑请求）。
@@ -241,7 +243,7 @@ async function discoverListPageJobs(
   const lists = await Promise.all(
     pages.map(async (p) => {
       try {
-        const html = await fetchText(p.url, Math.min(timeoutMs, 8000), HTML_PAGE_MAX_BYTES, { signal, failOnTruncate: true });
+        const html = await fetchText(p.url, Math.min(timeoutMs, 8000), HTML_PAGE_MAX_BYTES, { signal, failOnTruncate: true, limiter });
         return parseNowcoderListJobs(html, p.employmentType);
       } catch {
         return [] as DiscoveredJob[];
@@ -297,10 +299,11 @@ function extractLocs(xml: string): string[] {
 async function discoverSitemapUrls(
   timeoutMs: number,
   signal?: AbortSignal,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  limiter?: Limiter
 ): Promise<string[]> {
   onProgress?.('正在读取牛客站点地图获取岗位列表…');
-  const indexXml = await fetchText(SITEMAP_INDEX_URL, timeoutMs, HTML_PAGE_MAX_BYTES, { signal, failOnTruncate: true });
+  const indexXml = await fetchText(SITEMAP_INDEX_URL, timeoutMs, HTML_PAGE_MAX_BYTES, { signal, failOnTruncate: true, limiter });
   const childMaps = extractLocs(indexXml).filter((u) => /\/nowpick\/sitemap\d+\.xml$/i.test(u));
   if (!childMaps.length) return [];
   const seen = new Set<string>();
@@ -308,7 +311,7 @@ async function discoverSitemapUrls(
   for (const mapUrl of childMaps.slice(0, 3)) {
     if (signal?.aborted) throw new Error('已取消');
     try {
-      const xml = await fetchText(mapUrl, timeoutMs, HTML_PAGE_MAX_BYTES, { signal, failOnTruncate: true });
+      const xml = await fetchText(mapUrl, timeoutMs, HTML_PAGE_MAX_BYTES, { signal, failOnTruncate: true, limiter });
       for (const loc of extractLocs(xml)) {
         if (!isNowcoderDetailUrl(loc)) continue;
         const clean = loc.split('?')[0].replace(/\/$/, '');
@@ -329,7 +332,8 @@ async function discoverBingUrls(
   limit: number,
   timeoutMs: number,
   signal?: AbortSignal,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  limiter?: Limiter
 ): Promise<string[]> {
   const role = input.targetRole.trim().replace(/\s+/g, ' ');
   const typeTerm = input.employmentType === 'internship' ? '实习' : '校招';
@@ -345,7 +349,7 @@ async function discoverBingUrls(
     onProgress?.(`正在通过必应检索牛客岗位（${query}）…`);
     let found: { title: string; url: string }[] = [];
     try {
-      found = await searchJobPages(query, Math.min(limit, 10), timeoutMs, signal);
+      found = await searchJobPages(query, Math.min(limit, 10), timeoutMs, signal, limiter);
     } catch {
       continue; // 该查询失败不阻断其它查询
     }
@@ -366,7 +370,8 @@ async function discoverDetailUrls(
   input: { targetRole: string; employmentType: EmploymentType },
   timeoutMs: number,
   signal?: AbortSignal,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  limiter?: Limiter
 ): Promise<string[]> {
   const cacheKey = `urls|${input.targetRole}|${input.employmentType}`;
   const cached = urlCache.get(cacheKey);
@@ -376,8 +381,8 @@ async function discoverDetailUrls(
   }
 
   const [bing, sitemap] = await Promise.all([
-    discoverBingUrls(input, 20, timeoutMs, signal, onProgress).catch(() => [] as string[]),
-    discoverSitemapUrls(timeoutMs, signal, onProgress).catch(() => [] as string[]),
+    discoverBingUrls(input, 20, timeoutMs, signal, onProgress, limiter).catch(() => [] as string[]),
+    discoverSitemapUrls(timeoutMs, signal, onProgress, limiter).catch(() => [] as string[]),
   ]);
 
   const seen = new Set<string>();
@@ -453,10 +458,10 @@ export function pickRelevantByRole<T>(
  */
 export async function nowcoderSearchJobs(
   input: { targetRole: string; city?: string; employmentType: EmploymentType; sampleLimit: number },
-  opts: { signal?: AbortSignal; onProgress?: (message: string) => void; timeoutMs?: number } = {}
+  opts: { signal?: AbortSignal; onProgress?: (message: string) => void; timeoutMs?: number; limiter?: Limiter } = {}
 ): Promise<NowcoderSearchOutcome> {
   if (!nowcoderConfigured()) return { samples: [], ok: false, failedCount: 0, note: '牛客通道已关闭（NOWCODER_DISABLE=1）。' };
-  // 上层会传入发现阶段剩余预算的一半，这里取更小者，避免单通道吃掉全部时间。
+  // 上层传入的是发现阶段剩余预算（并行下各通道起点相同），这里取更小者，避免单通道吃掉全部时间。
   const timeoutMs = Math.min(config.search.timeoutMs, opts.timeoutMs ?? Number.POSITIVE_INFINITY);
   const signal = opts.signal;
   const startedAt = Date.now();
@@ -468,7 +473,8 @@ export async function nowcoderSearchJobs(
     input.employmentType,
     timeoutMs,
     signal,
-    opts.onProgress
+    opts.onProgress,
+    opts.limiter
   ).catch(() => [] as DiscoveredJob[]);
   const listUrls = new Set(listJobs.map((j) => j.url));
 
@@ -477,7 +483,7 @@ export async function nowcoderSearchJobs(
   const fetchBudget = Math.min(Math.max(input.sampleLimit * 3, 12), 32);
   let sitemapUrls: string[] = [];
   try {
-    const discovered = await discoverDetailUrls(input, timeoutMs, signal, opts.onProgress);
+    const discovered = await discoverDetailUrls(input, timeoutMs, signal, opts.onProgress, opts.limiter);
     sitemapUrls = discovered
       .map((u) => u.split('?')[0].replace(/\/$/, ''))
       .filter((u) => !listUrls.has(u))
@@ -492,9 +498,11 @@ export async function nowcoderSearchJobs(
   let index = 0;
   let reachedDeadline = false;
   if (sitemapUrls.length) {
-    const workers = Array.from({ length: 5 }, async () => {
+    // 并发 3：并行抓取时全局在途上限为 8，单通道不必再开 5 个 worker。
+    const workers = Array.from({ length: 3 }, async () => {
       while (index < sitemapUrls.length) {
-        if (signal?.aborted) throw new Error('已取消');
+        // 取消/超时：保留已解析的岗位，不再继续抓。
+        if (signal?.aborted) return;
         if (Date.now() > deadline) {
           reachedDeadline = true;
           return;
@@ -502,7 +510,7 @@ export async function nowcoderSearchJobs(
         const url = sitemapUrls[index++];
         opts.onProgress?.(`正在抓取牛客岗位 ${index}/${sitemapUrls.length}…`);
         try {
-          const html = await fetchText(url, Math.min(timeoutMs, 8000), HTML_PAGE_MAX_BYTES, { signal, failOnTruncate: true });
+          const html = await fetchText(url, Math.min(timeoutMs, 8000), HTML_PAGE_MAX_BYTES, { signal, failOnTruncate: true, limiter: opts.limiter });
           const parsed = parseNowcoderDetail(html);
           if (!parsed) {
             failures.push('正文解析不足（可能为登录墙/岗位下线/页面结构变化）');
@@ -510,6 +518,8 @@ export async function nowcoderSearchJobs(
           }
           parsedJobs.push({ parsed, url });
         } catch (err) {
+          // 取消/超时导致的失败不计入解析失败，避免污染 failedCount 与 note。
+          if (signal?.aborted || Date.now() > deadline) return;
           failures.push(err instanceof Error ? err.message : '抓取失败');
         }
       }

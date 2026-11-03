@@ -239,4 +239,142 @@ describe('Agent 联网搜索链路', () => {
     const guide = `<html><body><h1>前端开发职业指南</h1><p>岗位职责：本文介绍这一职业通常做什么，帮助学习者理解页面开发、工程协作和持续学习的一般路径，并不对应任何用人方的当前职位。</p><p>任职要求：本文介绍入行学习者通常需要掌握的基础知识和实践方向，不包含具体待遇、办公城市、名额或申请入口。</p><p>继续补充足够长的说明文字，使页面正文超过最低长度阈值，但它仍然是职业科普内容而不是一条真实招聘信息。</p></body></html>`;
     expect(extractJdFromHtml(guide)).toBeNull();
   });
+
+  it('四平台并行抓取：一个通道被挂住时，另一个通道已经开始（不是串行）', async () => {
+    let releaseZhaopin!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseZhaopin = resolve;
+    });
+    const order: string[] = [];
+    vi.mocked(zhaopinSearchJobs).mockImplementationOnce(async () => {
+      order.push('智联开始');
+      await gate;
+      order.push('智联结束');
+      return { samples: [sampleOf('智联-1')], ok: true, failedCount: 0, note: '智联通道返回 1 条。' };
+    });
+    vi.mocked(shixisengSearchJobs).mockImplementationOnce(async () => {
+      order.push('实习僧开始');
+      return { samples: [sampleOf('实习僧-1')], ok: true, failedCount: 0, note: '实习僧通道返回 1 条。' };
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new Error('network down'))));
+
+    const pending = webSearchJobs({ targetRole: '前端开发', employmentType: 'internship', sampleLimit: 8 }, {});
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(order).toContain('智联开始');
+    expect(order).toContain('实习僧开始');
+    expect(order).not.toContain('智联结束');
+
+    releaseZhaopin();
+    const result = await pending;
+    expect(result.ok).toBe(true);
+    expect(result.samples.map((s) => s.title)).toEqual(['智联-1', '实习僧-1']);
+    expect(result.note).toContain('四通道并行');
+  });
+
+  it('合并去重：各平台样本轮转交错进入结果，同一 URL 只保留一次', async () => {
+    const shared = sampleOf('重复岗位');
+    vi.mocked(zhaopinSearchJobs).mockImplementationOnce(async () => ({
+      samples: [sampleOf('智联-A'), shared],
+      ok: true,
+      failedCount: 0,
+      note: '智联通道返回 2 条。',
+    }));
+    vi.mocked(shixisengSearchJobs).mockImplementationOnce(async () => ({
+      samples: [shared, sampleOf('实习僧-B')],
+      ok: true,
+      failedCount: 0,
+      note: '实习僧通道返回 2 条。',
+    }));
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new Error('network down'))));
+
+    const result = await webSearchJobs({ targetRole: '前端开发', employmentType: 'internship', sampleLimit: 8 }, {});
+
+    // 轮转交错：智联第一条 → 实习僧第一条 → 智联第二条（与前者重复被去重）→ 实习僧第二条
+    expect(result.samples.map((s) => s.title)).toEqual(['智联-A', '重复岗位', '实习僧-B']);
+    expect(result.note).toContain('智联 2 条');
+    expect(result.note).toContain('实习僧 2 条');
+  });
+
+  it('单通道抛错不影响其它通道：其余平台样本照常返回并如实记录异常', async () => {
+    vi.mocked(zhaopinSearchJobs).mockImplementationOnce(async () => {
+      throw new Error('智联炸了');
+    });
+    vi.mocked(shixisengSearchJobs).mockImplementationOnce(async () => ({
+      samples: [sampleOf('实习僧-1')],
+      ok: true,
+      failedCount: 0,
+      note: '实习僧通道返回 1 条。',
+    }));
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new Error('network down'))));
+
+    const result = await webSearchJobs({ targetRole: '前端开发', employmentType: 'internship', sampleLimit: 8 }, {});
+
+    expect(result.ok).toBe(true);
+    expect(result.samples.map((s) => s.title)).toEqual(['实习僧-1']);
+    expect(result.note).toContain('智联通道: 智联炸了');
+  });
+
+  it('用户取消：整次搜索失败，不返回部分结果', async () => {
+    vi.mocked(shixisengSearchJobs).mockImplementationOnce(async () => ({
+      samples: [sampleOf('实习僧-1')],
+      ok: true,
+      failedCount: 0,
+      note: '实习僧通道返回 1 条。',
+    }));
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new Error('network down'))));
+
+    const controller = new AbortController();
+    const pending = webSearchJobs(
+      { targetRole: '前端开发', employmentType: 'internship', sampleLimit: 8 },
+      { signal: controller.signal }
+    );
+    controller.abort();
+
+    await expect(pending).rejects.toThrow('已取消');
+  });
+
+  it('通道挂到超时：到点按已返回的样本收工，并在 note 里如实说明', async () => {
+    vi.useFakeTimers();
+    try {
+      // 永不返回，模拟忽略 abort 信号的通道：兜底定时器必须让整次搜索按时收工。
+      vi.mocked(zhaopinSearchJobs).mockImplementationOnce(() => new Promise(() => undefined));
+      vi.mocked(shixisengSearchJobs).mockImplementationOnce(async () => ({
+        samples: [sampleOf('实习僧-1')],
+        ok: true,
+        failedCount: 0,
+        note: '实习僧通道返回 1 条。',
+      }));
+      vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new Error('network down'))));
+
+      const pending = webSearchJobs({ targetRole: '前端开发', employmentType: 'internship', sampleLimit: 8 }, {});
+      await vi.advanceTimersByTimeAsync(61_000);
+      const result = await pending;
+
+      expect(result.ok).toBe(true);
+      expect(result.samples.map((s) => s.title)).toEqual(['实习僧-1']);
+      expect(result.note).toContain('已达搜索总时长预算');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('平台样本足够时不走搜索引擎回退', async () => {
+    const samples = Array.from({ length: 5 }, (_, i) => sampleOf(`智联-${i + 1}`));
+    vi.mocked(zhaopinSearchJobs).mockImplementationOnce(async () => ({
+      samples,
+      ok: true,
+      failedCount: 0,
+      note: '智联通道返回 5 条。',
+    }));
+    const fetchMock = vi.fn(async () => Promise.reject(new Error('不应被调用')));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await webSearchJobs({ targetRole: '前端开发', employmentType: 'internship', sampleLimit: 8 }, {});
+
+    expect(result.ok).toBe(true);
+    expect(result.samples).toHaveLength(5);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.note).not.toContain('搜索引擎回退');
+  });
 });

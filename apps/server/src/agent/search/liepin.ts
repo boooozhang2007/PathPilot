@@ -6,7 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { JobSample, EmploymentType } from '@pathpilot/shared';
+import { config } from '../../config.js';
 import { fetchText, extractJdFromHtml } from './webSearch.js';
+import type { Limiter } from './limit.js';
 
 export interface LiepinSearchOutcome {
   samples: JobSample[];
@@ -275,9 +277,13 @@ export async function liepinSearchJobs(
     employmentType: EmploymentType;
     sampleLimit: number;
   },
-  opts: { signal?: AbortSignal; onProgress?: (message: string) => void } = {}
+  opts: { signal?: AbortSignal; onProgress?: (message: string) => void; timeoutMs?: number; limiter?: Limiter } = {}
 ): Promise<LiepinSearchOutcome> {
   const signal = opts.signal;
+  // 上层传入的是发现阶段剩余预算（并行下各通道起点相同）；本通道再留 3s 余量，避免超出总预算。
+  const budgetMs = Math.min(config.search.timeoutMs, opts.timeoutMs ?? Number.POSITIVE_INFINITY);
+  const deadlineAt = Date.now() + Math.max(budgetMs - 3000, Math.floor(budgetMs * 0.5));
+  let reachedDeadline = false;
   if (!process.env.LIEPIN_USER_TOKEN) {
     return { samples: [], ok: false, note: '未配置 LIEPIN_USER_TOKEN（猎聘官方通道未启用）。' };
   }
@@ -307,14 +313,19 @@ export async function liepinSearchJobs(
         if (calls >= MAX_SEARCH_CALLS || consecutiveEmpty >= 2) break outer;
         // 同岗多贴与筛选损耗大，按去重后数量判断候选池是否足够
         if (dedupeLiepinJobs(collected).length >= poolTarget) break outer;
-        if (signal?.aborted) throw new Error('已取消');
+        // 取消/超时都停在这里：保留已收集的候选，不再继续消耗 CLI 配额。
+        if (signal?.aborted) break outer;
+        if (Date.now() > deadlineAt) {
+          reachedDeadline = true;
+          break outer;
+        }
         calls++;
         opts.onProgress?.(`猎聘搜索「${keyword}」第 ${page + 1} 页（已收集 ${collected.length} 条）…`);
         let list: RawLiepinJob[] = [];
         try {
           const stdout = await rateLimitedCli(
             ['job', 'search', '--job-name', keyword, ...(input.city ? ['--address', input.city] : []), '--page', String(page), '--output', 'json'],
-            30_000,
+            Math.min(30_000, Math.max(deadlineAt - Date.now(), 1_000)),
             signal
           );
           const parsed = JSON.parse(stdout.replace(/^[^{[]*/, '')) as { data?: { list?: RawLiepinJob[] } };
@@ -357,22 +368,32 @@ export async function liepinSearchJobs(
   // 详情页正文抓取（网页抓取，不占 MCP 配额；并发 3 控制耗时与礼貌性）
   const descriptions = new Map<RawLiepinJob, string>();
   let fetched = 0;
+  let detailFailures = 0;
   let index = 0;
   const workers = Array.from({ length: 3 }, async () => {
     while (index < selected.length) {
-      if (signal?.aborted) throw new Error('已取消');
+      // 取消/超时：保留已抓到的正文，不再继续。
+      if (signal?.aborted) return;
+      if (Date.now() > deadlineAt) {
+        reachedDeadline = true;
+        return;
+      }
       const job = selected[index++];
       if (!job.jobDetailUrl) continue;
       opts.onProgress?.(`正在抓取岗位详情 ${index}/${selected.length}…`);
       try {
-        const html = await fetchText(job.jobDetailUrl, 12000, undefined, { signal });
+        const html = await fetchText(job.jobDetailUrl, Math.min(12_000, Math.max(deadlineAt - Date.now(), 1_000)), undefined, { signal, limiter: opts.limiter });
         const jd = extractJdFromHtml(html);
         if (jd) {
           descriptions.set(job, jd.description);
           fetched++;
+        } else {
+          detailFailures++;
         }
       } catch {
-        /* 单条失败不阻断 */
+        // 取消/超时导致的失败不计入解析失败，避免污染 failedCount。
+        if (signal?.aborted || Date.now() > deadlineAt) return;
+        detailFailures++;
       }
     }
   });
@@ -417,6 +438,7 @@ export async function liepinSearchJobs(
   parts.push(`返回 ${samples.length} 条实时岗位（其中 ${fetched} 条已抓取完整 JD 正文）`);
   if (seniorInSelected > 0) parts.push(`其中 ${seniorInSelected} 条要求 3 年以上经验，供对比参考`);
   if (poolSummary) parts.push(poolSummary);
+  if (reachedDeadline) parts.push('已按时间预算截断部分页面');
   parts.push('来源：liepin.com，均附原始链接');
-  return { samples, ok: true, note: `${parts.join('；')}。` };
+  return { samples, ok: true, failedCount: detailFailures, note: `${parts.join('；')}。` };
 }

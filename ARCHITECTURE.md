@@ -72,7 +72,7 @@ LLM 通道挂载**全模块工具集**（20 个），用户身份由工厂参数
 | 档案 | `get_user_profile` / `upsert_skill` / `create_experience` | 读取档案；技能归一化写入（无证据保持「待验证」）；记录真实经历 |
 | 任务 | `get_tasks` / `update_task_status` | 按学期/状态过滤；状态机+乐观锁+归属校验（PRD 6.3） |
 | 规划 | `get_current_roadmap` / `get_roadmap_versions` / `generate_roadmap` / `create_roadmap_revision` | 读当前规划与历史；生成/重规划走 planner（校验通过才落库，已完成任务保留） |
-| 岗位 | `get_job_analysis` / `analyze_jobs` / `analyze_skill_gap` / `search_jobs` / `fetch_job_page` / `extract_requirements` | 在工具内同步完成联网搜索与分析并返回结果（样本不足如实说明）；差距分析；搜索按「猎聘多轮 → 牛客/智联/实习僧 SSR 直出 → 必应」降级，发现阶段共享 SEARCH_TIMEOUT_MS 总预算（单通道最多用掉剩余预算一半，预算不足则跳过并如实说明），样本按岗位自身类型（牛客 recruitType、智联 workType）收敛；公开岗位页抓取（公网地址校验防 SSRF，不再依赖域名白名单）、关键词抽取 |
+| 岗位 | `get_job_analysis` / `analyze_jobs` / `analyze_skill_gap` / `search_jobs` / `fetch_job_page` / `extract_requirements` | 在工具内同步完成联网搜索与分析并返回结果（样本不足如实说明）；差距分析；**猎聘/牛客/智联/实习僧四通道并行抓取**（各平台各自抓满 sample_limit，按平台轮转交错合并去重），共享 SEARCH_TIMEOUT_MS 总预算与 SEARCH_MAX_INFLIGHT 全局在途上限（单通道抛错只记该通道异常，超时保留部分样本并如实说明），合并后样本不足 5 条才回退 Tavily/必应；样本按岗位自身类型（牛客 recruitType、智联 workType）收敛；`search_jobs` 返回给模型的样本限量（30 条 × 1500 字，完整样本见岗位洞察页）；公开岗位页抓取（公网地址校验防 SSRF，不再依赖域名白名单）、关键词抽取 |
 | 归一化 | `normalize_skills` | 词典归一化，保留原始词条映射 |
 | 简历 | `generate_resume_draft` | 只用真实经历，不虚构数据 |
 
@@ -251,7 +251,9 @@ AGENT_API_KEY=
 AGENT_MODEL=glm-4.6
 
 # 搜索（可选）
-SEARCH_TIMEOUT_MS=15000
+SEARCH_TIMEOUT_MS=60000
+SEARCH_MAX_INFLIGHT=8
+SEARCH_PAGE_TIMEOUT_MS=15000
 ```
 
 生产/开发分离：`.env`（gitignore）+ `.env.example`（入库）；APK 内服务器地址可配置。
