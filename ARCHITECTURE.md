@@ -65,23 +65,25 @@ PathPilot AI 是「Web + Android 共享一个后端」的职业成长规划平�
 
 ### 2.3 工具集（PRD 6.3，全部为 `AgentTool`，TypeBox schema，见 `agent/pi/tools.ts`）
 
-LLM 通道挂载**全模块工具集**（17 个），用户身份由工厂参数（认证上下文 userId）绑定，不接受模型指定用户：
+LLM 通道挂载**全模块工具集**（20 个），用户身份由工厂参数（认证上下文 userId）绑定，不接受模型指定用户：
 
 | 模块 | 工具 | 说明 |
 |---|---|---|
 | 档案 | `get_user_profile` / `upsert_skill` / `create_experience` | 读取档案；技能归一化写入（无证据保持「待验证」）；记录真实经历 |
 | 任务 | `get_tasks` / `update_task_status` | 按学期/状态过滤；状态机+乐观锁+归属校验（PRD 6.3） |
 | 规划 | `get_current_roadmap` / `get_roadmap_versions` / `generate_roadmap` / `create_roadmap_revision` | 读当前规划与历史；生成/重规划走 planner（校验通过才落库，已完成任务保留） |
-| 岗位 | `get_job_analysis` / `analyze_jobs` / `analyze_skill_gap` / `search_jobs` / `fetch_job_page` / `extract_requirements` | 异步发起分析（agent_runs）；差距分析；联网搜索/白名单抓取/关键词抽取 |
+| 岗位 | `get_job_analysis` / `analyze_jobs` / `analyze_skill_gap` / `search_jobs` / `fetch_job_page` / `extract_requirements` | 在工具内同步完成联网搜索与分析并返回结果（样本不足如实说明）；差距分析；搜索按「猎聘多轮 → 牛客/智联/实习僧 SSR 直出 → 必应」降级，发现阶段共享 SEARCH_TIMEOUT_MS 总预算（单通道最多用掉剩余预算一半，预算不足则跳过并如实说明），样本按岗位自身类型（牛客 recruitType、智联 workType）收敛；公开岗位页抓取（公网地址校验防 SSRF，不再依赖域名白名单）、关键词抽取 |
 | 归一化 | `normalize_skills` | 词典归一化，保留原始词条映射 |
 | 简历 | `generate_resume_draft` | 只用真实经历，不虚构数据 |
 
-工具实现只调 services 层，绝不直接写库；`analyze_jobs` 等长任务经 `createRun/executeRun` 异步执行并返回 run_id。
+工具实现只调 services 层，绝不直接写库。
+
+**工具调用是同步的。** 所有工具在 Pi 的工具循环内顺序执行（`toolExecution: 'sequential'`）：`analyze_jobs`、`generate_roadmap`、`search_jobs` 等长任务在工具的 `execute` 里 `await` 完成后，直接把结果交回模型进入下一轮；执行期间通过 `onProgress` 把阶段信息经 SSE `tool_progress` 事件推给前端。`agent_runs` 表与 `createRun/executeRun` 的异步 run 路径只服务岗位洞察页、规划页等 REST 入口（`POST /api/jobs/analyze`、`POST /api/roadmaps` 等，客户端轮询 `/api/agent/runs/:id`），不用于 Agent 工具。
 
 ### 2.4 运行限制与安全（PRD 6.6）
 
 - API Key 仅服务端（`.env`），不下发客户端
-- 每次运行：墙钟超时（`agent.abort()` + AbortSignal 传入工具）+ 工具调用次数上限（`finishTurn`/`beforeToolCall` 计数）
+- 每次运行：墙钟超时与用户取消共用 AbortSignal；流结束时返回服务端持久化的正式回复和工具调用状态，避免客户端以未确认的预览内容冒充成功。工具调用次数上限在每次工具启动前校验
 - 外部网页内容仅作为数据，system prompt 声明网页内指令不执行
 - 不注册 Shell/文件系统工具
 - `agent_runs` 表记录 task_type/status/input_summary/error_code/起止时间；日志不落密码与令牌
@@ -90,13 +92,13 @@ LLM 通道挂载**全模块工具集**（17 个），用户身份由工厂参数
 
 所有 Agent 核心结果为 JSON：让模型调用带 TypeBox schema 的「提交」工具 → 服务端用 **Zod** 边界校验（schema 在 `@pathpilot/shared`）→ 非法重试 ≤2 次 → 仍失败返回 `AGENT_OUTPUT_INVALID`，**不落库**（旧规划不覆盖，PRD 10.3）。
 
-### 2.6 双通道与降级
+### 2.6 模型未配置时的行为
 
 ```
-AgentService.generateRoadmap(input)
-  ├─ AGENT_API_KEY 已配置 → Pi Agent 通道（LLM 生成内容 + 确定性校验）
-  └─ 未配置/调用失败   → 规则引擎通道（任务库+依赖图+时间预算裁剪）
-两者输出同一 Zod schema；响应带 engine: "pi-llm" | "rules"
+AGENT_API_KEY 已配置 → Pi Agent 通道（LLM 生成内容 + 确定性校验），响应 engine: "pi-llm"
+未配置时不做静默降级：
+  ├─ AI 对话 / 规划生成 / 重规划 / 简历草稿 → 直接返回明确错误（MODEL_NOT_CONFIGURED 或 400），提示到 /admin 配置
+  └─ 岗位分析 → 仍可运行：联网/预置样本 + 技能词典关键词抽取，响应 engine: "rules"，limitations 中如实标注
 ```
 
 ## 3. 数据库设计（PRD §8）
@@ -134,9 +136,10 @@ agent_runs(id, user_id, task_type, status[queued|running|succeeded|failed|cancel
          input_summary, error_code, result_ref, progress, progress_message,
          attempt_count, next_retry_at, locked_at, worker_id,
          started_at, finished_at)                                           §8.9
-agent_chat_sessions(id, user_id, flow_state, profile_snapshot,
+agent_chat_sessions(id, user_id, title, auto_write, flow_state, profile_snapshot,
          selected_intent, last_result_ref, created_at, updated_at)
-agent_chat_messages(id, session_id, role, content, engine, created_at)
+agent_chat_messages(id, session_id, role, content, engine, thinking, error_code,
+         tool_calls[json:{name,toolCallId,summary,status}], created_at)
 job_analyses(id, user_id, target_role, city, employment_type, sample_count,
          source_types[json], skills_freq[json], education_dist[json],
          experience_dist[json], limitations[json], sources[json],

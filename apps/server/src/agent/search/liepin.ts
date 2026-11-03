@@ -12,6 +12,8 @@ export interface LiepinSearchOutcome {
   samples: JobSample[];
   note: string;
   ok: boolean;
+  /** 详情抓取/解析失败数：与其它岗位通道保持同一形状，通道成功时也如实回报 */
+  failedCount?: number;
 }
 
 /** 单次搜索的统计信息，用于全量汇总与如实报告 */
@@ -189,7 +191,8 @@ export function yearsLowerBound(workYears?: string): number | null {
 
 /**
  * 相关性筛选：只剔除明确不相关的岗位（猎聘结果较泛，过度过滤会损失样本）。
- * 规则：命中完整关键词，或命中半数以上非通用二字片段（"前端开发"的区分片段是"前端"，"开发"为通用片段不计）。
+ * 规则：命中完整关键词，或命中半数以上非通用二字片段；且词首二字片段必须命中——
+ * 二字片段会跨词边界切出无意义片段（“后端开发”里的“端开”），否则后端岗位会被判成前端岗位。
  * 不做年限硬过滤——资深岗位仍可用于对比分析，由排序阶段把更匹配的排在前面。
  */
 export function filterRelevantJobs(
@@ -209,6 +212,7 @@ export function filterRelevantJobs(
       const grams = gramsOf(token);
       const distinctive = grams.filter((g) => !GENERIC_GRAMS.has(g));
       const basis = distinctive.length ? distinctive : grams;
+      if (t.length >= 3 && !hay.includes(t.slice(0, 2))) return false;
       const hits = basis.filter((g) => hay.includes(g)).length;
       return hits / basis.length >= 0.5;
     });

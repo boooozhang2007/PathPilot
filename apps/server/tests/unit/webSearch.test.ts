@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { lookup } from 'node:dns/promises';
 import { extractJdFromHtml, fetchText, searchJobPages, webSearchJobs } from '../../src/agent/search/webSearch.js';
+import { shixisengSearchJobs } from '../../src/agent/search/shixiseng.js';
+import { zhaopinSearchJobs } from '../../src/agent/search/zhaopin.js';
+import type { JobSample } from '@pathpilot/shared';
 
 vi.mock('node:dns/promises', () => ({
   lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]),
@@ -11,11 +14,42 @@ vi.mock('../../src/agent/search/liepin.js', () => ({
   liepinSearchJobs: vi.fn(async () => ({ samples: [], ok: false, note: '猎聘通道测试未启用' })),
 }));
 
+// 只替换通道入口，保留模块内的纯函数（extractInitialState/matchesRole 等）：zhaopin/shixiseng 会从
+// nowcoder.js 导入这些纯函数，整体替换 mock 会让它们的导入变成 undefined，测试变成靠“没被调用”侥幸通过。
+vi.mock('../../src/agent/search/nowcoder.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/agent/search/nowcoder.js')>();
+  return { ...mod, nowcoderConfigured: () => false, nowcoderSearchJobs: vi.fn(async () => ({ samples: [], ok: false, failedCount: 0, note: '牛客通道测试未启用' })) };
+});
+
+vi.mock('../../src/agent/search/zhaopin.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/agent/search/zhaopin.js')>();
+  return { ...mod, zhaopinConfigured: () => true, zhaopinSearchJobs: vi.fn(async () => ({ samples: [], ok: false, failedCount: 0, note: '智联通道测试未启用' })) };
+});
+
+// 实习僧默认开启：用于验证“全职检索跳过它，且不把跳过记成通道异常”。
+vi.mock('../../src/agent/search/shixiseng.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/agent/search/shixiseng.js')>();
+  return { ...mod, shixisengConfigured: () => true, shixisengSearchJobs: vi.fn(async () => ({ samples: [], ok: false, failedCount: 0, note: '实习僧通道测试未启用' })) };
+});
+
 const lookupMock = vi.mocked(lookup as unknown as (host: string, options: { all: boolean; verbatim: boolean }) => Promise<{ address: string; family: 4 | 6 }[]>);
 const publicDns = [{ address: '93.184.216.34', family: 4 as const }];
 const jdHtml = `<!doctype html><html><body><h1>前端开发实习生</h1><p>岗位职责：负责 Web 前端页面开发与联调，参与需求评审和技术方案设计。任职要求：本科及以上，熟悉 HTML、CSS、JavaScript、HTTP，了解 React 或 Vue，具备良好的沟通能力。这里有足够的真实岗位正文，用于通过正文长度校验并完成技能抽取。</p></body></html>`;
 const bingTarget = (url: string) => `https://www.bing.com/ck/a?u=a1${Buffer.from(url, 'utf8').toString('base64url')}&ntb=1`;
 const searchHtml = (target: string) => `<html><body><li class="b_algo"><h2><a href="${bingTarget(target)}">前端开发实习生招聘</a></h2></li></body></html>`;
+const sampleOf = (title: string): JobSample => ({
+  title,
+  company: null,
+  location: null,
+  employment_type: 'internship',
+  education_requirement: null,
+  experience_requirement: null,
+  skills: [],
+  description: '岗位职责：负责前端页面开发与联调。任职要求：本科及以上，熟悉 HTML、CSS、JavaScript。',
+  source_url: `https://jobs.example.com/${encodeURIComponent(title)}`,
+  fetched_at: new Date().toISOString(),
+  source_type: 'web',
+});
 const PROXY_ENV = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy'] as const;
 const savedProxyEnv = new Map(PROXY_ENV.map((key) => [key, process.env[key]]));
 
@@ -79,6 +113,39 @@ describe('Agent 联网搜索链路', () => {
     expect(result.samples).toEqual([]);
     expect(result.note).toContain('Bing: network down');
     expect(result.note).not.toContain('白名单');
+  });
+
+  it('全职检索跳过实习僧通道：如实说明跳过，而不是记成通道异常', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new Error('network down'))));
+
+    const result = await webSearchJobs(
+      { targetRole: '后端开发', employmentType: 'full_time', sampleLimit: 3 },
+      {}
+    );
+
+    expect(result.ok).toBe(false);
+    expect(shixisengSearchJobs).not.toHaveBeenCalled();
+    expect(result.note).toContain('实习僧仅提供实习岗位，全职检索已跳过该通道');
+    expect(result.note).not.toContain('实习僧通道:');
+  });
+
+  it('通道样本不足时不急着收工：继续尝试后续通道，采用样本更多的一次结果', async () => {
+    vi.mocked(zhaopinSearchJobs).mockResolvedValueOnce({
+      samples: [sampleOf('智联-前端开发实习生'), sampleOf('智联-前端开发工程师')],
+      ok: true,
+      failedCount: 0,
+      note: '智联通道返回 2 条测试样本。',
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new Error('network down'))));
+
+    const result = await webSearchJobs(
+      { targetRole: '前端开发', employmentType: 'internship', sampleLimit: 8 },
+      {}
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.samples.map((s) => s.title)).toEqual(['智联-前端开发实习生', '智联-前端开发工程师']);
+    expect(result.note).toContain('智联通道返回 2 条测试样本');
   });
 
   it('移除域名白名单后仍拒绝重定向到本机或内网地址', async () => {

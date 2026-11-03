@@ -64,16 +64,22 @@ export async function api<T = unknown>(
       signal: controller.signal,
     });
     if (res.status === 204 && res.ok) return undefined as T;
-    const data = await res.json().catch(() => null);
+    const text = await res.text().catch(() => '');
+    let data: unknown;
+    let parsed = false;
+    if (text) {
+      try { data = JSON.parse(text); parsed = true; } catch { parsed = false; }
+    }
     if (!res.ok) {
-      const error = data?.error as { code?: string; message?: string } | undefined;
+      const error = (data as { error?: { code?: string; message?: string } } | undefined)?.error;
       if (res.status === 401 && !path.startsWith('/api/auth/')) {
         if (token && token === await getToken()) await clearAuth();
         throw new ApiError('UNAUTHORIZED', token ? '登录已过期，请到「我的」页重新登录' : '请到「我的」页登录后使用此功能');
       }
       throw new ApiError(error?.code ?? 'HTTP_ERROR', error?.message ?? '请求失败（' + res.status + '）');
     }
-    if (data === null) throw new ApiError('INVALID_RESPONSE', '服务端响应格式异常，请重试');
+    // 服务端用 JSON `null` 表达“暂无数据”（无规划/无档案等），这是合法业务状态，不能当解析失败。
+    if (!parsed) throw new ApiError('INVALID_RESPONSE', '服务端响应格式异常，请重试');
     return data as T;
   } catch (error) {
     if (error instanceof ApiError) throw error;
