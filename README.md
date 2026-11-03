@@ -59,7 +59,18 @@ cd apps/mobile/android
 
 https://github.com/boooozhang2007/PathPilot/releases/tag/v1.3.8
 
-Android 设置页的“检查更新”读取 GitHub 最新正式 Release。发布新版时，请使用 `vX.Y.Z` 格式的标签，上传 `PathPilot-vX.Y.Z.apk`，并沿用现有 Android 签名，以便用户覆盖安装。旧版应用需要先手动安装包含此功能的版本。
+Android 设置页的“检查更新”读取 GitHub 最新正式 Release。
+> **发布注意**：AGP 在 `minSdkVersion >= 24` 时会忽略 `enableV1Signing`，只产出 v2 签名；
+> 部分手机的安装器/安全中心要求包内有 v1(JAR) 签名文件（`META-INF/*.RSA`），否则会报「安装包没有签名文件」。
+> 所以 `assembleRelease` 之后要用 apksigner 再补签一次 v1+v2+v3（口令取自 `apps/mobile/android/keystore.properties`）：
+>
+> ```bash
+> apksigner sign --ks apps/mobile/android/app/pathpilot.keystore --ks-key-alias <alias> \n>   --ks-pass file:<临时口令文件> --key-pass file:<临时口令文件> \n>   --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \n>   --out PathPilot-vX.Y.Z.apk apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+> ```
+>
+> 两点坑：① 不要分两步「先签 v1 再补 v2/v3」，补签会把 v1 清掉；② 验证 v1 签名必须加 `--min-sdk-version 21`，
+> 否则 apksigner 在 minSdk>=24 下会显示 `v1 scheme: false`（并不代表签名缺失）。
+发布新版时，请使用 `vX.Y.Z` 格式的标签，上传 `PathPilot-vX.Y.Z.apk`，并沿用现有 Android 签名，以便用户覆盖安装。旧版应用需要先手动安装包含此功能的版本。
 
 ## 文档
 
