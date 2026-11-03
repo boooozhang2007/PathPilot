@@ -50,9 +50,9 @@ describe('api() 响应解析', () => {
 
   it('非 2xx 携带服务端 error.code/message 时如实抛出', async () => {
     mockResponse(400, JSON.stringify({ error: { code: 'VALIDATION_ERROR', message: '参数错误' } }));
-    const err = await api('/api/x').catch((e) => e);
+    const err = await api('/api/x').catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
-    expect(err.code).toBe('VALIDATION_ERROR');
-    expect(err.message).toBe('参数错误');
+    expect((err as ApiError).code).toBe('VALIDATION_ERROR');
+    expect((err as ApiError).message).toBe('参数错误');
   });
 });
