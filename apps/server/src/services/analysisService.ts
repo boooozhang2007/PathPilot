@@ -35,10 +35,10 @@ function toAnalysisDTO(row: typeof jobAnalyses.$inferSelect): JobAnalysisDTO {
 }
 
 /**
- * 插入样本（幂等）：按 (user_id, dedupe_key) 唯一约束 onConflictDoNothing，
- * 冲突时复用已有行——分析重试不会重复落库；返回的 id 顺序与入参样本一致。
+ * 插入某次分析的样本：来源行归属于该分析（每次分析保留自己的来源快照），
+ * 同一次分析内按 (user_id, analysis_id, dedupe_key) 去重；返回的 id 顺序与入参样本一致。
  */
-function insertSamples(tx: Tx, userId: number | null, samples: JobSample[], parseStatus: 'ok' | 'failed'): number[] {
+function insertSamples(tx: Tx, userId: number | null, analysisId: number, samples: JobSample[], parseStatus: 'ok' | 'failed'): number[] {
   const rows: (typeof jobSources.$inferInsert)[] = [];
   const seen = new Set<string>();
   for (const s of samples) {
@@ -48,6 +48,7 @@ function insertSamples(tx: Tx, userId: number | null, samples: JobSample[], pars
     seen.add(dedupeKey);
     rows.push({
       userId,
+      analysisId,
       title: s.title,
       company: s.company ?? null,
       location: s.location ?? null,
@@ -66,15 +67,14 @@ function insertSamples(tx: Tx, userId: number | null, samples: JobSample[], pars
     });
   }
   if (rows.length) {
-    tx.insert(jobSources).values(rows).onConflictDoNothing({ target: [jobSources.userId, jobSources.dedupeKey] }).run();
+    tx.insert(jobSources).values(rows).onConflictDoNothing({ target: [jobSources.userId, jobSources.analysisId, jobSources.dedupeKey] }).run();
   }
   const keys = rows.map((r) => r.dedupeKey as string);
   if (!keys.length) return [];
-  const owner = userId === null ? isNull(jobSources.userId) : eq(jobSources.userId, userId);
   const found = tx
     .select({ id: jobSources.id, dedupeKey: jobSources.dedupeKey })
     .from(jobSources)
-    .where(and(owner, inArray(jobSources.dedupeKey, keys)))
+    .where(and(eq(jobSources.analysisId, analysisId), inArray(jobSources.dedupeKey, keys)))
     .all();
   const idByKey = new Map(found.map((r) => [r.dedupeKey as string, r.id]));
   const ids: number[] = [];
@@ -103,8 +103,8 @@ function insertAnalysis(tx: Tx, userId: number, input: { targetRole: string; cit
 }
 
 /**
- * 分析结果整体落库（单事务）：样本 → 分析快照 → 样本关联 → 要求明细。
- * 四步任一失败整体回滚，避免半成品数据；样本插入幂等，重试安全。
+ * 分析结果整体落库（单事务）：分析快照 → 归属该分析的样本 → 要求明细。
+ * 任一步失败整体回滚，避免半成品数据；来源行与要求明细都只属于本次分析，不触碰历史分析。
  */
 export async function persistAnalysis(
   userId: number,
@@ -115,9 +115,8 @@ export async function persistAnalysis(
   parseStatus: 'ok' | 'failed' = 'ok'
 ): Promise<JobAnalysisDTO> {
   return db.transaction((tx) => {
-    const sourceIds = insertSamples(tx, userId, samples, parseStatus);
     const analysis = insertAnalysis(tx, userId, input, result);
-    if (sourceIds.length) tx.update(jobSources).set({ analysisId: analysis.id }).where(inArray(jobSources.id, sourceIds)).run();
+    const sourceIds = insertSamples(tx, userId, analysis.id, samples, parseStatus);
     const rows = buildRequirementRows(sourceIds);
     if (rows.length) tx.insert(jobRequirements).values(rows.map((r) => ({ ...r, skillId: r.skillId ?? null, evidenceText: r.evidenceText ?? null }))).run();
     return analysis;
@@ -214,8 +213,9 @@ export async function listSources(userId: number, analysisId?: number): Promise<
 }
 
 export async function presetSamplesFor(targetRole: string, employmentType: string, limit: number): Promise<JobSample[]> {
-  // 从预置库（source_type=preset）读取匹配岗位样本；技能从 job_requirements 还原
-  const all = await db.select().from(jobSources).where(eq(jobSources.sourceType, 'preset')).limit(500);
+  // 从预置库（source_type=preset）读取匹配岗位样本；技能从 job_requirements 还原。
+  // 只读全局预置行（user_id 为空）：各次分析落库的预置样本副本归属用户，不能再被当成预置库重复读出。
+  const all = await db.select().from(jobSources).where(and(eq(jobSources.sourceType, 'preset'), isNull(jobSources.userId))).limit(500);
   const key = (s: string) => s.toLowerCase();
   const role = targetRole.toLowerCase();
   const firstRoleWord = role.split(/[\s/]+/)[0] ?? role;

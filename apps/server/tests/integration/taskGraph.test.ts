@@ -81,6 +81,32 @@ describe('任务关联隔离与状态一致性', () => {
     }
   });
 
+  it('删除前置任务后，依赖它的任务不再被悬空引用卡住', async () => {
+    const prerequisite = await task('to-be-deleted');
+    const dependent = await addRoadmapTask(userId, { title: 'dependent', semester: 3, description: 'test', estimatedHours: 1, priority: 'medium', dependencyIds: [prerequisite.id] });
+    const removed = await app.inject({ method: 'DELETE', url: `/api/tasks/${prerequisite.id}`, headers: { authorization: `Bearer ${token}` } });
+    expect(removed.statusCode).toBe(200);
+    expect((await listRoadmapTasks(userId)).find((t) => t.id === dependent.id)?.dependencyIds).toEqual([]);
+    expect((await patch(dependent.id, { status: 'in_progress' })).statusCode).toBe(200);
+  });
+
+  it('子任务开始不会回退已完成的父任务，也不改变父任务版本号', async () => {
+    const parent = await task('finished-parent');
+    const child = await task('late-child', parent.id);
+    const done = await updateTask(userId, parent.id, { status: 'done' });
+    await updateTask(userId, child.id, { status: 'in_progress' });
+    const after = (await listRoadmapTasks(userId)).find((t) => t.id === parent.id)!;
+    expect(after.status).toBe('done');
+    expect(after.completedAt).toBe(done.completedAt);
+    expect(after.updatedAt).toBe(done.updatedAt);
+
+    const idleParent = await task('idle-parent');
+    const firstChild = await task('first-child', idleParent.id);
+    await updateTask(userId, firstChild.id, { status: 'in_progress' });
+    // 父任务被带到进行中后，客户端仍可用手里的版本号继续操作它
+    expect((await patch(idleParent.id, { status: 'done', expectedUpdatedAt: idleParent.updatedAt })).statusCode).toBe(200);
+  });
+
   it('并发保存规划使用不同版本号且只保留一个生效版本', async () => {
     const versions = await listRoadmaps(userId);
     const parentVersionId = (await getRoadmap(userId, versions[0].id)).id;

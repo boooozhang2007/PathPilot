@@ -48,15 +48,16 @@ export async function upsertProfile(userId: number, input: Partial<typeof profil
 }
 
 // ---------- 技能词典 ----------
+/** 精选技能词典：不含用户自填词条（那些只是个人档案里的技能名，不能成为所有人岗位分析的词源）。 */
 export async function getSkillCatalog(): Promise<SkillCatalogItem[]> {
-  const rows = await db.select().from(skills);
+  const rows = await db.select().from(skills).where(eq(skills.custom, false));
   return rows.map((r) => ({ id: r.id, name: r.name, category: r.category as SkillCatalogItem['category'], aliases: r.aliases ?? [] }));
 }
 
 export async function findOrCreateTimeSkill(name: string, category: string): Promise<number> {
   const rows = await db.select().from(skills).where(eq(skills.name, name)).limit(1);
   if (rows[0]) return rows[0].id;
-  const inserted = await db.insert(skills).values({ name, category, aliases: [] }).returning();
+  const inserted = await db.insert(skills).values({ name, category, aliases: [], custom: true }).returning();
   return inserted[0].id;
 }
 
@@ -85,8 +86,10 @@ export async function upsertProfileSkill(
   input: { skillName: string; level: number; evidenceStatus: string; evidenceDescription?: string; evidenceUrl?: string }
 ): Promise<number> {
   const catalog = await getSkillCatalog();
+  // 自填技能不在词典里：把用户自己已有的技能名也纳入归一化，同一技能换个大小写/修饰词再写入时仍命中原记录。
+  const own = (await listProfileSkills(userId)).map((s) => ({ id: s.skillId, name: s.name, category: s.category, aliases: [] as string[] }));
   const { buildNormalizer } = await import('./normalize.js');
-  const n = buildNormalizer(catalog)(input.skillName);
+  const n = buildNormalizer([...catalog, ...own])(input.skillName);
   const skillId = await findOrCreateTimeSkill(n.matched ? n.canonical : input.skillName.trim(), n.category);
   const now = new Date().toISOString();
   await db

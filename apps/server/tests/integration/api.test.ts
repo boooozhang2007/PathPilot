@@ -396,6 +396,42 @@ describe('审查修复回归', () => {
     expect(back.json().deferredReason).toBeNull();
   });
 
+  it('用户自填的技能名只进个人档案，不进入全局技能词典', async () => {
+    const headers = { authorization: `Bearer ${token}` };
+    const created = await app.inject({ method: 'POST', url: '/api/skills', headers, payload: { skillName: '自填技能负责', level: 2, evidenceStatus: 'to_verify' } });
+    expect(created.statusCode).toBe(200);
+    const mine = (await app.inject({ method: 'GET', url: '/api/skills', headers })).json();
+    expect(mine.some((s: { name: string }) => s.name === '自填技能负责')).toBe(true);
+    const catalog = (await app.inject({ method: 'GET', url: '/api/skills/catalog', headers })).json();
+    expect(catalog.some((s: { name: string }) => s.name === 'JavaScript')).toBe(true);
+    expect(catalog.some((s: { name: string }) => s.name === '自填技能负责')).toBe(false);
+  });
+
+  it('重复分析同一岗位不会把旧分析的来源改挂到新分析', async () => {
+    const { persistAnalysis, listSources } = await import('../../src/services/analysisService.js');
+    const { db } = await import('../../src/db/client.js');
+    const { jobRequirements } = await import('../../src/db/schema.js');
+    const { inArray } = await import('drizzle-orm');
+    const me = (await app.inject({ method: 'GET', url: '/api/auth/me', headers: { authorization: `Bearer ${token}` } })).json().user.id as number;
+    const sample = {
+      title: '前端开发实习生', company: '示例公司', location: null, employment_type: 'internship' as const,
+      education_requirement: null, experience_requirement: null, skills: ['React'], description: '岗位职责：参与前端开发。',
+      source_url: 'https://jobs.example.com/frontend-repeat', fetched_at: new Date().toISOString(), source_type: 'web' as const,
+    };
+    const result = { target_role: '前端开发', sample_count: 1, skills: [], education_requirements: [], experience_requirements: [], sources: [], limitations: [] };
+    const save = () => persistAnalysis(me, { targetRole: '前端开发', employmentType: 'internship', engine: 'rules' }, result, [sample],
+      ([sid]) => [{ jobSourceId: sid, originalText: 'React', requirementType: 'skill', importance: 'medium' }]);
+    const first = await save();
+    const second = await save();
+    const firstSources = await listSources(me, first.id);
+    const secondSources = await listSources(me, second.id);
+    expect(firstSources).toHaveLength(1);
+    expect(secondSources).toHaveLength(1);
+    expect(firstSources[0].id).not.toBe(secondSources[0].id);
+    const requirements = await db.select().from(jobRequirements).where(inArray(jobRequirements.jobSourceId, [firstSources[0].id, secondSources[0].id]));
+    expect(requirements).toHaveLength(2); // 每个来源一条，不随重跑累积
+  });
+
   it('技能 PATCH 换名为别名（归一化命中同一行）不删除记录', async () => {
     await app.inject({
       method: 'POST',

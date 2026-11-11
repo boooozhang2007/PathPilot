@@ -291,7 +291,8 @@ export async function liepinSearchJobs(
     return { samples: [], ok: false, note: '未找到 liepin-cli（tools/liepin-cli/.venv，安装见 README）。' };
   }
   const poolTarget = poolTargetFor(input.sampleLimit);
-  const cacheKey = `${input.targetRole}|${input.city ?? ''}|${poolTarget}`;
+  // 搜索关键词随雇佣类型变化（「岗位实习」/「岗位校招」），缓存键必须带类型，否则实习池会被当成全职池复用。
+  const cacheKey = `${input.targetRole}|${input.city ?? ''}|${input.employmentType}|${poolTarget}`;
   const cached = cache.get(cacheKey);
   let raw: RawLiepinJob[] = [];
   let fromCache = false;

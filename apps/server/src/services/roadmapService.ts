@@ -306,7 +306,8 @@ export async function updateTask(
       .select({ id: roadmapTasks.id, status: roadmapTasks.status })
       .from(roadmapTasks)
       .where(and(inArray(roadmapTasks.id, depIds), eq(roadmapTasks.userId, userId), eq(roadmapTasks.roadmapId, task.roadmapId)));
-    if (deps.length !== depIds.length) throw badRequest('前置任务不存在或不属于当前用户');
+    // 新指定的前置任务已由 validateTaskLinks 校验存在；查不到的只可能是已被删除的历史引用，
+    // 忽略即可——否则依赖它的任务会永远无法开始或保存。
     if (deps.some((d) => d.status !== 'done')) throw badRequest('请先完成前置任务');
   }
   if (input.expectedUpdatedAt && input.expectedUpdatedAt !== task.updatedAt) {
@@ -362,8 +363,23 @@ async function refreshParentTask(userId: number, parentTaskId: number | null): P
   if (!parent[0]) return;
   const children = await db.select({ status: roadmapTasks.status }).from(roadmapTasks).where(and(eq(roadmapTasks.parentTaskId, parentTaskId), eq(roadmapTasks.userId, userId)));
   if (!children.length) return;
-  const nextStatus = children.every((x) => x.status === 'done') && parent[0].completionRule === 'all_children' ? 'done' : children.some((x) => x.status === 'in_progress') ? 'in_progress' : parent[0].status;
-  if (nextStatus !== parent[0].status) await db.update(roadmapTasks).set({ status: nextStatus, completedAt: nextStatus === 'done' ? new Date().toISOString() : null, updatedAt: new Date().toISOString() }).where(eq(roadmapTasks.id, parentTaskId));
+  const allDone = children.every((x) => x.status === 'done') && parent[0].completionRule === 'all_children';
+  // 只把「未开始」的父任务带到进行中：已完成的父任务不回退（成果保留），已延期的保持用户的决定。
+  const nextStatus = allDone ? 'done' : parent[0].status === 'not_started' && children.some((x) => x.status === 'in_progress') ? 'in_progress' : parent[0].status;
+  // 派生状态不刷新 updatedAt：它是客户端乐观锁的版本号，这里静默刷新会让下一次操作父任务必然 409。
+  if (nextStatus !== parent[0].status) await db.update(roadmapTasks).set({ status: nextStatus, completedAt: nextStatus === 'done' ? new Date().toISOString() : null }).where(eq(roadmapTasks.id, parentTaskId));
+}
+
+/** 任务删除后，清理同一规划内其它任务对它的前置引用，避免留下永远无法满足的依赖。 */
+async function dropDependencyRefs(userId: number, roadmapId: number, removedIds: number[]): Promise<void> {
+  const removed = new Set(removedIds);
+  const rows = await db.select({ id: roadmapTasks.id, dependencyIds: roadmapTasks.dependencyIds })
+    .from(roadmapTasks).where(and(eq(roadmapTasks.userId, userId), eq(roadmapTasks.roadmapId, roadmapId)));
+  for (const row of rows) {
+    const current = row.dependencyIds ?? [];
+    const kept = current.filter((id) => !removed.has(id));
+    if (kept.length !== current.length) await db.update(roadmapTasks).set({ dependencyIds: kept }).where(eq(roadmapTasks.id, row.id));
+  }
 }
 
 export async function addTaskEvidence(
@@ -472,6 +488,7 @@ export async function removeRoadmapTask(userId: number, taskId: number): Promise
   if (children[0]) throw badRequest('该任务下还有子任务，请先删除或调整子任务');
   // 任务完成前后均可删除（用户明确操作即生效，成果记录随任务移除）
   await db.delete(roadmapTasks).where(and(eq(roadmapTasks.id, taskId), eq(roadmapTasks.userId, userId)));
+  await dropDependencyRefs(userId, rows[0].roadmapId, [taskId]);
   await syncContentTasks(userId, rows[0].roadmapId);
 }
 
@@ -490,7 +507,10 @@ export async function removeRoadmapTasks(userId: number, taskIds: number[]): Pro
   }
   await db.delete(roadmapTasks).where(and(eq(roadmapTasks.userId, userId), inArray(roadmapTasks.id, rows.map((r) => r.id))));
   const roadmapIds = [...new Set(rows.map((r) => r.roadmapId))];
-  for (const rid of roadmapIds) await syncContentTasks(userId, rid);
+  for (const rid of roadmapIds) {
+    await dropDependencyRefs(userId, rid, rows.map((r) => r.id));
+    await syncContentTasks(userId, rid);
+  }
   return rows.length;
 }
 

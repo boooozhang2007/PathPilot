@@ -168,7 +168,10 @@ describe('全模块 Agent 工具集', () => {
     const tasks = await listRoadmapTasks(demoUserId);
     const { updateTask } = await import('../../src/services/roadmapService.js');
     await updateTask(demoUserId, tasks[0].id, { status: 'done', actualHours: 10 });
-    const tool = buildAgentTools(demoUserId).find((t) => t.name === 'create_roadmap_revision')!;
+    // 重规划会归档当前规划并落库新版本，属于写操作：未开启自动写入时必须被拦截
+    const readOnly = buildAgentTools(demoUserId).find((t) => t.name === 'create_roadmap_revision')!;
+    await expect(call(readOnly, { weekly_hours: 6 })).rejects.toThrow(/自动写入/);
+    const tool = writeTools().find((t) => t.name === 'create_roadmap_revision')!;
     const res = await call<{ newVersion: number; parentVersion: number }>(tool, { weekly_hours: 6, reason: '工具测试：时间调整' });
     expect(res.newVersion).toBeGreaterThan(res.parentVersion);
     const after = await listRoadmapTasks(demoUserId);

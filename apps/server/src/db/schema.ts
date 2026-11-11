@@ -46,6 +46,8 @@ export const skills = sqliteTable(
     name: text('name').notNull(),
     category: text('category').notNull(),
     aliases: text('aliases', { mode: 'json' }).$type<string[]>().notNull().default([]),
+    /** 用户自填的技能名（非精选词条）：只供 profile_skills 引用，不进入词典与关键词抽取 */
+    custom: integer('custom', { mode: 'boolean' }).notNull().default(false),
     createdAt: text('created_at').notNull().$defaultFn(isoNow),
   },
   (t) => [uniqueIndex('skills_name_uq').on(t.name)]
@@ -114,8 +116,9 @@ export const jobSources = sqliteTable(
   (t) => [
     index('job_sources_hash_idx').on(t.contentHash),
     index('job_sources_analysis_idx').on(t.analysisId),
-    // 去重唯一约束：同一用户同一 dedupe_key 只保留一行，重试不重复落库（NULL 值互不影响）
-    uniqueIndex('job_sources_user_dedupe_uq').on(t.userId, t.dedupeKey),
+    // 去重唯一约束：同一用户的同一次分析内，同一 dedupe_key 只保留一行（NULL 值互不影响）。
+    // 约束按分析归属：每次分析保留自己的来源快照，重复分析不会把旧分析的来源行改挂走。
+    uniqueIndex('job_sources_user_analysis_dedupe_uq').on(t.userId, t.analysisId, t.dedupeKey),
   ]
 );
 

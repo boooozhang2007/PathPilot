@@ -189,10 +189,14 @@ async function assertPublicHttpUrl(raw: string, base?: string): Promise<PublicHt
 }
 
 /** 连接层固定刚才验证过的地址，防止 DNS 在校验与实际连接之间重绑定。 */
-function pinnedDnsDispatcher(pinned: { address: string; family: 4 | 6 }): Agent {
+export function pinnedDnsDispatcher(pinned: { address: string; family: 4 | 6 }): Agent {
   return new Agent({
     connect: {
-      lookup: (_hostname, _options, callback) => callback(null, pinned.address, pinned.family),
+      // Node 20+ 默认以 all:true 调用 lookup 并期望地址数组；两种调用形式都要支持。
+      lookup: (_hostname, options, callback) =>
+        options.all
+          ? callback(null, [{ address: pinned.address, family: pinned.family }])
+          : callback(null, pinned.address, pinned.family),
     },
   });
 }

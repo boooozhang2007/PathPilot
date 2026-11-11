@@ -34,6 +34,8 @@ export default function TasksPage() {
     try {
       const [t, s, p] = await Promise.all([api<RoadmapTaskDTO[]>('/api/tasks'), api<GrowthStats>('/api/stats/growth'), api<ProfileDTO | null>('/api/profile')]);
       setTasks(t);
+      // 冲突后刷新详情的版本号，让弹层里保留的草稿可以再次提交。
+      setDetail((current) => (current ? t.find((task) => task.id === current.id) ?? null : null));
       setStats(s);
       setProfile(p);
     } catch (e) {
@@ -46,15 +48,19 @@ export default function TasksPage() {
     load();
   }, []);
 
-  async function update(task: RoadmapTaskDTO, patch: Record<string, unknown>) {
+  /** 返回是否保存成功：调用方据此决定是否丢弃编辑中的草稿 */
+  async function update(task: RoadmapTaskDTO, patch: Record<string, unknown>): Promise<boolean> {
+    setErr('');
     try {
       const updated = await api<RoadmapTaskDTO>(`/api/tasks/${task.id}`, { method: 'PATCH', json: { ...patch, expectedUpdatedAt: task.updatedAt } });
       setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
-      if (detail?.id === updated.id) setDetail(updated);
+      setDetail((d) => (d && d.id === updated.id ? updated : d));
       api<GrowthStats>('/api/stats/growth').then(setStats).catch(() => {});
+      return true;
     } catch (e) {
       setErr(e instanceof Error ? e.message : '更新失败');
       await load(true);
+      return false;
     }
   }
 
@@ -90,18 +96,19 @@ export default function TasksPage() {
 
   async function saveDescription() {
     if (!detail || descDraft === null || !descDraft.trim()) return;
-    await update(detail, { description: descDraft.trim() });
-    setDescDraft(null);
+    if (await update(detail, { description: descDraft.trim() })) setDescDraft(null);
   }
 
   const currentSem = profile ? currentSemesterOf(profile.grade) : null;
-  const today = new Date().toISOString().slice(0, 10);
+  // completedAt 是 UTC ISO 字符串：「今日」按用户本地时区的日期判断，而不是 UTC 日期。
+  const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const today = localDate(new Date());
   const visible =
     view === 'all'
       ? tasks
       : view === 'week'
         ? tasks.filter((t) => t.semester === currentSem)
-        : tasks.filter((t) => t.status === 'in_progress' || (t.completedAt ?? '').startsWith(today));
+        : tasks.filter((t) => t.status === 'in_progress' || (t.completedAt ? localDate(new Date(t.completedAt)) === today : false));
 
   if (loading) return <Loading />;
 
@@ -206,6 +213,7 @@ export default function TasksPage() {
                               });
                             } else {
                               setDetail(t);
+                              setErr(''); // 弹层内会显示 err：打开时清掉之前操作留下的旧提示
                               setDescDraft(null);
                               setEvidence({ url: t.evidenceUrl ?? '', note: t.resultNote ?? '', hours: t.actualHours != null ? String(t.actualHours) : '' });
                             }
@@ -234,7 +242,7 @@ export default function TasksPage() {
                               </button>
                             )}
                             {key === 'in_progress' && (
-                              <button className="rounded-md bg-teal px-2 py-1 text-[11px] font-semibold text-white transition hover:opacity-85" onClick={(e) => { e.stopPropagation(); update(t, { status: 'done', actualHours: t.estimatedHours }); }}>
+                              <button className="rounded-md bg-teal px-2 py-1 text-[11px] font-semibold text-white transition hover:opacity-85" onClick={(e) => { e.stopPropagation(); update(t, { status: 'done', actualHours: t.actualHours ?? t.estimatedHours }); }}>
                                 完成
                               </button>
                             )}
@@ -270,6 +278,13 @@ export default function TasksPage() {
               </button>
             </div>
             <div className="p-6">
+              {/* 页面级错误条在弹层遮罩之下，保存失败必须在弹层内可见 */}
+              {err && (
+                <div role="alert" className="mb-4 flex items-start gap-2 rounded-lg border border-[#e8b4ae] bg-[#fdf1ef] px-3 py-2 text-xs leading-5 text-[#b3271d]">
+                  <Ic name="warn" size={13} className="mt-0.5 shrink-0" />
+                  <span className="min-w-0 flex-1">{err}</span>
+                </div>
+              )}
               <div className="mb-4 flex flex-wrap gap-1.5">
                 <Tag tone={detail.status === 'done' ? 'teal' : detail.status === 'in_progress' ? 'accent' : detail.status === 'deferred' ? 'amber' : 'slate'}>{TASK_STATUS_LABELS[detail.status]}</Tag>
                 <Tag tone="slate">预计 {detail.estimatedHours}h</Tag>

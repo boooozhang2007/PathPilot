@@ -61,7 +61,7 @@ export function buildAgentTools(userId: number, options: ToolOptions = {}): Agen
     executionMode: 'sequential',
     execute: async (_callId, params, signal) => {
       if (signal?.aborted) throw new Error('已取消');
-      if (write && !options.autoWrite) throw badRequest('请先开启自动写入，再执行档案或任务修改');
+      if (write && !options.autoWrite) throw badRequest('请先开启自动写入，再执行档案、任务或规划修改');
       const result = await run(params as Record<string, any>, signal);
       return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result };
     },
@@ -122,7 +122,7 @@ export function buildAgentTools(userId: number, options: ToolOptions = {}): Agen
       const { generateRoadmap } = await import('../planner.js');
       const result = await generateRoadmap(userId, generateRoadmapInput.parse({ ...camelPlanning(p), jobAnalysisId: p.job_analysis_id }), { signal, onProgress: progress('generate_roadmap') });
       return { roadmap: result.roadmap, validation: result.validation, engine: result.engine };
-    }),
+    }, true),
     tool('create_roadmap_revision', '根据条件调整创建新规划版本，保留历史并同步返回新旧版本。', {
       ...planningFields, reason: optional(Type.String({ maxLength: 200 })),
     }, async (p, signal) => {
@@ -130,7 +130,7 @@ export function buildAgentTools(userId: number, options: ToolOptions = {}): Agen
       const { reviseRoadmap } = await import('../planner.js');
       const result = await reviseRoadmap(userId, reviseRoadmapInput.parse({ ...camelPlanning(p), reason: p.reason }), { signal, onProgress: progress('create_roadmap_revision') });
       return { newVersion: result.roadmap?.version, parentVersion: previous?.version, roadmap: result.roadmap, validation: result.validation };
-    }),
+    }, true),
     tool('roadmap_add_task', '为当前生效规划添加可执行任务，可用 parent_task_id 将任务拆为子任务。', {
       ...taskFields, title: text(100), semester: Type.Integer({ minimum: 1, maximum: 14 }), description: text(),
       estimated_hours: Type.Number({ minimum: 0.5, maximum: 300 }), priority: enumeration('high', 'medium', 'low'),
